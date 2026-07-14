@@ -15,7 +15,7 @@ export default async function BillingPage() {
 
   return (
     <AppShell active="billing" userEmail={user.email}>
-      <BillingContent />
+      <BillingContent email={user.email} />
     </AppShell>
   )
 }

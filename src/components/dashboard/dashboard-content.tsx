@@ -1,16 +1,193 @@
+"use client"
+
+import { useEffect, useRef, useState } from "react"
 import {
   BadgeCheck,
+  Check,
   ShieldCheck,
   Sparkles,
   WandSparkles,
 } from "lucide-react"
+import {
+  Area,
+  AreaChart,
+  CartesianGrid,
+  Label,
+  Pie,
+  PieChart,
+  Sector,
+  XAxis,
+  YAxis,
+} from "recharts"
+import type { PieSectorShapeProps } from "recharts"
 
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card"
+import {
+  ChartContainer,
+  ChartTooltip,
+  ChartTooltipContent,
+  type ChartConfig,
+} from "@/components/ui/chart"
 import { Switch } from "@/components/ui/switch"
+import { dashboardDemoData } from "@/lib/demo-data"
 
 const milestoneLabels = ["10", "100", "500", "1k", "10k", "100k", "500k", "1m"]
+const milestoneValues = [10, 100, 500, 1000, 10000, 100000, 500000, 1000000]
+const numberFormatter = new Intl.NumberFormat("en-US")
 
-const kpis = [
+function easeOutCubic(value: number) {
+  return 1 - Math.pow(1 - value, 3)
+}
+
+function useAnimatedNumber(value: number, duration = 650) {
+  const [displayValue, setDisplayValue] = useState(0)
+  const displayRef = useRef(0)
+
+  useEffect(() => {
+    const animationDuration = window.matchMedia(
+      "(prefers-reduced-motion: reduce)"
+    ).matches
+      ? 0
+      : duration
+
+    const startValue = displayRef.current
+    const valueDelta = value - startValue
+    const startTime = performance.now()
+    let animationFrame = 0
+
+    if (valueDelta === 0) {
+      return
+    }
+
+    const tick = (currentTime: number) => {
+      const progress = animationDuration
+        ? Math.min((currentTime - startTime) / animationDuration, 1)
+        : 1
+      const nextValue = startValue + valueDelta * easeOutCubic(progress)
+
+      displayRef.current = nextValue
+      setDisplayValue(nextValue)
+
+      if (progress < 1) {
+        animationFrame = requestAnimationFrame(tick)
+        return
+      }
+
+      displayRef.current = value
+      setDisplayValue(value)
+    }
+
+    animationFrame = requestAnimationFrame(tick)
+
+    return () => {
+      cancelAnimationFrame(animationFrame)
+    }
+  }, [duration, value])
+
+  return displayValue
+}
+
+function formatNumber(value: number, decimals = 0) {
+  return new Intl.NumberFormat("en-US", {
+    maximumFractionDigits: decimals,
+    minimumFractionDigits: decimals,
+  }).format(value)
+}
+
+function parseDisplayNumber(displayValue: string) {
+  const match = displayValue.match(/^([^0-9-]*)(-?[\d,]+(?:\.\d+)?)(.*)$/)
+
+  if (!match) {
+    return {
+      decimals: 0,
+      isNumeric: false,
+      prefix: "",
+      suffix: "",
+      value: 0,
+    }
+  }
+
+  const [, prefix, numberValue, suffix] = match
+  const decimals = numberValue.includes(".")
+    ? numberValue.split(".")[1].length
+    : 0
+
+  return {
+    decimals,
+    isNumeric: true,
+    prefix,
+    suffix,
+    value: Number(numberValue.replace(/,/g, "")),
+  }
+}
+
+function AnimatedNumber({
+  decimals = 0,
+  duration,
+  prefix = "",
+  suffix = "",
+  value,
+}: {
+  decimals?: number
+  duration?: number
+  prefix?: string
+  suffix?: string
+  value: number
+}) {
+  const displayValue = useAnimatedNumber(value, duration)
+
+  return (
+    <span>
+      {prefix}
+      {formatNumber(displayValue, decimals)}
+      {suffix}
+    </span>
+  )
+}
+
+function AnimatedDisplayNumber({ value }: { value: string }) {
+  const parsedValue = parseDisplayNumber(value)
+  const displayValue = useAnimatedNumber(parsedValue.value)
+
+  if (!parsedValue.isNumeric) {
+    return <span>{value}</span>
+  }
+
+  return (
+    <span>
+      {parsedValue.prefix}
+      {formatNumber(displayValue, parsedValue.decimals)}
+      {parsedValue.suffix}
+    </span>
+  )
+}
+
+function getMilestoneProgressPercent(value: number) {
+  if (value < milestoneValues[0]) {
+    return 0
+  }
+
+  const lastIndex = milestoneValues.length - 1
+
+  if (value >= milestoneValues[lastIndex]) {
+    return 100
+  }
+
+  const nextIndex = milestoneValues.findIndex((milestone) => value < milestone)
+  const previousIndex = Math.max(nextIndex - 1, 0)
+  const previousValue = milestoneValues[previousIndex]
+  const nextValue = milestoneValues[nextIndex]
+  const segmentProgress = (value - previousValue) / (nextValue - previousValue)
+
+  return ((previousIndex + segmentProgress) / lastIndex) * 100
+}
+
+const emptyKpis = [
   {
     label: "Emails Checked",
     value: "0",
@@ -33,11 +210,136 @@ const kpis = [
   },
 ]
 
+const emailStatusFallbackColors = [
+  "#346ce6",
+  "#16a34a",
+  "#f59e0b",
+  "#ef4444",
+  "#64748b",
+]
+
+const emailStatusChartConfig: ChartConfig = {
+  valid: {
+    label: "Valid",
+    color: "#346ce6",
+  },
+  invalid: {
+    label: "Invalid",
+    color: "#ef4444",
+  },
+  risky: {
+    label: "Risky",
+    color: "#f59e0b",
+  },
+  restricted: {
+    label: "Restricted",
+    color: "#64748b",
+  },
+}
+
+const historicalChartConfig: ChartConfig = {
+  valid: {
+    label: "Valid",
+    color: "#346ce6",
+  },
+  invalid: {
+    label: "Invalid",
+    color: "#ef4444",
+  },
+  risky: {
+    label: "Risky",
+    color: "#f59e0b",
+  },
+  restricted: {
+    label: "Restricted",
+    color: "#64748b",
+  },
+}
+
+type EmailStatusChartItem = {
+  status: string
+  label: string
+  emails: number
+  fill: string
+}
+
+function toStatusKey(label: string) {
+  return label.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "")
+}
+
+function getEmailStatusColor(status: string, index: number) {
+  return (
+    emailStatusChartConfig[status]?.color ??
+    emailStatusFallbackColors[index % emailStatusFallbackColors.length]
+  )
+}
+
+function renderEmailStatusSector(
+  props: PieSectorShapeProps,
+  activeStatus: string
+) {
+  const outerRadius = typeof props.outerRadius === "number" ? props.outerRadius : 90
+  const payload = props.payload as EmailStatusChartItem | undefined
+
+  return (
+    <Sector
+      {...props}
+      outerRadius={
+        payload?.status === activeStatus ? outerRadius + 8 : outerRadius
+      }
+    />
+  )
+}
+
 export function DashboardContent() {
+  const [showDummyData, setShowDummyData] = useState(true)
+  const [activeStatus, setActiveStatus] = useState("valid")
+  const kpis = showDummyData
+    ? dashboardDemoData.kpis.map((item, index) => ({
+        ...item,
+        icon: emptyKpis[index].icon,
+      }))
+    : emptyKpis
+  const distribution = showDummyData ? dashboardDemoData.distribution : []
+  const historical = showDummyData ? dashboardDemoData.historical : []
+  const historicalChartData = historical.map((item) => ({
+    ...item,
+    total: item.valid + item.invalid + item.risky + item.restricted,
+  }))
+  const visibleHistorical = historicalChartData.slice(-12)
+  const distributionTotal = distribution.reduce(
+    (total, item) => total + item.value,
+    0
+  )
+  const emailStatusChartData = distribution.map((item, index) => {
+    const status = toStatusKey(item.label)
+
+    return {
+      status,
+      label: item.label,
+      emails: item.value,
+      fill: getEmailStatusColor(status, index),
+    }
+  })
+  const activeChartItem =
+    emailStatusChartData.find((item) => item.status === activeStatus) ??
+    emailStatusChartData[0]
+  const activeStatusKey = activeChartItem?.status ?? ""
+  const activeStatusPercent =
+    activeChartItem && distributionTotal
+      ? Math.round((activeChartItem.emails / distributionTotal) * 100)
+      : 0
+  const animatedActiveStatusPercent = useAnimatedNumber(activeStatusPercent, 350)
+  const totalSuppressed = showDummyData ? dashboardDemoData.totalSuppressed : 0
+  const nextMilestoneRemaining = showDummyData
+    ? dashboardDemoData.nextMilestoneRemaining
+    : 10
+  const milestoneProgressPercent = getMilestoneProgressPercent(totalSuppressed)
+
   return (
     <div className="grid gap-8">
-      <Card>
-        <CardContent className="flex items-start justify-between gap-4">
+      <Card className="bg-muted">
+        <CardContent className="grid gap-4 sm:flex sm:items-start sm:justify-between">
           <div className="grid gap-1">
             <p className="text-base font-medium">
               Welcome. Take a look at what your dashboard will look like soon!
@@ -46,31 +348,58 @@ export function DashboardContent() {
               Toggle on or off to see dummy data.
             </p>
           </div>
-          <Switch aria-label="Toggle dummy data" />
+          <Switch
+            checked={showDummyData}
+            aria-label="Toggle dummy data"
+            onCheckedChange={setShowDummyData}
+          />
         </CardContent>
       </Card>
 
-      <Card>
+      <Card className="bg-secondary/70">
         <CardHeader>
           <CardTitle>Hit Your Hygiene Milestones</CardTitle>
         </CardHeader>
         <CardContent className="grid gap-5">
-          <div className="flex items-center justify-between gap-4 text-sm">
-            <span>Total Suppressed Emails:</span>
-            <span>Wipe out 10 more to level up!</span>
+          <div className="grid gap-2 text-sm sm:flex sm:items-center sm:justify-between">
+            <span>
+              Total Suppressed Emails:{" "}
+              <AnimatedNumber value={totalSuppressed} />
+            </span>
+            <span>
+              Wipe out <AnimatedNumber value={nextMilestoneRemaining} />{" "}
+              more to level up!
+            </span>
           </div>
           <div className="grid gap-2">
-            <div className="relative mx-6 h-8">
-              <div className="absolute top-4 right-0 left-0 border-t" />
-              {milestoneLabels.map((label, index) => (
-                <div
-                  key={label}
-                  className="absolute top-2 flex -translate-x-1/2 flex-col items-center gap-1"
-                  style={{ left: `${(index / (milestoneLabels.length - 1)) * 100}%` }}
-                >
-                  <span className="size-5 rounded-full border bg-background" />
-                </div>
-              ))}
+            <div className="relative grid h-8 grid-cols-8 items-center gap-0">
+              <div className="absolute top-1/2 right-0 left-0 h-px -translate-y-1/2 bg-[#d1d5db]" />
+              <div
+                className="absolute top-1/2 left-0 h-px -translate-y-1/2 bg-[#0043CE] transition-[width] duration-700 ease-out"
+                style={{ width: `${milestoneProgressPercent}%` }}
+              />
+              {milestoneLabels.map((label, index) => {
+                const isReached = totalSuppressed >= milestoneValues[index]
+
+                return (
+                  <div
+                    key={label}
+                    className="relative z-10 flex flex-col items-center gap-1"
+                  >
+                    <span
+                      className={
+                        isReached
+                          ? "flex size-5 items-center justify-center rounded-full border border-[#0043CE] bg-[#0043CE] transition-colors"
+                          : "flex size-5 items-center justify-center rounded-full border border-border bg-white transition-colors"
+                      }
+                    >
+                      {isReached ? (
+                        <Check className="size-3 text-white" strokeWidth={3} />
+                      ) : null}
+                    </span>
+                  </div>
+                )
+              })}
             </div>
             <div className="mx-3 grid grid-cols-8 text-center text-xs text-muted-foreground">
               {milestoneLabels.map((label) => (
@@ -82,7 +411,9 @@ export function DashboardContent() {
       </Card>
 
       <section className="grid gap-6">
-        <h1 className="text-3xl font-semibold tracking-normal">July 2026</h1>
+        <h1 className="text-2xl font-semibold tracking-normal sm:text-3xl">
+          {dashboardDemoData.monthLabel}
+        </h1>
         <div className="grid gap-6 lg:grid-cols-[1.2fr_0.85fr]">
           <div className="grid gap-3 sm:grid-cols-2">
             {kpis.map((item) => {
@@ -92,11 +423,13 @@ export function DashboardContent() {
                 <Card key={item.label}>
                   <CardContent className="grid min-h-40 gap-4">
                     <div className="flex size-14 items-center justify-center rounded-full bg-muted">
-                      <Icon className="size-7" />
+                      <Icon className="size-7 text-[#346ce6]" />
                     </div>
                     <div className="mt-auto grid gap-1">
                       <p className="text-sm text-muted-foreground">{item.label}</p>
-                      <p className="text-4xl font-semibold">{item.value}</p>
+                      <p className="text-3xl font-semibold sm:text-4xl">
+                        <AnimatedDisplayNumber value={item.value} />
+                      </p>
                     </div>
                   </CardContent>
                 </Card>
@@ -105,37 +438,254 @@ export function DashboardContent() {
           </div>
 
           <Card>
-            <CardContent className="flex min-h-full flex-col items-center justify-center gap-4">
-              <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
-                <span className="size-4 rounded-full bg-foreground" />
-                No Data
-              </div>
-              <div className="flex aspect-square w-full max-w-72 items-center justify-center rounded-full bg-foreground p-16">
-                <div className="size-full rounded-full bg-background" />
-              </div>
+            <CardContent className="flex min-h-full flex-col justify-center gap-4">
+              {distribution.length ? (
+                <ChartContainer
+                  config={emailStatusChartConfig}
+                  className="mx-auto aspect-square h-[340px] w-full max-w-[380px]"
+                >
+                  <PieChart>
+                    <ChartTooltip
+                      cursor={false}
+                      content={
+                        <ChartTooltipContent hideLabel nameKey="status" />
+                      }
+                    />
+                    <Pie
+                      data={emailStatusChartData}
+                      dataKey="emails"
+                      nameKey="label"
+                      innerRadius={72}
+                      outerRadius={125}
+                      strokeWidth={5}
+                      shape={(props: PieSectorShapeProps) =>
+                        renderEmailStatusSector(props, activeStatusKey)
+                      }
+                      onMouseEnter={(item) => {
+                        const payload =
+                          item.payload as EmailStatusChartItem | undefined
+
+                        if (payload?.status) {
+                          setActiveStatus(payload.status)
+                        }
+                      }}
+                      onClick={(item) => {
+                        const payload =
+                          item.payload as EmailStatusChartItem | undefined
+
+                        if (payload?.status) {
+                          setActiveStatus(payload.status)
+                        }
+                      }}
+                    >
+                      <Label
+                        content={({ viewBox }) => {
+                          if (
+                            !viewBox ||
+                            !("cx" in viewBox) ||
+                            !("cy" in viewBox) ||
+                            typeof viewBox.cx !== "number" ||
+                            typeof viewBox.cy !== "number"
+                          ) {
+                            return null
+                          }
+
+                          return (
+                            <text
+                              x={viewBox.cx}
+                              y={viewBox.cy}
+                              textAnchor="middle"
+                              dominantBaseline="middle"
+                            >
+                              <tspan
+                                x={viewBox.cx}
+                                y={viewBox.cy - 8}
+                                className="fill-foreground text-2xl font-semibold"
+                              >
+                                {formatNumber(animatedActiveStatusPercent)}%
+                              </tspan>
+                              <tspan
+                                x={viewBox.cx}
+                                y={viewBox.cy + 16}
+                                className="fill-muted-foreground text-xs"
+                              >
+                                {activeChartItem?.label}
+                              </tspan>
+                            </text>
+                          )
+                        }}
+                      />
+                    </Pie>
+                  </PieChart>
+                </ChartContainer>
+              ) : (
+                <div className="flex aspect-square w-full max-w-72 items-center justify-center self-center rounded-full bg-foreground p-16">
+                  <div className="size-full rounded-full bg-background" />
+                </div>
+              )}
             </CardContent>
           </Card>
         </div>
       </section>
 
       <section className="grid gap-6">
-        <h2 className="text-3xl font-semibold tracking-normal">
+        <h2 className="text-2xl font-semibold tracking-normal sm:text-3xl">
           Historical Performance
         </h2>
-        <Card>
-          <CardContent className="grid min-h-72 gap-4">
-            <div className="grid grid-cols-[2rem_1fr] gap-3 text-xs text-muted-foreground">
-              <div className="grid content-between py-2">
-                {["1.0", "0.8", "0.6", "0.4", "0.2", "0"].map((label) => (
-                  <span key={label}>{label}</span>
-                ))}
+        <Card className="@container/card">
+          <CardContent className="grid min-h-72 gap-5 pt-3 pb-5 sm:px-6">
+            {historical.length ? (
+              <>
+                <ChartContainer
+                  config={historicalChartConfig}
+                  className="aspect-auto h-[320px] w-full"
+                >
+                  <AreaChart
+                    data={visibleHistorical}
+                    margin={{
+                      top: 10,
+                      right: 20,
+                      left: 8,
+                      bottom: 0,
+                    }}
+                  >
+                    <CartesianGrid vertical={false} />
+                    <XAxis
+                      dataKey="month"
+                      tickLine={false}
+                      axisLine={false}
+                      tickMargin={8}
+                    />
+                    <YAxis
+                      tickLine={false}
+                      axisLine={false}
+                      tickMargin={8}
+                      tickFormatter={(value) => numberFormatter.format(value)}
+                    />
+                    <ChartTooltip
+                      cursor={false}
+                      content={<ChartTooltipContent />}
+                    />
+                    <defs>
+                      <linearGradient id="fillValid" x1="0" y1="0" x2="0" y2="1">
+                        <stop
+                          offset="5%"
+                          stopColor={historicalChartConfig.valid.color}
+                          stopOpacity={0.8}
+                        />
+                        <stop
+                          offset="95%"
+                          stopColor={historicalChartConfig.valid.color}
+                          stopOpacity={0.1}
+                        />
+                      </linearGradient>
+                      <linearGradient id="fillInvalid" x1="0" y1="0" x2="0" y2="1">
+                        <stop
+                          offset="5%"
+                          stopColor={historicalChartConfig.invalid.color}
+                          stopOpacity={0.8}
+                        />
+                        <stop
+                          offset="95%"
+                          stopColor={historicalChartConfig.invalid.color}
+                          stopOpacity={0.1}
+                        />
+                      </linearGradient>
+                      <linearGradient id="fillRisky" x1="0" y1="0" x2="0" y2="1">
+                        <stop
+                          offset="5%"
+                          stopColor={historicalChartConfig.risky.color}
+                          stopOpacity={0.8}
+                        />
+                        <stop
+                          offset="95%"
+                          stopColor={historicalChartConfig.risky.color}
+                          stopOpacity={0.1}
+                        />
+                      </linearGradient>
+                      <linearGradient
+                        id="fillRestricted"
+                        x1="0"
+                        y1="0"
+                        x2="0"
+                        y2="1"
+                      >
+                        <stop
+                          offset="5%"
+                          stopColor={historicalChartConfig.restricted.color}
+                          stopOpacity={0.8}
+                        />
+                        <stop
+                          offset="95%"
+                          stopColor={historicalChartConfig.restricted.color}
+                          stopOpacity={0.1}
+                        />
+                      </linearGradient>
+                    </defs>
+                    <Area
+                      dataKey="valid"
+                      name="valid"
+                      type="natural"
+                      fill="url(#fillValid)"
+                      fillOpacity={0.4}
+                      stroke={historicalChartConfig.valid.color}
+                      stackId="a"
+                    />
+                    <Area
+                      dataKey="risky"
+                      name="risky"
+                      type="natural"
+                      fill="url(#fillRisky)"
+                      fillOpacity={0.4}
+                      stroke={historicalChartConfig.risky.color}
+                      stackId="a"
+                    />
+                    <Area
+                      dataKey="invalid"
+                      name="invalid"
+                      type="natural"
+                      fill="url(#fillInvalid)"
+                      fillOpacity={0.4}
+                      stroke={historicalChartConfig.invalid.color}
+                      stackId="a"
+                    />
+                    <Area
+                      dataKey="restricted"
+                      name="restricted"
+                      type="natural"
+                      fill="url(#fillRestricted)"
+                      fillOpacity={0.4}
+                      stroke={historicalChartConfig.restricted.color}
+                      stackId="a"
+                    />
+                  </AreaChart>
+                </ChartContainer>
+                <div className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-sm text-muted-foreground">
+                  {(["valid", "risky", "invalid", "restricted"] as const).map(
+                    (status) => (
+                      <div key={status} className="flex items-center gap-2">
+                        <span
+                          className="size-2.5 rounded-full"
+                          style={{
+                            backgroundColor:
+                              historicalChartConfig[status].color,
+                          }}
+                        />
+                        <span>{historicalChartConfig[status].label}</span>
+                      </div>
+                    )
+                  )}
+                </div>
+              </>
+            ) : (
+              <div className="flex min-h-60 items-end gap-3 border-b border-l px-4 py-3">
+                <div className="grid w-full gap-8 py-3">
+                  {Array.from({ length: 6 }).map((_, index) => (
+                    <div key={index} className="border-t" />
+                  ))}
+                </div>
               </div>
-              <div className="grid gap-8 py-3">
-                {Array.from({ length: 6 }).map((_, index) => (
-                  <div key={index} className="border-t" />
-                ))}
-              </div>
-            </div>
+            )}
           </CardContent>
         </Card>
       </section>

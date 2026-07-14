@@ -15,10 +15,10 @@ export default async function BillingFailedPage() {
   await getAppUserOrRedirect()
 
   return (
-    <main className="min-h-svh bg-background p-6 md:p-20">
+    <main className="min-h-svh bg-background p-4 sm:p-6 md:p-20">
       <div className="mx-auto grid max-w-lg gap-6">
         <div className="grid gap-4">
-          <h1 className="text-3xl font-semibold tracking-normal">
+          <h1 className="text-2xl font-semibold tracking-normal sm:text-3xl">
             Payment Failed!
           </h1>
           <p className="text-muted-foreground">
@@ -27,7 +27,7 @@ export default async function BillingFailedPage() {
         </div>
 
         <Card>
-          <CardContent className="grid gap-4 text-xl">
+          <CardContent className="grid gap-4 text-base sm:text-xl">
             <div className="flex items-center justify-between">
               <span>Plan:</span>
               <span>1K</span>
@@ -44,7 +44,7 @@ export default async function BillingFailedPage() {
           <span>Please check your payment details and try again.</span>
         </p>
 
-        <div className="flex flex-wrap gap-2">
+        <div className="grid gap-2 sm:flex sm:flex-wrap">
           <Button>Retry Payment</Button>
           <Link
             href="/billing"

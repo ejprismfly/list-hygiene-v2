@@ -1,5 +1,6 @@
 "use client"
 
+import { useState } from "react"
 import Link from "next/link"
 import { Info, Mail, ShoppingBag } from "lucide-react"
 
@@ -23,6 +24,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
+import { integrationDemoData } from "@/lib/demo-data"
 
 type SettingsContentProps = {
   connected?: boolean
@@ -56,38 +58,55 @@ const providers = [
 ]
 
 export function SettingsContent({ connected = false }: SettingsContentProps) {
+  const [connections, setConnections] = useState(
+    connected ? integrationDemoData : []
+  )
+  const hasConnections = connections.length > 0
+
+  function addKlaviyoConnection() {
+    setConnections((current) =>
+      current.length ? current : integrationDemoData
+    )
+  }
+
   return (
     <div className="grid gap-6">
-      <h1 className="text-3xl font-semibold tracking-normal">Integrations</h1>
+      <h1 className="text-2xl font-semibold tracking-normal sm:text-3xl">
+        Integrations
+      </h1>
 
-      {connected ? (
-        <Table>
+      {hasConnections ? (
+        <Table className="min-w-[44rem]">
           <TableHeader>
             <TableRow>
               <TableHead>Platform</TableHead>
               <TableHead>Connection Name</TableHead>
+              <TableHead>Workspace</TableHead>
               <TableHead>Connected</TableHead>
               <TableHead>Status</TableHead>
               <TableHead className="w-40" />
             </TableRow>
           </TableHeader>
           <TableBody>
-            <TableRow>
-              <TableCell>Klaviyo</TableCell>
-              <TableCell>Prismfly Development1</TableCell>
-              <TableCell>March 9, 2026</TableCell>
-              <TableCell>
-                <Badge variant="secondary">Connected</Badge>
-              </TableCell>
-              <TableCell>
-                <Link
-                  href="/settings/klaviyo"
-                  className={buttonVariants({ className: "w-32" })}
-                >
-                  Configure
-                </Link>
-              </TableCell>
-            </TableRow>
+            {connections.map((connection) => (
+              <TableRow key={connection.connectionName}>
+                <TableCell>{connection.platform}</TableCell>
+                <TableCell>{connection.connectionName}</TableCell>
+                <TableCell>{connection.workspaceName}</TableCell>
+                <TableCell>{connection.connectedAt}</TableCell>
+                <TableCell>
+                  <Badge variant="secondary">{connection.status}</Badge>
+                </TableCell>
+                <TableCell>
+                  <Link
+                    href="/settings/klaviyo"
+                    className={buttonVariants({ className: "w-32" })}
+                  >
+                    Configure
+                  </Link>
+                </TableCell>
+              </TableRow>
+            ))}
           </TableBody>
         </Table>
       ) : (
@@ -96,9 +115,11 @@ export function SettingsContent({ connected = false }: SettingsContentProps) {
         </p>
       )}
 
-      <div className="grid w-fit gap-4">
+      <div className="grid w-full gap-4 sm:w-fit">
         <Dialog>
-          <DialogTrigger render={<Button />}>Add Connection</DialogTrigger>
+          <DialogTrigger render={<Button className="w-full sm:w-fit" />}>
+            Add Connection
+          </DialogTrigger>
           <DialogContent className="sm:max-w-4xl" showCloseButton={false}>
             <DialogHeader>
               <DialogTitle>Add Connections</DialogTitle>
@@ -114,19 +135,24 @@ export function SettingsContent({ connected = false }: SettingsContentProps) {
                 return (
                   <div
                     key={provider.name}
-                    className="flex items-center justify-between gap-4 rounded-lg border p-3"
+                    className="grid gap-3 rounded-lg border p-3 sm:flex sm:items-center sm:justify-between"
                   >
                     <div className="flex items-center gap-3 text-base font-medium">
                       <Icon className="size-5" />
                       {provider.name}
                     </div>
                     {provider.available ? (
-                      <Link
-                        href="/settings/klaviyo"
-                        className={buttonVariants({ className: "w-36" })}
+                      <DialogClose
+                        render={
+                          <Button
+                            type="button"
+                            className="w-full sm:w-36"
+                            onClick={addKlaviyoConnection}
+                          />
+                        }
                       >
                         {provider.status}
-                      </Link>
+                      </DialogClose>
                     ) : (
                       <Badge variant="secondary">{provider.status}</Badge>
                     )}
@@ -157,9 +183,9 @@ export function SettingsContent({ connected = false }: SettingsContentProps) {
           </DialogContent>
         </Dialog>
 
-        <div className="flex items-center gap-2 text-sm">
-          <Info className="size-4" />
-          Multiple connections will be available soon.
+        <div className="flex items-start gap-2 text-sm">
+          <Info className="mt-0.5 size-4" />
+          <span>Multiple connections will be available soon.</span>
         </div>
       </div>
     </div>

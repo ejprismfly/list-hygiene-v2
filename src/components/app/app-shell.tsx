@@ -8,16 +8,13 @@ import {
 } from "lucide-react"
 
 import { signOutAction } from "@/app/(auth)/actions"
+import { BrandLogo } from "@/components/app/brand-logo"
+import { MobileMenu } from "@/components/app/mobile-menu"
+import { WorkspaceSwitcher } from "@/components/app/workspace-switcher"
 import { Badge } from "@/components/ui/badge"
 import { Button, buttonVariants } from "@/components/ui/button"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
 import { Separator } from "@/components/ui/separator"
+import { demoWorkspaceContext } from "@/lib/demo-data"
 import { cn } from "@/lib/utils"
 
 type AppShellProps = {
@@ -53,66 +50,84 @@ const navItems = [
   },
 ] as const
 
+function WorkspaceControls({ showOrganization = false }: {
+  showOrganization?: boolean
+}) {
+  return (
+    <WorkspaceSwitcher
+      organizationName={demoWorkspaceContext.organizationName}
+      workspaces={demoWorkspaceContext.workspaces}
+      showOrganization={showOrganization}
+    />
+  )
+}
+
+function NavLinks({ active }: Pick<AppShellProps, "active">) {
+  return (
+    <nav className="grid gap-1">
+      {navItems.map((item) => {
+        const Icon = item.icon
+
+        return (
+          <Link
+            key={item.key}
+            href={item.href}
+            className={buttonVariants({
+              variant: active === item.key ? "secondary" : "ghost",
+              className: cn("h-10 w-full justify-start gap-2 text-base"),
+            })}
+          >
+            <Icon className="size-5" />
+            {item.label}
+          </Link>
+        )
+      })}
+    </nav>
+  )
+}
+
+function AccountActions({ userEmail }: Pick<AppShellProps, "userEmail">) {
+  return (
+    <div className="grid gap-2">
+      <Badge variant="outline" className="w-fit max-w-full">
+        <span className="truncate">{userEmail}</span>
+      </Badge>
+      <form action={signOutAction}>
+        <Button type="submit" className="w-fit gap-2">
+          <LogOut className="size-4" />
+          Logout
+        </Button>
+      </form>
+    </div>
+  )
+}
+
 export function AppShell({ active, userEmail, children }: AppShellProps) {
   return (
-    <div className="flex min-h-svh bg-background">
-      <aside className="flex w-60 shrink-0 flex-col border-r bg-background p-3">
-        <div className="px-2 py-3 text-base font-semibold">List Hygiene</div>
-        <Separator className="my-2" />
-
-        <div className="grid gap-2">
-          <Select defaultValue="secondary">
-            <SelectTrigger className="w-full">
-              <SelectValue placeholder="Select workspace" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="default">Default Workspace</SelectItem>
-              <SelectItem value="secondary">Secondary</SelectItem>
-            </SelectContent>
-          </Select>
-
-          <Button variant="outline" size="sm" className="w-full">
-            + New workspace
-          </Button>
-          <Button variant="destructive" size="sm" className="w-full">
-            Archive workspace
-          </Button>
+    <div className="min-h-svh bg-background md:flex">
+      <aside className="sticky top-0 hidden h-svh max-h-svh w-60 shrink-0 flex-col overflow-hidden border-r bg-background p-3 md:flex">
+        <div className="shrink-0 px-2 py-3">
+          <BrandLogo />
         </div>
 
-        <nav className="mt-4 grid gap-1">
-          {navItems.map((item) => {
-            const Icon = item.icon
+        <Separator className="my-2 shrink-0" />
 
-            return (
-              <Link
-                key={item.key}
-                href={item.href}
-                className={buttonVariants({
-                  variant: active === item.key ? "secondary" : "ghost",
-                  className: cn("h-10 w-full justify-start gap-2 text-base"),
-                })}
-              >
-                <Icon className="size-5" />
-                {item.label}
-              </Link>
-            )
-          })}
-        </nav>
+        <div className="min-h-0 flex-1 overflow-y-auto pr-1">
+          <WorkspaceControls />
 
-        <div className="mt-auto grid gap-2 px-2 pb-1">
-          <Badge variant="outline" className="w-fit max-w-full">
-            <span className="truncate">{userEmail}</span>
-          </Badge>
-          <form action={signOutAction}>
-            <Button type="submit" className="w-fit gap-2">
-              <LogOut className="size-4" />
-              Logout
-            </Button>
-          </form>
+          <div className="mt-4">
+            <NavLinks active={active} />
+          </div>
+        </div>
+
+        <div className="shrink-0 border-t px-2 pt-3 pb-1">
+          <AccountActions userEmail={userEmail} />
         </div>
       </aside>
 
-      <main className="min-w-0 flex-1 p-8 md:p-10">
+      <MobileMenu active={active} userEmail={userEmail} />
+
+      <main className="min-w-0 flex-1 p-4 sm:p-6 md:p-10">
         <div className="mx-auto w-full max-w-5xl">{children}</div>
       </main>
     </div>

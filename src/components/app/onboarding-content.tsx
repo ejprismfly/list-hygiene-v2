@@ -5,17 +5,17 @@ import { Badge } from "@/components/ui/badge"
 
 export function OnboardingContent() {
   return (
-    <main className="flex min-h-svh items-center justify-center bg-background p-6">
+    <main className="flex min-h-svh items-center justify-center bg-background p-4 sm:p-6">
       <div className="grid max-w-3xl gap-5 text-center">
-        <h1 className="text-5xl font-semibold tracking-normal">
+        <h1 className="text-3xl font-semibold tracking-normal sm:text-5xl">
           Let&apos;s Get You Connected!
         </h1>
-        <p className="text-lg text-muted-foreground">
+        <p className="text-base text-muted-foreground sm:text-lg">
           We noticed you haven&apos;t connected your Klaviyo account yet. Let&apos;s
           walk through it together.
         </p>
         <div>
-          <Badge variant="secondary" className="h-auto px-4 py-2 text-base">
+          <Badge variant="secondary" className="h-auto whitespace-normal px-4 py-2 text-center text-sm sm:text-base">
             Unlock 300 trial credits when you connect your email platform. *
           </Badge>
         </div>

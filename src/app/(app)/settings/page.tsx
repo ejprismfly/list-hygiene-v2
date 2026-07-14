@@ -19,7 +19,7 @@ type SettingsPageProps = {
 export default async function SettingsPage({ searchParams }: SettingsPageProps) {
   const user = await getAppUserOrRedirect()
   const params = await searchParams
-  const connected = params?.connected === "1"
+  const connected = params?.connected ? params.connected === "1" : true
 
   return (
     <AppShell active="settings" userEmail={user.email}>

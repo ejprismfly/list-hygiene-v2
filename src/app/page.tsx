@@ -1,5 +1,6 @@
 import Link from "next/link";
 
+import { BrandLogo } from "@/components/app/brand-logo";
 import { buttonVariants } from "@/components/ui/button";
 import {
   Card,
@@ -14,7 +15,9 @@ export default function Home() {
     <main className="flex min-h-svh items-center justify-center bg-muted/30 p-6">
       <Card className="w-full max-w-sm">
         <CardHeader>
-          <CardTitle>List Hygiene</CardTitle>
+          <CardTitle>
+            <BrandLogo />
+          </CardTitle>
           <CardDescription>Sign in or create an account to continue.</CardDescription>
         </CardHeader>
         <CardContent className="grid gap-2">

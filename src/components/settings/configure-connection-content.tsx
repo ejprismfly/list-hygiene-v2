@@ -1,3 +1,10 @@
+"use client"
+
+import { useState } from "react"
+import Link from "next/link"
+import { CheckCircle2 } from "lucide-react"
+
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -11,6 +18,7 @@ import {
 } from "@/components/ui/select"
 import { Separator } from "@/components/ui/separator"
 import { Switch } from "@/components/ui/switch"
+import { buttonVariants } from "@/components/ui/button"
 
 const retrySettings = [
   {
@@ -38,10 +46,25 @@ const retrySettings = [
 ]
 
 export function ConfigureConnectionContent() {
+  const [connectionName, setConnectionName] = useState("Prismfly Development1")
+  const [fixTypos, setFixTypos] = useState(true)
+  const [statusMessage, setStatusMessage] = useState("")
+  const [removed, setRemoved] = useState(false)
+
+  function saveConnection() {
+    setRemoved(false)
+    setStatusMessage(`${connectionName || "Klaviyo"} settings saved.`)
+  }
+
+  function removeConnection() {
+    setRemoved(true)
+    setStatusMessage("Klaviyo connection removed from this workspace.")
+  }
+
   return (
-    <main className="min-h-svh bg-background p-6 md:p-20">
+    <main className="min-h-svh bg-background p-4 sm:p-6 md:p-20">
       <div className="mx-auto grid w-full max-w-3xl gap-4">
-        <h1 className="mb-4 text-3xl font-semibold tracking-normal">
+        <h1 className="mb-2 text-2xl font-semibold tracking-normal sm:mb-4 sm:text-3xl">
           Configure Your Connection
         </h1>
 
@@ -53,10 +76,20 @@ export function ConfigureConnectionContent() {
             <Input
               id="connection-name"
               name="connection-name"
-              defaultValue="Prismfly Development1"
+              value={connectionName}
+              onChange={(event) => setConnectionName(event.target.value)}
+              disabled={removed}
             />
           </CardContent>
         </Card>
+
+        {statusMessage && (
+          <Alert>
+            <CheckCircle2 className="size-4" />
+            <AlertTitle>Connection updated</AlertTitle>
+            <AlertDescription>{statusMessage}</AlertDescription>
+          </Alert>
+        )}
 
         <Card>
           <CardHeader>
@@ -71,7 +104,7 @@ export function ConfigureConnectionContent() {
               No segments found. Create a segment in Klaviyo, then refresh.
             </p>
             <Select defaultValue="all-emails">
-              <SelectTrigger className="w-full max-w-md">
+              <SelectTrigger className="w-full sm:max-w-md">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -84,9 +117,14 @@ export function ConfigureConnectionContent() {
         <Card>
           <CardContent className="grid gap-6">
             <div className="grid gap-3">
-              <div className="flex items-center gap-4">
+              <div className="flex items-center justify-between gap-4 sm:justify-start">
                 <h2 className="text-xl font-medium">Fix Typos</h2>
-                <Switch defaultChecked aria-label="Fix typos" />
+                <Switch
+                  checked={fixTypos}
+                  disabled={removed}
+                  aria-label="Fix typos"
+                  onCheckedChange={setFixTypos}
+                />
               </div>
               <p className="text-sm text-muted-foreground">
                 Fix domain typos with verified corrections that update or merge
@@ -102,7 +140,7 @@ export function ConfigureConnectionContent() {
                   {setting.description}
                 </p>
                 <Select defaultValue={setting.value}>
-                  <SelectTrigger className="w-full max-w-md">
+                  <SelectTrigger className="w-full sm:max-w-md">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -116,10 +154,21 @@ export function ConfigureConnectionContent() {
           </CardContent>
         </Card>
 
-        <div className="mt-2 flex items-center justify-between gap-4">
-          <Button>Save</Button>
-          <Button variant="destructive">Remove Connection</Button>
+        <div className="mt-2 grid gap-3 sm:flex sm:items-center sm:justify-between">
+          <Button type="button" disabled={removed} onClick={saveConnection}>
+            Save
+          </Button>
+          <Button type="button" variant="destructive" onClick={removeConnection}>
+            Remove Connection
+          </Button>
         </div>
+
+        <Link
+          href="/settings"
+          className={buttonVariants({ variant: "outline", className: "w-fit" })}
+        >
+          Back to integrations
+        </Link>
 
         <p className="text-sm text-muted-foreground">
           Having any issues? Contact{" "}

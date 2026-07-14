@@ -10,8 +10,8 @@ export function ProfileContent({ email }: { email: string }) {
   return (
     <div className="grid gap-10">
       <section className="grid gap-8">
-        <div className="flex items-center justify-between gap-4">
-          <h1 className="text-3xl font-semibold tracking-normal">
+        <div className="grid gap-3 sm:flex sm:items-center sm:justify-between">
+          <h1 className="text-2xl font-semibold tracking-normal sm:text-3xl">
             Account Information
           </h1>
           <form action={signOutAction}>
@@ -21,10 +21,10 @@ export function ProfileContent({ email }: { email: string }) {
 
         <div className="grid gap-4">
           <p className="text-lg">Email Address</p>
-          <Card className="w-fit">
+          <Card className="w-full sm:w-fit">
             <CardContent className="flex items-center gap-2">
               <Mail className="size-4" />
-              <span>{email}</span>
+              <span className="min-w-0 truncate">{email}</span>
             </CardContent>
           </Card>
           <a
@@ -42,10 +42,12 @@ export function ProfileContent({ email }: { email: string }) {
       <Separator />
 
       <section className="grid gap-6">
-        <h2 className="text-3xl font-semibold tracking-normal">Notifications</h2>
+        <h2 className="text-2xl font-semibold tracking-normal sm:text-3xl">
+          Notifications
+        </h2>
         <div className="grid gap-4">
           <Card>
-            <CardContent className="flex items-center justify-between gap-4">
+            <CardContent className="grid gap-3 sm:flex sm:items-center sm:justify-between">
               <div className="flex items-center gap-3 text-lg">
                 <Mail className="size-5" />
                 Email
@@ -54,7 +56,7 @@ export function ProfileContent({ email }: { email: string }) {
             </CardContent>
           </Card>
           <Card>
-            <CardContent className="flex items-center justify-between gap-4">
+            <CardContent className="grid gap-3 sm:flex sm:items-center sm:justify-between">
               <div className="flex items-center gap-3 text-lg">
                 <MessageCircle className="size-5" />
                 Slack
