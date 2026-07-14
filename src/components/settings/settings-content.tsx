@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import Link from "next/link"
 import { Info, Mail, ShoppingBag } from "lucide-react"
 
@@ -24,10 +24,17 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import { integrationDemoData } from "@/lib/demo-data"
 
 type SettingsContentProps = {
   connected?: boolean
+}
+
+type KlaviyoConnection = {
+  id: string
+  platform?: string
+  connection_name?: string | null
+  connection_date?: string
+  status?: string
 }
 
 const providers = [
@@ -58,22 +65,109 @@ const providers = [
 ]
 
 export function SettingsContent({ connected = false }: SettingsContentProps) {
-  const [connections, setConnections] = useState(
-    connected ? integrationDemoData : []
-  )
+  const [connections, setConnections] = useState<KlaviyoConnection[]>([])
+  const [statusMessage, setStatusMessage] = useState("")
   const hasConnections = connections.length > 0
 
-  function addKlaviyoConnection() {
-    setConnections((current) =>
-      current.length ? current : integrationDemoData
-    )
+  useEffect(() => {
+    let cancelled = false
+
+    async function loadConnections() {
+      const response = await fetch("/api/oauth/klaviyo/accounts")
+      if (!response.ok) {
+        if (connected) {
+          setStatusMessage("Unable to load Klaviyo connections.")
+        }
+        return
+      }
+
+      const data = (await response.json()) as KlaviyoConnection[]
+      if (!cancelled) {
+        setConnections(data)
+      }
+    }
+
+    loadConnections()
+    return () => {
+      cancelled = true
+    }
+  }, [connected])
+
+  function randomString(length: number) {
+    const charset =
+      "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~"
+    const values = new Uint8Array(length)
+    crypto.getRandomValues(values)
+
+    return Array.from(values, (value) => charset[value % charset.length]).join("")
   }
+
+  async function codeChallenge(verifier: string) {
+    const digest = await crypto.subtle.digest(
+      "SHA-256",
+      new TextEncoder().encode(verifier)
+    )
+
+    return btoa(String.fromCharCode(...new Uint8Array(digest)))
+      .replace(/\+/g, "-")
+      .replace(/\//g, "_")
+      .replace(/=+$/, "")
+  }
+
+  async function addKlaviyoConnection() {
+    const clientId = process.env.NEXT_PUBLIC_KLAVIYO_CLIENT_ID
+    if (!clientId) {
+      setStatusMessage("Klaviyo client ID is not configured.")
+      return
+    }
+
+    const verifier = randomString(64)
+    const challenge = await codeChallenge(verifier)
+    document.cookie = [
+      `klaviyo_pkce_verifier=${verifier}`,
+      "Path=/",
+      `Max-Age=${10 * 60}`,
+      "SameSite=Lax",
+    ].join("; ")
+
+    const redirectUri = encodeURIComponent(
+      `${window.location.origin}/api/oauth/klaviyo/callback`
+    )
+    const scopes =
+      "segments:read segments:write lists:read lists:write profiles:read profiles:write accounts:read subscriptions:write subscriptions:read"
+    const authUrl = `https://www.klaviyo.com/oauth/authorize?response_type=code&client_id=${clientId}&redirect_uri=${redirectUri}&scope=${encodeURIComponent(
+      scopes
+    )}&code_challenge_method=S256&code_challenge=${challenge}`
+
+    window.open(authUrl, "Klaviyo OAuth", "scrollbars=yes,width=800,height=800")
+  }
+
+  useEffect(() => {
+    function onMessage(event: MessageEvent) {
+      if (event.data?.status === "connected") {
+        setStatusMessage("Klaviyo connection added.")
+        fetch("/api/oauth/klaviyo/accounts")
+          .then((response) => response.json())
+          .then((data) => setConnections(data))
+      }
+      if (event.data?.status === "blocked") {
+        setStatusMessage("That Klaviyo account is already connected.")
+      }
+    }
+
+    window.addEventListener("message", onMessage)
+    return () => window.removeEventListener("message", onMessage)
+  }, [])
 
   return (
     <div className="grid gap-6">
       <h1 className="text-2xl font-semibold tracking-normal sm:text-3xl">
         Integrations
       </h1>
+
+      {statusMessage && (
+        <p className="text-sm text-muted-foreground">{statusMessage}</p>
+      )}
 
       {hasConnections ? (
         <Table className="min-w-[44rem]">
@@ -89,17 +183,19 @@ export function SettingsContent({ connected = false }: SettingsContentProps) {
           </TableHeader>
           <TableBody>
             {connections.map((connection) => (
-              <TableRow key={connection.connectionName}>
-                <TableCell>{connection.platform}</TableCell>
-                <TableCell>{connection.connectionName}</TableCell>
-                <TableCell>{connection.workspaceName}</TableCell>
-                <TableCell>{connection.connectedAt}</TableCell>
+              <TableRow key={connection.id}>
+                <TableCell>{connection.platform || "Klaviyo"}</TableCell>
+                <TableCell>{connection.connection_name || "Klaviyo"}</TableCell>
+                <TableCell>Current workspace</TableCell>
+                <TableCell>{connection.connection_date || "-"}</TableCell>
                 <TableCell>
-                  <Badge variant="secondary">{connection.status}</Badge>
+                  <Badge variant="secondary">
+                    {connection.status || "Connected"}
+                  </Badge>
                 </TableCell>
                 <TableCell>
                   <Link
-                    href="/settings/klaviyo"
+                    href={`/settings/klaviyo?id=${connection.id}`}
                     className={buttonVariants({ className: "w-32" })}
                   >
                     Configure
@@ -143,16 +239,16 @@ export function SettingsContent({ connected = false }: SettingsContentProps) {
                     </div>
                     {provider.available ? (
                       <DialogClose
-                        render={
-                          <Button
-                            type="button"
-                            className="w-full sm:w-36"
-                            onClick={addKlaviyoConnection}
-                          />
-                        }
-                      >
-                        {provider.status}
-                      </DialogClose>
+                          render={
+                            <Button
+                              type="button"
+                              className="w-full sm:w-36"
+                              onClick={addKlaviyoConnection}
+                            />
+                          }
+                        >
+                          {provider.status}
+                        </DialogClose>
                     ) : (
                       <Badge variant="secondary">{provider.status}</Badge>
                     )}

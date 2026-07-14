@@ -1,8 +1,9 @@
 "use client"
 
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState, useTransition } from "react"
 import {
   Archive,
+  Loader2,
   Plus,
   Settings,
   Trash2,
@@ -38,284 +39,423 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import { demoUser, type WorkspaceOption } from "@/lib/demo-data"
+import {
+  readWorkspaceSelection,
+  serializeClientCookie,
+  writeWorkspaceSelection,
+  WORKSPACE_ID_COOKIE,
+  WORKSPACE_ORGANIZATION_COOKIE,
+} from "@/lib/workspace-utils"
 
 type WorkspaceSwitcherProps = {
-  organizationName: string
-  workspaces: WorkspaceOption[]
   showOrganization?: boolean
+}
+
+type OrganizationOption = {
+  id: string
+  name: string
+  role?: "owner" | "admin" | "member" | null
+}
+
+type WorkspaceOption = {
+  id: string
+  organization_id: string
+  name: string
+  is_default?: boolean | null
+  has_connected_account?: boolean
+  member_count?: number
 }
 
 type WorkspaceMember = {
   id: string
-  workspaceId: string
-  email: string
-  role: "admin" | "member"
-  status: "active" | "pending"
+  user_id: string
+  email: string | null
+  name: string | null
+  role: "owner" | "admin" | "member"
+  status: "active" | "disabled" | "invited"
+  workspace_ids: string[]
 }
 
-const storageKey = "list-hygiene-workspace-id"
-const initialMembers: WorkspaceMember[] = [
-  {
-    id: "member-owner",
-    workspaceId: "8a1b3b27-fd47-4f8e-b4eb-37d47b32d824",
-    email: demoUser.email,
-    role: "admin",
-    status: "active",
-  },
-  {
-    id: "member-ops",
-    workspaceId: "8a1b3b27-fd47-4f8e-b4eb-37d47b32d824",
-    email: "ops@prismfly.com",
-    role: "member",
-    status: "active",
-  },
-  {
-    id: "member-invite",
-    workspaceId: "8a1b3b27-fd47-4f8e-b4eb-37d47b32d824",
-    email: "analyst@prismfly.com",
-    role: "member",
-    status: "pending",
-  },
-  {
-    id: "member-test-owner",
-    workspaceId: "e4ab13de-2dc1-463f-ad80-a77525887b96",
-    email: demoUser.email,
-    role: "admin",
-    status: "active",
-  },
-]
+type WorkspaceInvitation = {
+  id: string
+  email: string
+  role: "admin" | "member"
+  status: "pending" | "accepted" | "revoked" | "expired"
+  workspace_ids: string[]
+}
 
 function workspaceLabel(name: string) {
   return /\bworkspace\b/i.test(name) ? name : `${name} Workspace`
 }
 
-function getInitialWorkspaceId(workspaces: WorkspaceOption[]) {
+function canManage(role?: string | null) {
+  return role === "owner" || role === "admin"
+}
+
+function headersFor(organizationId: string | null, workspaceId?: string | null) {
+  const headers = new Headers({ "Content-Type": "application/json" })
+  if (organizationId) {
+    headers.set("x-organization-id", organizationId)
+  }
+  if (workspaceId) {
+    headers.set("x-workspace-id", workspaceId)
+  }
+  return headers
+}
+
+function persistSelection(organizationId: string | null, workspaceId: string | null) {
   if (typeof window === "undefined") {
-    return workspaces[0]?.id ?? ""
+    return
   }
 
-  const storedId = localStorage.getItem(storageKey)
-
-  if (storedId && workspaces.some((workspace) => workspace.id === storedId)) {
-    return storedId
-  }
-
-  return workspaces[0]?.id ?? ""
+  writeWorkspaceSelection({ organizationId, workspaceId }, window.localStorage)
+  document.cookie = serializeClientCookie(
+    WORKSPACE_ORGANIZATION_COOKIE,
+    organizationId
+  )
+  document.cookie = serializeClientCookie(WORKSPACE_ID_COOKIE, workspaceId)
 }
 
 export function WorkspaceSwitcher({
-  organizationName,
-  workspaces,
-  showOrganization = true,
+  showOrganization = false,
 }: WorkspaceSwitcherProps) {
-  const [items, setItems] = useState(workspaces)
-  const [selectedId, setSelectedId] = useState(() =>
-    getInitialWorkspaceId(workspaces)
-  )
-  const [createDialogOpen, setCreateDialogOpen] = useState(false)
+  const [organizations, setOrganizations] = useState<OrganizationOption[]>([])
+  const [workspaces, setWorkspaces] = useState<WorkspaceOption[]>([])
+  const [members, setMembers] = useState<WorkspaceMember[]>([])
+  const [invitations, setInvitations] = useState<WorkspaceInvitation[]>([])
+  const [organizationId, setOrganizationId] = useState<string | null>(null)
+  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [editName, setEditName] = useState("")
   const [draftName, setDraftName] = useState("")
   const [inviteEmail, setInviteEmail] = useState("")
-  const [inviteRole, setInviteRole] = useState<WorkspaceMember["role"]>("member")
-  const [members, setMembers] = useState(initialMembers)
+  const [inviteRole, setInviteRole] = useState<"admin" | "member">("member")
+  const [createDialogOpen, setCreateDialogOpen] = useState(false)
+  const [managerOpen, setManagerOpen] = useState(false)
   const [message, setMessage] = useState("")
   const [switchingWorkspaceName, setSwitchingWorkspaceName] = useState("")
+  const [isPending, startTransition] = useTransition()
 
-  const activeItems = useMemo(
-    () => items.filter((item) => !item.id.startsWith("archived:")),
-    [items]
+  const selectedOrganization = organizations.find(
+    (organization) => organization.id === organizationId
   )
-  const selectedWorkspace = activeItems.find((item) => item.id === selectedId)
-  const selectedMembers = members.filter(
-    (member) => member.workspaceId === selectedWorkspace?.id
+  const selectedWorkspace = workspaces.find((workspace) => workspace.id === selectedId)
+  const selectedMembers = members.filter((member) =>
+    member.workspace_ids.includes(selectedId || "")
   )
+  const selectedInvitations = invitations.filter((invitation) =>
+    invitation.workspace_ids.includes(selectedId || "")
+  )
+  const managerEnabled = canManage(selectedOrganization?.role)
 
-  function beginWorkspaceSwitch(workspaceId: string, name: string) {
-    if (workspaceId === selectedId) {
+  useEffect(() => {
+    let cancelled = false
+
+    async function loadOrganizations() {
+      const response = await fetch("/api/organizations")
+      if (!response.ok) {
+        setMessage("Unable to load organizations.")
+        return
+      }
+
+      const data = (await response.json()) as OrganizationOption[]
+      if (cancelled) {
+        return
+      }
+
+      const stored = readWorkspaceSelection(window.localStorage)
+      const nextOrganizationId =
+        data.find((organization) => organization.id === stored.organizationId)
+          ?.id ||
+        data[0]?.id ||
+        null
+
+      setOrganizations(data)
+      setOrganizationId(nextOrganizationId)
+    }
+
+    loadOrganizations()
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!organizationId) {
+      return
+    }
+
+    let cancelled = false
+
+    async function loadWorkspaces() {
+      const response = await fetch("/api/workspaces", {
+        headers: headersFor(organizationId),
+      })
+      if (!response.ok) {
+        setMessage("Unable to load workspaces.")
+        return
+      }
+
+      const data = (await response.json()) as WorkspaceOption[]
+      if (cancelled) {
+        return
+      }
+
+      const stored = readWorkspaceSelection(window.localStorage)
+      const nextWorkspace =
+        data.find((workspace) => workspace.id === stored.workspaceId) ||
+        data.find((workspace) => workspace.is_default) ||
+        data[0] ||
+        null
+
+      setWorkspaces(data)
+      setSelectedId(nextWorkspace?.id || null)
+      setEditName(nextWorkspace?.name || "")
+      persistSelection(organizationId, nextWorkspace?.id || null)
+    }
+
+    loadWorkspaces()
+    return () => {
+      cancelled = true
+    }
+  }, [organizationId])
+
+  useEffect(() => {
+    if (!organizationId || !managerOpen) {
+      return
+    }
+
+    async function loadTeam() {
+      const headers = headersFor(organizationId, selectedId)
+      const [membersResponse, invitationsResponse] = await Promise.all([
+        fetch("/api/organizations/members", { headers }),
+        fetch("/api/organizations/invitations", { headers }),
+      ])
+
+      if (membersResponse.ok) {
+        setMembers((await membersResponse.json()) as WorkspaceMember[])
+      }
+      if (invitationsResponse.ok) {
+        setInvitations((await invitationsResponse.json()) as WorkspaceInvitation[])
+      }
+    }
+
+    loadTeam()
+  }, [organizationId, selectedId, managerOpen])
+
+  function switchWorkspace(workspaceId: string) {
+    const nextWorkspace = workspaces.find((workspace) => workspace.id === workspaceId)
+    if (!nextWorkspace || nextWorkspace.id === selectedId) {
       return
     }
 
     setMessage("")
-    setSwitchingWorkspaceName(workspaceLabel(name))
-
+    setSwitchingWorkspaceName(workspaceLabel(nextWorkspace.name))
+    persistSelection(organizationId, nextWorkspace.id)
     window.setTimeout(() => {
-      setSelectedId(workspaceId)
-      localStorage.setItem(storageKey, workspaceId)
-      setSwitchingWorkspaceName("")
-    }, 650)
+      window.location.reload()
+    }, 450)
   }
 
-  function switchWorkspace(workspaceId: string) {
-    const nextWorkspace = activeItems.find((item) => item.id === workspaceId)
-
-    if (!nextWorkspace) {
-      return
-    }
-
-    beginWorkspaceSwitch(workspaceId, nextWorkspace.name)
-  }
-
-  function createWorkspace() {
+  async function createWorkspace() {
     const name = draftName.trim()
-
-    if (!name) {
+    if (!organizationId || !name) {
       setMessage("Workspace name is required.")
       return
     }
 
-    const nextWorkspace = {
-      id: `local:${Date.now()}`,
-      name,
-      organizationName,
-      hasConnectedAccount: false,
+    const response = await fetch("/api/workspaces", {
+      method: "POST",
+      headers: headersFor(organizationId, selectedId),
+      body: JSON.stringify({ name }),
+    })
+    const data = await response.json()
+    if (!response.ok) {
+      setMessage(data.error || "Unable to create workspace.")
+      return
     }
 
-    setItems((current) => [...current, nextWorkspace])
-    setMembers((current) => [
-      ...current,
-      {
-        id: `member:${nextWorkspace.id}`,
-        workspaceId: nextWorkspace.id,
-        email: demoUser.email,
-        role: "admin",
-        status: "active",
-      },
-    ])
     setDraftName("")
     setCreateDialogOpen(false)
-    beginWorkspaceSwitch(nextWorkspace.id, nextWorkspace.name)
+    setWorkspaces((current) => [...current, data])
+    setSwitchingWorkspaceName(workspaceLabel(data.name))
+    persistSelection(organizationId, data.id)
+    window.setTimeout(() => {
+      window.location.reload()
+    }, 450)
   }
 
-  function updateSelectedWorkspaceName(name: string) {
-    if (!selectedWorkspace) {
+  async function saveWorkspaceName() {
+    if (!organizationId || !selectedWorkspace) {
       return
     }
 
-    setItems((current) =>
-      current.map((item) =>
-        item.id === selectedWorkspace.id ? { ...item, name } : item
+    const response = await fetch("/api/workspaces", {
+      method: "PATCH",
+      headers: headersFor(organizationId, selectedId),
+      body: JSON.stringify({ id: selectedWorkspace.id, name: editName }),
+    })
+    const data = await response.json()
+    if (!response.ok) {
+      setMessage(data.error || "Unable to update workspace.")
+      return
+    }
+
+    setWorkspaces((current) =>
+      current.map((workspace) =>
+        workspace.id === data.id ? { ...workspace, name: data.name } : workspace
       )
     )
-    setMessage(`${workspaceLabel(name || "Workspace")} updated.`)
+    setMessage(`${workspaceLabel(data.name)} updated.`)
   }
 
-  function archiveSelectedWorkspace() {
-    if (!selectedWorkspace) {
+  async function archiveSelectedWorkspace() {
+    if (!organizationId || !selectedWorkspace) {
       return
     }
 
-    if (activeItems.length <= 1) {
-      setMessage("At least one workspace must remain active.")
+    const response = await fetch("/api/workspaces", {
+      method: "DELETE",
+      headers: headersFor(organizationId, selectedId),
+      body: JSON.stringify({ id: selectedWorkspace.id }),
+    })
+    const data = await response.json()
+    if (!response.ok) {
+      setMessage(data.error || "Unable to archive workspace.")
       return
     }
 
-    if (selectedWorkspace.hasConnectedAccount) {
-      setMessage(
-        `${workspaceLabel(selectedWorkspace.name)} cannot be archived while it has a connected account.`
-      )
-      return
-    }
-
-    const nextItems = items.map((item) =>
-      item.id === selectedWorkspace.id
-        ? { ...item, id: `archived:${item.id}` }
-        : item
+    const nextWorkspace = workspaces.find(
+      (workspace) => workspace.id !== selectedWorkspace.id
     )
-    const nextActiveItem = nextItems.find((item) => !item.id.startsWith("archived:"))
-
-    setItems(nextItems)
-
-    if (nextActiveItem) {
-      setMessage(`${workspaceLabel(selectedWorkspace.name)} archived.`)
-      switchWorkspace(nextActiveItem.id)
-    }
-  }
-
-  function deleteSelectedWorkspace() {
-    if (!selectedWorkspace) {
-      return
-    }
-
-    if (activeItems.length <= 1) {
-      setMessage("At least one workspace must remain active.")
-      return
-    }
-
-    if (selectedWorkspace.hasConnectedAccount) {
-      setMessage(
-        `${workspaceLabel(selectedWorkspace.name)} cannot be deleted while it has a connected account.`
-      )
-      return
-    }
-
-    const nextItems = items.filter((item) => item.id !== selectedWorkspace.id)
-    const nextWorkspace = nextItems.find((item) => !item.id.startsWith("archived:"))
-
-    setItems(nextItems)
-    setMembers((current) =>
-      current.filter((member) => member.workspaceId !== selectedWorkspace.id)
-    )
-
+    setMessage(`${workspaceLabel(selectedWorkspace.name)} archived.`)
     if (nextWorkspace) {
-      setMessage(`${workspaceLabel(selectedWorkspace.name)} deleted.`)
-      switchWorkspace(nextWorkspace.id)
+      setSwitchingWorkspaceName(workspaceLabel(nextWorkspace.name))
+      persistSelection(organizationId, nextWorkspace.id)
+      window.setTimeout(() => {
+        window.location.reload()
+      }, 450)
     }
   }
 
-  function inviteMember() {
+  async function inviteMember() {
     const email = inviteEmail.trim()
-
-    if (!selectedWorkspace || !email) {
+    if (!organizationId || !selectedWorkspace || !email) {
       setMessage("Member email is required.")
       return
     }
 
-    setMembers((current) => [
-      ...current,
-      {
-        id: `invite:${Date.now()}`,
-        workspaceId: selectedWorkspace.id,
+    const response = await fetch("/api/organizations/invitations", {
+      method: "POST",
+      headers: headersFor(organizationId, selectedId),
+      body: JSON.stringify({
         email,
         role: inviteRole,
-        status: "pending",
-      },
-    ])
+        workspace_ids: [selectedWorkspace.id],
+      }),
+    })
+    const data = await response.json()
+    if (!response.ok) {
+      setMessage(data.error || "Unable to invite member.")
+      return
+    }
+
     setInviteEmail("")
     setInviteRole("member")
+    setInvitations((current) => [data, ...current])
     setMessage(`${email} invited to ${workspaceLabel(selectedWorkspace.name)}.`)
   }
 
-  function updateMemberRole(
-    memberId: string,
-    role: WorkspaceMember["role"] | null
-  ) {
-    if (!role) {
+  async function updateMemberRole(member: WorkspaceMember, role: "admin" | "member") {
+    if (!organizationId) {
+      return
+    }
+
+    const response = await fetch("/api/organizations/members", {
+      method: "PATCH",
+      headers: headersFor(organizationId, selectedId),
+      body: JSON.stringify({
+        user_id: member.user_id,
+        role,
+        workspace_ids: member.workspace_ids,
+      }),
+    })
+
+    if (!response.ok) {
+      const data = await response.json()
+      setMessage(data.error || "Unable to update member.")
       return
     }
 
     setMembers((current) =>
-      current.map((member) =>
-        member.id === memberId ? { ...member, role } : member
+      current.map((item) =>
+        item.user_id === member.user_id ? { ...item, role } : item
       )
     )
   }
 
-  function removeMember(memberId: string) {
-    setMembers((current) => current.filter((member) => member.id !== memberId))
+  async function removeMember(member: WorkspaceMember) {
+    if (!organizationId) {
+      return
+    }
+
+    const response = await fetch("/api/organizations/members", {
+      method: "DELETE",
+      headers: headersFor(organizationId, selectedId),
+      body: JSON.stringify({ user_id: member.user_id }),
+    })
+
+    if (!response.ok) {
+      const data = await response.json()
+      setMessage(data.error || "Unable to remove member.")
+      return
+    }
+
+    setMembers((current) =>
+      current.filter((item) => item.user_id !== member.user_id)
+    )
   }
+
+  async function cancelInvitation(invitation: WorkspaceInvitation) {
+    if (!organizationId) {
+      return
+    }
+
+    const response = await fetch("/api/organizations/invitations", {
+      method: "PATCH",
+      headers: headersFor(organizationId, selectedId),
+      body: JSON.stringify({ id: invitation.id, status: "revoked" }),
+    })
+
+    if (!response.ok) {
+      const data = await response.json()
+      setMessage(data.error || "Unable to cancel invitation.")
+      return
+    }
+
+    setInvitations((current) =>
+      current.map((item) =>
+        item.id === invitation.id ? { ...item, status: "revoked" } : item
+      )
+    )
+  }
+
+  const activeRows = useMemo(() => [...selectedMembers, ...selectedInvitations], [
+    selectedMembers,
+    selectedInvitations,
+  ])
 
   return (
     <div className="grid gap-3">
-      {switchingWorkspaceName && (
+      {(switchingWorkspaceName || isPending) && (
         <div
           role="status"
           aria-live="polite"
           className="fixed inset-0 z-[9999] grid place-items-center bg-background/80 backdrop-blur-sm"
         >
           <div className="grid justify-items-center gap-3 rounded-lg border bg-card p-5 text-card-foreground shadow-sm">
-            <div className="size-8 animate-spin rounded-full border-2 border-muted border-t-primary" />
+            <Loader2 className="size-8 animate-spin" />
             <p className="text-sm font-medium">
-              Switching to {switchingWorkspaceName}
+              Switching to {switchingWorkspaceName || "Workspace"}
             </p>
           </div>
         </div>
@@ -325,7 +465,9 @@ export function WorkspaceSwitcher({
         <div className="grid gap-1">
           <Label className="text-xs text-muted-foreground">Organization</Label>
           <Badge variant="outline" className="w-fit max-w-full">
-            <span className="truncate">{organizationName}</span>
+            <span className="truncate">
+              {selectedOrganization?.name || "No organization"}
+            </span>
           </Badge>
         </div>
       )}
@@ -334,20 +476,21 @@ export function WorkspaceSwitcher({
         <Label className="text-xs text-muted-foreground">Workspace</Label>
         <div className="flex items-center gap-2">
           <Select
-            value={selectedId}
+            value={selectedId || ""}
+            disabled={!workspaces.length}
             onValueChange={(value) => {
               if (value) {
-                switchWorkspace(value)
+                startTransition(() => switchWorkspace(value))
               }
             }}
           >
             <SelectTrigger className="min-w-0 flex-1">
               <SelectValue>
-                {selectedWorkspace?.name || "Select workspace"}
+                {selectedWorkspace?.name || "No workspace"}
               </SelectValue>
             </SelectTrigger>
             <SelectContent>
-              {activeItems.map((workspace) => (
+              {workspaces.map((workspace) => (
                 <SelectItem key={workspace.id} value={workspace.id}>
                   {workspace.name || "Unnamed workspace"}
                 </SelectItem>
@@ -355,8 +498,17 @@ export function WorkspaceSwitcher({
             </SelectContent>
           </Select>
 
-          <Dialog>
-            <DialogTrigger render={<Button type="button" variant="outline" size="icon" />}>
+          <Dialog open={managerOpen} onOpenChange={setManagerOpen}>
+            <DialogTrigger
+              render={
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  disabled={!selectedWorkspace}
+                />
+              }
+            >
               <Settings className="size-4" />
               <span className="sr-only">Manage workspace</span>
             </DialogTrigger>
@@ -370,32 +522,28 @@ export function WorkspaceSwitcher({
 
               <div className="grid gap-6">
                 <section className="grid gap-3 rounded-lg border p-3">
-                  <div className="grid gap-1">
-                    <h3 className="text-sm font-medium">Workspace details</h3>
-                    <p className="text-xs text-muted-foreground">
-                      Update the display name for the selected workspace.
-                    </p>
-                  </div>
                   <div className="grid gap-2">
                     <Label htmlFor="current-workspace-name">Workspace name</Label>
-                    <Input
-                      id="current-workspace-name"
-                      value={selectedWorkspace?.name ?? ""}
-                      onChange={(event) =>
-                        updateSelectedWorkspaceName(event.target.value)
-                      }
-                      placeholder="Workspace name"
-                    />
+                    <div className="grid gap-2 sm:flex">
+                      <Input
+                        id="current-workspace-name"
+                        value={editName}
+                        disabled={!managerEnabled}
+                        onChange={(event) => setEditName(event.target.value)}
+                        placeholder="Workspace name"
+                      />
+                      <Button
+                        type="button"
+                        disabled={!managerEnabled}
+                        onClick={saveWorkspaceName}
+                      >
+                        Save
+                      </Button>
+                    </div>
                   </div>
                 </section>
 
                 <section className="grid gap-3 rounded-lg border p-3">
-                  <div className="grid gap-1">
-                    <h3 className="text-sm font-medium">Members and team</h3>
-                    <p className="text-xs text-muted-foreground">
-                      Invite members and adjust their workspace roles.
-                    </p>
-                  </div>
                   <div className="grid gap-2 sm:grid-cols-[1fr_9rem_auto] sm:items-end">
                     <div className="grid gap-2">
                       <Label htmlFor="member-email">Email</Label>
@@ -403,6 +551,7 @@ export function WorkspaceSwitcher({
                         id="member-email"
                         type="email"
                         value={inviteEmail}
+                        disabled={!managerEnabled}
                         onChange={(event) => setInviteEmail(event.target.value)}
                         placeholder="member@example.com"
                       />
@@ -411,6 +560,7 @@ export function WorkspaceSwitcher({
                       <Label>Role</Label>
                       <Select
                         value={inviteRole}
+                        disabled={!managerEnabled}
                         onValueChange={(value) =>
                           setInviteRole(value === "admin" ? "admin" : "member")
                         }
@@ -424,85 +574,102 @@ export function WorkspaceSwitcher({
                         </SelectContent>
                       </Select>
                     </div>
-                    <Button type="button" onClick={inviteMember}>
+                    <Button
+                      type="button"
+                      disabled={!managerEnabled}
+                      onClick={inviteMember}
+                    >
                       <UserPlus className="size-4" />
                       Invite
                     </Button>
                   </div>
 
-                  <Table className="min-w-[38rem]">
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Email</TableHead>
-                        <TableHead>Status</TableHead>
-                        <TableHead>Role</TableHead>
-                        <TableHead className="w-24" />
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {selectedMembers.map((member) => (
-                        <TableRow key={member.id}>
-                          <TableCell>{member.email}</TableCell>
-                          <TableCell>
-                            <Badge variant="secondary">{member.status}</Badge>
-                          </TableCell>
-                          <TableCell>
-                            <Select
-                              value={member.role}
-                              onValueChange={(value) =>
-                                updateMemberRole(
-                                  member.id,
-                                  value === "admin" ? "admin" : "member"
-                                )
-                              }
-                            >
-                              <SelectTrigger className="w-28">
-                                <SelectValue>{member.role}</SelectValue>
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="member">member</SelectItem>
-                                <SelectItem value="admin">admin</SelectItem>
-                              </SelectContent>
-                            </Select>
-                          </TableCell>
-                          <TableCell>
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="icon"
-                              aria-label={
-                                member.status === "pending"
-                                  ? "Cancel invite"
-                                  : "Remove member"
-                              }
-                              title={
-                                member.status === "pending"
-                                  ? "Cancel invite"
-                                  : "Remove member"
-                              }
-                              onClick={() => removeMember(member.id)}
-                            >
-                              <UserMinus className="size-4" />
-                            </Button>
-                          </TableCell>
+                  <div className="overflow-x-auto">
+                    <Table className="min-w-[38rem]">
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Email</TableHead>
+                          <TableHead>Status</TableHead>
+                          <TableHead>Role</TableHead>
+                          <TableHead className="w-24" />
                         </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
+                      </TableHeader>
+                      <TableBody>
+                        {activeRows.map((row) => {
+                          const isInvitation = "email" in row && !("user_id" in row)
+                          const key = isInvitation
+                            ? `invite:${row.id}`
+                            : `member:${row.user_id}`
+                          const email = row.email || "No email"
+                          const status = row.status
+                          const role = row.role === "owner" ? "admin" : row.role
+
+                          return (
+                            <TableRow key={key}>
+                              <TableCell>{email}</TableCell>
+                              <TableCell>
+                                <Badge variant="secondary">{status}</Badge>
+                              </TableCell>
+                              <TableCell>
+                                {isInvitation ? (
+                                  role
+                                ) : (
+                                  <Select
+                                    value={role}
+                                    disabled={!managerEnabled || row.role === "owner"}
+                                    onValueChange={(value) =>
+                                      updateMemberRole(
+                                        row,
+                                        value === "admin" ? "admin" : "member"
+                                      )
+                                    }
+                                  >
+                                    <SelectTrigger className="w-28">
+                                      <SelectValue>{role}</SelectValue>
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      <SelectItem value="member">member</SelectItem>
+                                      <SelectItem value="admin">admin</SelectItem>
+                                    </SelectContent>
+                                  </Select>
+                                )}
+                              </TableCell>
+                              <TableCell>
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="icon"
+                                  disabled={!managerEnabled || (!isInvitation && row.role === "owner")}
+                                  aria-label={
+                                    isInvitation ? "Cancel invite" : "Remove member"
+                                  }
+                                  title={
+                                    isInvitation ? "Cancel invite" : "Remove member"
+                                  }
+                                  onClick={() =>
+                                    isInvitation
+                                      ? cancelInvitation(row)
+                                      : removeMember(row)
+                                  }
+                                >
+                                  <UserMinus className="size-4" />
+                                </Button>
+                              </TableCell>
+                            </TableRow>
+                          )
+                        })}
+                      </TableBody>
+                    </Table>
+                  </div>
                 </section>
 
                 <section className="grid gap-3 rounded-lg border p-3">
-                  <div className="grid gap-1">
-                    <h3 className="text-sm font-medium">Archive or delete</h3>
-                    <p className="text-xs text-muted-foreground">
-                      Workspaces with connected accounts cannot be archived or deleted.
-                    </p>
-                  </div>
                   <Separator />
                   <div className="grid gap-2 sm:flex">
                     <Button
                       type="button"
                       variant="outline"
+                      disabled={!managerEnabled || selectedWorkspace?.has_connected_account}
                       onClick={archiveSelectedWorkspace}
                     >
                       <Archive className="size-4" />
@@ -511,7 +678,8 @@ export function WorkspaceSwitcher({
                     <Button
                       type="button"
                       variant="destructive"
-                      onClick={deleteSelectedWorkspace}
+                      disabled={!managerEnabled || selectedWorkspace?.has_connected_account}
+                      onClick={archiveSelectedWorkspace}
                     >
                       <Trash2 className="size-4" />
                       Delete
@@ -522,20 +690,16 @@ export function WorkspaceSwitcher({
                 <div className="grid gap-2 border-t pt-4 sm:flex sm:justify-end">
                   <Dialog
                     open={createDialogOpen}
-                    onOpenChange={(open) => setCreateDialogOpen(open)}
+                    onOpenChange={setCreateDialogOpen}
                   >
-                    <DialogTrigger render={<Button type="button" />}>
+                    <DialogTrigger render={<Button type="button" disabled={!managerEnabled} />}>
                       <Plus className="size-4" />
                       Create workspace
                     </DialogTrigger>
                     <DialogContent>
                       <DialogHeader>
                         <DialogTitle>Create workspace</DialogTitle>
-                        <DialogDescription>
-                          {showOrganization
-                            ? `Add a new workspace under ${organizationName}.`
-                            : "Add a new workspace."}
-                        </DialogDescription>
+                        <DialogDescription>Add a new workspace.</DialogDescription>
                       </DialogHeader>
                       <div className="grid gap-2">
                         <Label htmlFor="new-workspace-name">Workspace name</Label>

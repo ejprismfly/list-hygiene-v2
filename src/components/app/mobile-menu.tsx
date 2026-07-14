@@ -18,7 +18,6 @@ import { WorkspaceSwitcher } from "@/components/app/workspace-switcher"
 import { Badge } from "@/components/ui/badge"
 import { Button, buttonVariants } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
-import { demoWorkspaceContext } from "@/lib/demo-data"
 import { cn } from "@/lib/utils"
 
 type MobileMenuProps = {
@@ -113,11 +112,7 @@ export function MobileMenu({ active, userEmail }: MobileMenuProps) {
           </div>
 
           <div className="grid min-h-0 content-start gap-4 overflow-y-auto py-4">
-            <WorkspaceSwitcher
-              organizationName={demoWorkspaceContext.organizationName}
-              workspaces={demoWorkspaceContext.workspaces}
-              showOrganization={false}
-            />
+            <WorkspaceSwitcher showOrganization={false} />
 
             <Separator />
 

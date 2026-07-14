@@ -1,12 +1,17 @@
 "use server"
 
 import { headers } from "next/headers"
+import { cookies } from "next/headers"
 import { redirect } from "next/navigation"
 
 import type { AuthFormState } from "@/lib/auth-form"
 import { getFormString } from "@/lib/auth-form"
 import { getSupabaseConfig } from "@/lib/supabase/env"
 import { createClient } from "@/lib/supabase/server"
+import {
+  WORKSPACE_ID_COOKIE,
+  WORKSPACE_ORGANIZATION_COOKIE,
+} from "@/lib/workspace-utils"
 
 const missingConfigState: AuthFormState = {
   status: "error",
@@ -205,6 +210,10 @@ export async function signOutAction() {
     const supabase = await createClient()
     await supabase.auth.signOut()
   }
+
+  const cookieStore = await cookies()
+  cookieStore.delete(WORKSPACE_ORGANIZATION_COOKIE)
+  cookieStore.delete(WORKSPACE_ID_COOKIE)
 
   redirect("/login")
 }

@@ -11,6 +11,8 @@ import {
 import {
   Area,
   AreaChart,
+  Bar,
+  BarChart,
   CartesianGrid,
   Label,
   Pie,
@@ -256,6 +258,13 @@ const historicalChartConfig: ChartConfig = {
   },
 }
 
+const categoryBreakdownKeys = [
+  "valid",
+  "risky",
+  "invalid",
+  "restricted",
+] as const
+
 type EmailStatusChartItem = {
   status: string
   label: string
@@ -307,6 +316,7 @@ export function DashboardContent() {
     total: item.valid + item.invalid + item.risky + item.restricted,
   }))
   const visibleHistorical = historicalChartData.slice(-12)
+  const categoryBreakdownData = visibleHistorical
   const distributionTotal = distribution.reduce(
     (total, item) => total + item.value,
     0
@@ -661,20 +671,106 @@ export function DashboardContent() {
                   </AreaChart>
                 </ChartContainer>
                 <div className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-sm text-muted-foreground">
-                  {(["valid", "risky", "invalid", "restricted"] as const).map(
-                    (status) => (
-                      <div key={status} className="flex items-center gap-2">
-                        <span
-                          className="size-2.5 rounded-full"
-                          style={{
-                            backgroundColor:
-                              historicalChartConfig[status].color,
-                          }}
-                        />
-                        <span>{historicalChartConfig[status].label}</span>
-                      </div>
-                    )
-                  )}
+                  {categoryBreakdownKeys.map((status) => (
+                    <div key={status} className="flex items-center gap-2">
+                      <span
+                        className="size-2.5 rounded-full"
+                        style={{
+                          backgroundColor: historicalChartConfig[status].color,
+                        }}
+                      />
+                      <span>{historicalChartConfig[status].label}</span>
+                    </div>
+                  ))}
+                </div>
+              </>
+            ) : (
+              <div className="flex min-h-60 items-end gap-3 border-b border-l px-4 py-3">
+                <div className="grid w-full gap-8 py-3">
+                  {Array.from({ length: 6 }).map((_, index) => (
+                    <div key={index} className="border-t" />
+                  ))}
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </section>
+
+      <section className="grid gap-6">
+        <h2 className="text-2xl font-semibold tracking-normal sm:text-3xl">
+          Category Breakdown
+        </h2>
+        <Card>
+          <CardContent className="grid min-h-72 gap-5 pt-3 pb-5 sm:px-6">
+            {categoryBreakdownData.length ? (
+              <>
+                <ChartContainer
+                  config={historicalChartConfig}
+                  className="aspect-auto h-[320px] w-full"
+                >
+                  <BarChart
+                    data={categoryBreakdownData}
+                    margin={{
+                      top: 10,
+                      right: 20,
+                      left: 8,
+                      bottom: 0,
+                    }}
+                  >
+                    <CartesianGrid vertical={false} />
+                    <XAxis
+                      dataKey="month"
+                      tickLine={false}
+                      tickMargin={8}
+                      axisLine={false}
+                    />
+                    <YAxis
+                      tickLine={false}
+                      axisLine={false}
+                      tickMargin={8}
+                      tickFormatter={(value) => numberFormatter.format(value)}
+                    />
+                    <ChartTooltip
+                      cursor={false}
+                      content={<ChartTooltipContent />}
+                    />
+                    <Bar
+                      dataKey="valid"
+                      stackId="category"
+                      fill={historicalChartConfig.valid.color}
+                      radius={[0, 0, 4, 4]}
+                    />
+                    <Bar
+                      dataKey="risky"
+                      stackId="category"
+                      fill={historicalChartConfig.risky.color}
+                    />
+                    <Bar
+                      dataKey="invalid"
+                      stackId="category"
+                      fill={historicalChartConfig.invalid.color}
+                    />
+                    <Bar
+                      dataKey="restricted"
+                      stackId="category"
+                      fill={historicalChartConfig.restricted.color}
+                      radius={[4, 4, 0, 0]}
+                    />
+                  </BarChart>
+                </ChartContainer>
+                <div className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-sm text-muted-foreground">
+                  {categoryBreakdownKeys.map((status) => (
+                    <div key={status} className="flex items-center gap-2">
+                      <span
+                        className="size-2.5 rounded-full"
+                        style={{
+                          backgroundColor: historicalChartConfig[status].color,
+                        }}
+                      />
+                      <span>{historicalChartConfig[status].label}</span>
+                    </div>
+                  ))}
                 </div>
               </>
             ) : (

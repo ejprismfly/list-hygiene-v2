@@ -1,7 +1,8 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import Link from "next/link"
+import { useSearchParams } from "next/navigation"
 import { CheckCircle2 } from "lucide-react"
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
@@ -20,46 +21,184 @@ import { Separator } from "@/components/ui/separator"
 import { Switch } from "@/components/ui/switch"
 import { buttonVariants } from "@/components/ui/button"
 
-const retrySettings = [
-  {
-    title: "Full Mailbox Retries",
-    description:
-      "Retry full mailboxes once per month, up to the number of months you set.",
-    value: "12 months (recommended)",
-  },
-  {
-    title: "Greylisted",
-    description: "Retry emails blocked due to greylisting.",
-    value: "3 retries (recommended)",
-  },
-  {
-    title: "Mail Server Temporary Error",
-    description:
-      "Set how many times to retry emails after temporary errors like server timeouts.",
-    value: "3 retries (recommended)",
-  },
-  {
-    title: "Unexpected Error",
-    description: "Retry emails that failed due to unknown issues.",
-    value: "3 retries (recommended)",
-  },
-]
+type SegmentOption = {
+  id: string
+  name: string
+}
+
+type KlaviyoAccount = {
+  id: string
+  connection_name?: string | null
+  selected_segment?: {
+    id: string | null
+    name: string | null
+  }
+  segments?: SegmentOption[]
+  fix_typos?: boolean
+  full_mailbox_retries?: number
+  greylisted_retries?: number
+  mail_server_temporary_error_retries?: number
+  unexpected_error_retries?: number
+}
+
+const retryOptions = ["0", "1", "2", "3", "6", "12"]
 
 export function ConfigureConnectionContent() {
-  const [connectionName, setConnectionName] = useState("Prismfly Development1")
+  const searchParams = useSearchParams()
+  const accountId = searchParams.get("id")
+  const [account, setAccount] = useState<KlaviyoAccount | null>(null)
+  const [connectionName, setConnectionName] = useState("")
+  const [selectedSegmentId, setSelectedSegmentId] = useState<string | null>(null)
   const [fixTypos, setFixTypos] = useState(true)
+  const [fullMailboxRetries, setFullMailboxRetries] = useState("12")
+  const [greylistedRetries, setGreylistedRetries] = useState("3")
+  const [temporaryErrorRetries, setTemporaryErrorRetries] = useState("3")
+  const [unexpectedErrorRetries, setUnexpectedErrorRetries] = useState("3")
   const [statusMessage, setStatusMessage] = useState("")
   const [removed, setRemoved] = useState(false)
 
-  function saveConnection() {
+  useEffect(() => {
+    if (!accountId) {
+      return
+    }
+
+    let cancelled = false
+
+    async function loadAccount() {
+      const response = await fetch(`/api/oauth/klaviyo/accounts?id=${accountId}`)
+      if (!response.ok) {
+        setStatusMessage("Unable to load Klaviyo connection.")
+        return
+      }
+
+      const accounts = (await response.json()) as KlaviyoAccount[]
+      const nextAccount = accounts[0]
+      if (!nextAccount || cancelled) {
+        return
+      }
+
+      setAccount(nextAccount)
+      setConnectionName(nextAccount.connection_name || "")
+      setSelectedSegmentId(nextAccount.selected_segment?.id || null)
+      setFixTypos(Boolean(nextAccount.fix_typos))
+      setFullMailboxRetries(String(nextAccount.full_mailbox_retries ?? 12))
+      setGreylistedRetries(String(nextAccount.greylisted_retries ?? 3))
+      setTemporaryErrorRetries(
+        String(nextAccount.mail_server_temporary_error_retries ?? 3)
+      )
+      setUnexpectedErrorRetries(
+        String(nextAccount.unexpected_error_retries ?? 3)
+      )
+    }
+
+    loadAccount()
+    return () => {
+      cancelled = true
+    }
+  }, [accountId])
+
+  async function saveConnection() {
+    if (!accountId) {
+      setStatusMessage("Select a Klaviyo connection to configure.")
+      return
+    }
+
     setRemoved(false)
+    const response = await fetch("/api/oauth/klaviyo/accounts", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        id: accountId,
+        segment_id: selectedSegmentId,
+        connection_name: connectionName,
+        fix_typos: fixTypos,
+        full_mailbox_retries: Number(fullMailboxRetries),
+        greylisted_retries: Number(greylistedRetries),
+        mail_server_temporary_error_retries: Number(temporaryErrorRetries),
+        unexpected_error_retries: Number(unexpectedErrorRetries),
+      }),
+    })
+
+    if (!response.ok) {
+      const data = await response.json()
+      setStatusMessage(data.error || "Unable to save Klaviyo settings.")
+      return
+    }
+
     setStatusMessage(`${connectionName || "Klaviyo"} settings saved.`)
   }
 
-  function removeConnection() {
+  async function refreshSegments() {
+    if (!accountId) {
+      return
+    }
+
+    const response = await fetch("/api/oauth/klaviyo/segments", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: accountId }),
+    })
+    const data = await response.json()
+    if (!response.ok) {
+      setStatusMessage(data.error || "Unable to refresh segments.")
+      return
+    }
+
+    setAccount((current) =>
+      current ? { ...current, segments: data.segments } : current
+    )
+    setStatusMessage("Segments refreshed.")
+  }
+
+  async function removeConnection() {
+    if (!accountId) {
+      return
+    }
+
+    const response = await fetch("/api/oauth/klaviyo/disconnect", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: accountId }),
+    })
+
+    if (!response.ok) {
+      const data = await response.json()
+      setStatusMessage(data.error || "Unable to remove Klaviyo connection.")
+      return
+    }
+
     setRemoved(true)
     setStatusMessage("Klaviyo connection removed from this workspace.")
   }
+
+  const retrySettings = [
+    {
+      title: "Full Mailbox Retries",
+      description:
+        "Retry full mailboxes once per month, up to the number of months you set.",
+      value: fullMailboxRetries,
+      onChange: setFullMailboxRetries,
+    },
+    {
+      title: "Greylisted",
+      description: "Retry emails blocked due to greylisting.",
+      value: greylistedRetries,
+      onChange: setGreylistedRetries,
+    },
+    {
+      title: "Mail Server Temporary Error",
+      description:
+        "Set how many times to retry emails after temporary errors like server timeouts.",
+      value: temporaryErrorRetries,
+      onChange: setTemporaryErrorRetries,
+    },
+    {
+      title: "Unexpected Error",
+      description: "Retry emails that failed due to unknown issues.",
+      value: unexpectedErrorRetries,
+      onChange: setUnexpectedErrorRetries,
+    },
+  ]
 
   return (
     <main className="min-h-svh bg-background p-4 sm:p-6 md:p-20">
@@ -83,11 +222,13 @@ export function ConfigureConnectionContent() {
           </CardContent>
         </Card>
 
-        {statusMessage && (
+        {(statusMessage || !accountId) && (
           <Alert>
             <CheckCircle2 className="size-4" />
             <AlertTitle>Connection updated</AlertTitle>
-            <AlertDescription>{statusMessage}</AlertDescription>
+            <AlertDescription>
+              {statusMessage || "Select a Klaviyo connection to configure."}
+            </AlertDescription>
           </Alert>
         )}
 
@@ -100,17 +241,38 @@ export function ConfigureConnectionContent() {
               Select a Klaviyo segment to monitor for new email addresses to
               check.
             </p>
-            <p className="text-sm text-muted-foreground">
-              No segments found. Create a segment in Klaviyo, then refresh.
-            </p>
-            <Select defaultValue="all-emails">
+            {!account?.segments?.length && (
+              <p className="text-sm text-muted-foreground">
+                No segments found. Create a segment in Klaviyo, then refresh.
+              </p>
+            )}
+            <Select
+              value={selectedSegmentId || "all-emails"}
+              onValueChange={(value) =>
+                setSelectedSegmentId(value === "all-emails" ? null : value)
+              }
+            >
               <SelectTrigger className="w-full sm:max-w-md">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all-emails">All Emails</SelectItem>
+                {(account?.segments || []).map((segment) => (
+                  <SelectItem key={segment.id} value={segment.id}>
+                    {segment.name}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
+            <Button
+              type="button"
+              variant="outline"
+              className="w-fit"
+              disabled={!accountId || removed}
+              onClick={refreshSegments}
+            >
+              Refresh
+            </Button>
           </CardContent>
         </Card>
 
@@ -139,14 +301,23 @@ export function ConfigureConnectionContent() {
                 <p className="text-sm text-muted-foreground">
                   {setting.description}
                 </p>
-                <Select defaultValue={setting.value}>
+                <Select
+                  value={setting.value}
+                  onValueChange={(value) => {
+                    if (value) {
+                      setting.onChange(value)
+                    }
+                  }}
+                >
                   <SelectTrigger className="w-full sm:max-w-md">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value={setting.value}>{setting.value}</SelectItem>
-                    <SelectItem value="1 retry">1 retry</SelectItem>
-                    <SelectItem value="Never retry">Never retry</SelectItem>
+                    {retryOptions.map((option) => (
+                      <SelectItem key={option} value={option}>
+                        {option === "0" ? "Never retry" : `${option} retries`}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>

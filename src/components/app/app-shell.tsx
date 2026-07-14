@@ -14,7 +14,6 @@ import { WorkspaceSwitcher } from "@/components/app/workspace-switcher"
 import { Badge } from "@/components/ui/badge"
 import { Button, buttonVariants } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
-import { demoWorkspaceContext } from "@/lib/demo-data"
 import { cn } from "@/lib/utils"
 
 type AppShellProps = {
@@ -53,13 +52,7 @@ const navItems = [
 function WorkspaceControls({ showOrganization = false }: {
   showOrganization?: boolean
 }) {
-  return (
-    <WorkspaceSwitcher
-      organizationName={demoWorkspaceContext.organizationName}
-      workspaces={demoWorkspaceContext.workspaces}
-      showOrganization={showOrganization}
-    />
-  )
+  return <WorkspaceSwitcher showOrganization={showOrganization} />
 }
 
 function NavLinks({ active }: Pick<AppShellProps, "active">) {

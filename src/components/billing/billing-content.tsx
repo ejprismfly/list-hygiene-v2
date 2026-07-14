@@ -1,15 +1,11 @@
 "use client"
 
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
-import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import {
-  Progress,
-  ProgressLabel,
-} from "@/components/ui/progress"
+import { Progress, ProgressLabel } from "@/components/ui/progress"
 import { Separator } from "@/components/ui/separator"
 import {
   Table,
@@ -20,27 +16,139 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { billingDemoData } from "@/lib/demo-data"
 
 type BillingContentProps = {
   email: string
 }
 
-export function BillingContent({ email }: BillingContentProps) {
-  const [currentPlan, setCurrentPlan] = useState(billingDemoData.currentPlan)
-  const [statusMessage, setStatusMessage] = useState("")
-  const usagePercent = useMemo(
-    () =>
-      Math.round(
-        (billingDemoData.creditsUsed / billingDemoData.creditsPlan) * 10000
-      ) / 100,
-    []
-  )
+type BillingPlanRow = {
+  id: string
+  name: string
+  display_credits?: string | null
+  display_price?: string | null
+  display_per_unit?: string | null
+  action_label?: string | null
+  checkout_url?: string | null
+  selected?: boolean
+}
 
-  function selectPlan(credits: string) {
-    setCurrentPlan(`${credits} Credits`)
-    setStatusMessage(`${credits} credit plan selected for this workspace.`)
+type BillingPlanGroup = {
+  label: string
+  range: string
+  selected?: boolean
+  rows?: BillingPlanRow[]
+}
+
+type BillingResponse = {
+  account: {
+    current_plan: string
+    credits_used: number
+    credits_plan: number
+    trial_plan: number
+    trial_used: number
+    trial_percentage: string
+    usage_percentage: string
+    total: string
+    invoice_date: string
   }
+  plans: BillingPlanGroup[]
+  customer: {
+    id?: string
+    email?: string
+  }
+  payments: {
+    id: string
+    brand: string
+    last4: string
+    exp_month: string
+    exp_year: string
+    is_default: boolean
+  }[]
+  portal: string
+  billing_context?: {
+    customer_id?: string | null
+    account_source?: string
+  }
+}
+
+const emptyBilling: BillingResponse = {
+  account: {
+    current_plan: "None",
+    credits_used: 0,
+    credits_plan: 0,
+    trial_plan: 0,
+    trial_used: 0,
+    trial_percentage: "0%",
+    usage_percentage: "0%",
+    total: "$0",
+    invoice_date: "-",
+  },
+  plans: [],
+  customer: {},
+  payments: [],
+  portal: "/api/billing/portal",
+}
+
+export function BillingContent({ email }: BillingContentProps) {
+  const [billing, setBilling] = useState<BillingResponse>(emptyBilling)
+  const [statusMessage, setStatusMessage] = useState("")
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    let cancelled = false
+
+    async function loadBilling() {
+      const response = await fetch("/api/billing")
+      if (!response.ok) {
+        setStatusMessage("Unable to load billing for this workspace.")
+        setLoading(false)
+        return
+      }
+
+      const data = (await response.json()) as BillingResponse
+      if (!cancelled) {
+        setBilling(data)
+        setLoading(false)
+      }
+    }
+
+    loadBilling()
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  const usagePercent = useMemo(() => {
+    const total =
+      billing.account.credits_plan || billing.account.trial_plan || 0
+    const used =
+      billing.account.credits_plan > 0
+        ? billing.account.credits_used
+        : billing.account.trial_used
+
+    if (!total) {
+      return 0
+    }
+
+    return Math.round((used / total) * 10000) / 100
+  }, [billing])
+
+  function openPortal() {
+    window.location.assign(billing.portal || "/api/billing/portal")
+  }
+
+  function selectPlan(plan: BillingPlanRow) {
+    if (plan.checkout_url) {
+      window.location.assign(plan.checkout_url)
+      return
+    }
+
+    setStatusMessage(`${plan.name} is already selected.`)
+  }
+
+  const planRows = billing.plans.flatMap((group) => group.rows || [])
+  const hasPlanRows = planRows.length > 0
+  const paymentMethod = billing.payments[0]
 
   return (
     <div className="grid gap-8 md:gap-12">
@@ -50,23 +158,26 @@ export function BillingContent({ email }: BillingContentProps) {
         </h1>
         <Card className="w-full max-w-xl">
           <CardHeader>
-            <CardTitle>Current Plan: {currentPlan}</CardTitle>
+            <CardTitle>
+              Current Plan: {loading ? "Loading" : billing.account.current_plan}
+            </CardTitle>
           </CardHeader>
           <CardContent className="grid gap-4">
             <Progress value={usagePercent}>
-              <ProgressLabel>Trial Usage ({usagePercent.toFixed(2)}%)</ProgressLabel>
+              <ProgressLabel>Usage ({usagePercent.toFixed(2)}%)</ProgressLabel>
               <span className="ml-auto text-sm text-muted-foreground">
-                {billingDemoData.creditsUsed} of {billingDemoData.creditsPlan}
+                {billing.account.credits_used || billing.account.trial_used} of{" "}
+                {billing.account.credits_plan || billing.account.trial_plan}
               </span>
             </Progress>
             <div className="grid gap-2 text-sm">
               <div className="flex items-center justify-between">
                 <span>Monthly total:</span>
-                <span>{billingDemoData.monthlyTotal}</span>
+                <span>{billing.account.total}</span>
               </div>
               <div className="flex items-center justify-between">
                 <span>Next Invoice date:</span>
-                <span>{billingDemoData.nextInvoiceDate}</span>
+                <span>{billing.account.invoice_date}</span>
               </div>
             </div>
           </CardContent>
@@ -83,31 +194,33 @@ export function BillingContent({ email }: BillingContentProps) {
               Each credit represents an email verification.
             </p>
           </div>
-          <Button
-            type="button"
-            onClick={() =>
-              setStatusMessage(
-                `Billing portal ready for ${billingDemoData.customerId}.`
-              )
-            }
-          >
+          <Button type="button" onClick={openPortal}>
             Manage
           </Button>
         </div>
 
         {statusMessage && (
           <Alert>
-            <AlertTitle>Billing updated</AlertTitle>
+            <AlertTitle>Billing</AlertTitle>
             <AlertDescription>{statusMessage}</AlertDescription>
           </Alert>
         )}
 
-        <Tabs defaultValue="under-10k">
+        <Tabs defaultValue={billing.plans.find((group) => group.selected)?.range || "9999"}>
           <TabsList className="h-auto w-full flex-wrap justify-start sm:w-fit">
-            <TabsTrigger value="under-10k">{"<10k"}</TabsTrigger>
-            <TabsTrigger value="10k-50k">10k to 50k</TabsTrigger>
-            <TabsTrigger value="50k-1m">50k to 1m</TabsTrigger>
-            <TabsTrigger value="enterprise">Enterprise</TabsTrigger>
+            {billing.plans.length ? (
+              billing.plans.map((group) => (
+                <TabsTrigger key={group.range} value={group.range}>
+                  {group.label}
+                </TabsTrigger>
+              ))
+            ) : (
+              <>
+                <TabsTrigger value="9999">{"<10k"}</TabsTrigger>
+                <TabsTrigger value="10000-50000">10k to 50k</TabsTrigger>
+                <TabsTrigger value="50000-1000000">50k to 1m</TabsTrigger>
+              </>
+            )}
           </TabsList>
         </Tabs>
 
@@ -123,29 +236,31 @@ export function BillingContent({ email }: BillingContentProps) {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {billingDemoData.plans.map((plan) => (
-                  <TableRow key={plan.credits}>
-                    <TableCell>{plan.credits}</TableCell>
-                    <TableCell>{plan.price}</TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-3">
-                        <span>{plan.unit}</span>
-                        {plan.savings && (
-                          <Badge variant="secondary">{plan.savings}</Badge>
-                        )}
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <Button
-                        type="button"
-                        className="w-32"
-                        onClick={() => selectPlan(plan.credits)}
-                      >
-                        Upgrade
-                      </Button>
+                {hasPlanRows ? (
+                  planRows.map((plan) => (
+                    <TableRow key={plan.id}>
+                      <TableCell>{plan.display_credits || "-"}</TableCell>
+                      <TableCell>{plan.display_price || "-"}</TableCell>
+                      <TableCell>{plan.display_per_unit || "-"}</TableCell>
+                      <TableCell>
+                        <Button
+                          type="button"
+                          className="w-32"
+                          disabled={plan.selected}
+                          onClick={() => selectPlan(plan)}
+                        >
+                          {plan.action_label || "Upgrade"}
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                ) : (
+                  <TableRow>
+                    <TableCell colSpan={4}>
+                      No billing plans are configured.
                     </TableCell>
                   </TableRow>
-                ))}
+                )}
               </TableBody>
             </Table>
           </CardContent>
@@ -157,18 +272,21 @@ export function BillingContent({ email }: BillingContentProps) {
           <h2 className="text-2xl font-semibold tracking-normal sm:text-3xl">
             Billing Contact
           </h2>
-          <Button className="w-fit">Edit</Button>
         </div>
         <Card>
           <CardContent className="grid gap-4 sm:grid-cols-2">
             <div className="grid gap-1">
               <p className="text-sm font-medium">Email</p>
-              <p className="text-sm text-muted-foreground">{email}</p>
+              <p className="text-sm text-muted-foreground">
+                {billing.customer.email || email}
+              </p>
             </div>
             <div className="grid gap-1">
               <p className="text-sm font-medium">Payment method</p>
               <p className="text-sm text-muted-foreground">
-                {billingDemoData.paymentMethod}
+                {paymentMethod
+                  ? `${paymentMethod.brand} ending in ${paymentMethod.last4}`
+                  : "No payment method"}
               </p>
             </div>
           </CardContent>
