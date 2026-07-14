@@ -3,16 +3,16 @@ import {
   CircleUserRound,
   CreditCard,
   LayoutDashboard,
-  LogOut,
   Settings,
 } from "lucide-react"
 
-import { signOutAction } from "@/app/(auth)/actions"
 import { BrandLogo } from "@/components/app/brand-logo"
+import { LogoutForm } from "@/components/app/logout-form"
 import { MobileMenu } from "@/components/app/mobile-menu"
+import { WorkspaceRequiredGate } from "@/components/app/workspace-required-gate"
 import { WorkspaceSwitcher } from "@/components/app/workspace-switcher"
 import { Badge } from "@/components/ui/badge"
-import { Button, buttonVariants } from "@/components/ui/button"
+import { buttonVariants } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
 import { cn } from "@/lib/utils"
 
@@ -85,12 +85,7 @@ function AccountActions({ userEmail }: Pick<AppShellProps, "userEmail">) {
       <Badge variant="outline" className="w-fit max-w-full">
         <span className="truncate">{userEmail}</span>
       </Badge>
-      <form action={signOutAction}>
-        <Button type="submit" className="w-fit gap-2">
-          <LogOut className="size-4" />
-          Logout
-        </Button>
-      </form>
+      <LogoutForm showIcon />
     </div>
   )
 }
@@ -98,6 +93,8 @@ function AccountActions({ userEmail }: Pick<AppShellProps, "userEmail">) {
 export function AppShell({ active, userEmail, children }: AppShellProps) {
   return (
     <div className="min-h-svh bg-background md:flex">
+      <WorkspaceRequiredGate />
+
       <aside className="sticky top-0 hidden h-svh max-h-svh w-60 shrink-0 flex-col overflow-hidden border-r bg-background p-3 md:flex">
         <div className="shrink-0 px-2 py-3">
           <BrandLogo />
@@ -113,7 +110,7 @@ export function AppShell({ active, userEmail, children }: AppShellProps) {
           </div>
         </div>
 
-        <div className="shrink-0 border-t px-2 pt-3 pb-1">
+        <div className="shrink-0 px-2 pt-3 pb-1">
           <AccountActions userEmail={userEmail} />
         </div>
       </aside>

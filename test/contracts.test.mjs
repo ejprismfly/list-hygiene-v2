@@ -157,6 +157,75 @@ test("desktop and mobile shells share the same workspace management component", 
   assert.doesNotMatch(mobileShell, /demoWorkspaceContext|organizationName=|workspaces=/)
 })
 
+test("workspace delete action requires a confirmation dialog", () => {
+  const switcher = read("src/components/app/workspace-switcher.tsx")
+
+  assert.match(switcher, /deleteDialogOpen/)
+  assert.match(switcher, /setDeleteDialogOpen\(true\)/)
+  assert.match(switcher, /<DialogTitle>Delete workspace<\/DialogTitle>/)
+  assert.match(switcher, /Delete workspace/)
+  assert.match(switcher, /selectedWorkspace\.has_connected_account/)
+})
+
+test("workspace delete can leave the user in required-workspace flow", () => {
+  const route = read("src/app/api/workspaces/route.ts")
+  const switcher = read("src/components/app/workspace-switcher.tsx")
+  const gate = read("src/components/app/workspace-required-gate.tsx")
+
+  assert.doesNotMatch(route, /Default workspace cannot be archived\./)
+  assert.doesNotMatch(route, /At least one active workspace is required\./)
+  assert.match(
+    route,
+    /Disconnect or move connected Klaviyo accounts before archiving this workspace\./
+  )
+  assert.match(switcher, /persistSelection\(organizationId, null\)/)
+  assert.match(gate, /A workspace is required before continuing\./)
+})
+
+test("workspace selector shows loading state without a field label", () => {
+  const switcher = read("src/components/app/workspace-switcher.tsx")
+
+  assert.match(switcher, /workspacesLoading/)
+  assert.match(switcher, /Loading\.\.\./)
+  assert.doesNotMatch(
+    switcher,
+    /<Label className="text-xs text-muted-foreground">Workspace<\/Label>/
+  )
+})
+
+test("app shell mounts a global no-workspace creation gate", () => {
+  const gate = read("src/components/app/workspace-required-gate.tsx")
+  const shell = read("src/components/app/app-shell.tsx")
+
+  assert.match(shell, /<WorkspaceRequiredGate \/>/)
+  assert.match(gate, /<Dialog open=\{workspaceRequired\} onOpenChange=\{\(\) => undefined\}>/)
+  assert.match(gate, /<DialogContent showCloseButton=\{false\}>/)
+  assert.match(gate, /A workspace is required before continuing\./)
+  assert.match(gate, /Create workspace/)
+})
+
+test("workspace management routes ignore stale selected-workspace cookies", () => {
+  const route = read("src/app/api/workspaces/route.ts")
+  const tenant = read("src/lib/api/tenant.ts")
+
+  assert.match(tenant, /ignoreWorkspaceScope\?: boolean/)
+  assert.match(route, /ignoreWorkspaceScope: true/)
+})
+
+test("logout clears client workspace selection before server sign-out", () => {
+  const logoutForm = read("src/components/app/logout-form.tsx")
+  const desktopShell = read("src/components/app/app-shell.tsx")
+  const mobileShell = read("src/components/app/mobile-menu.tsx")
+  const profileContent = read("src/components/profile/profile-content.tsx")
+
+  assert.match(logoutForm, /"use client"/)
+  assert.match(logoutForm, /clearWorkspaceClientState\(window\.localStorage\)/)
+  assert.match(logoutForm, /action=\{signOutAction\}/)
+  assert.match(desktopShell, /<LogoutForm showIcon \/>/)
+  assert.match(mobileShell, /<LogoutForm fullWidth showIcon \/>/)
+  assert.match(profileContent, /<LogoutForm \/>/)
+})
+
 test("mobile menu keeps navigation and account actions inside the viewport overlay", () => {
   const mobileShell = read("src/components/app/mobile-menu.tsx")
 

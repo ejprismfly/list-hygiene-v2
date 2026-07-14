@@ -116,11 +116,22 @@ function persistSelection(organizationId: string | null, workspaceId: string | n
   document.cookie = serializeClientCookie(WORKSPACE_ID_COOKIE, workspaceId)
 }
 
+async function responseErrorMessage(response: Response) {
+  try {
+    const data = (await response.json()) as { error?: string }
+    return data.error || response.statusText
+  } catch {
+    return response.statusText
+  }
+}
+
 export function WorkspaceSwitcher({
   showOrganization = false,
 }: WorkspaceSwitcherProps) {
   const [organizations, setOrganizations] = useState<OrganizationOption[]>([])
   const [workspaces, setWorkspaces] = useState<WorkspaceOption[]>([])
+  const [organizationsLoading, setOrganizationsLoading] = useState(true)
+  const [workspacesLoading, setWorkspacesLoading] = useState(true)
   const [members, setMembers] = useState<WorkspaceMember[]>([])
   const [invitations, setInvitations] = useState<WorkspaceInvitation[]>([])
   const [organizationId, setOrganizationId] = useState<string | null>(null)
@@ -130,7 +141,9 @@ export function WorkspaceSwitcher({
   const [inviteEmail, setInviteEmail] = useState("")
   const [inviteRole, setInviteRole] = useState<"admin" | "member">("member")
   const [createDialogOpen, setCreateDialogOpen] = useState(false)
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [managerOpen, setManagerOpen] = useState(false)
+  const [creatingWorkspace, setCreatingWorkspace] = useState(false)
   const [message, setMessage] = useState("")
   const [switchingWorkspaceName, setSwitchingWorkspaceName] = useState("")
   const [isPending, startTransition] = useTransition()
@@ -151,9 +164,19 @@ export function WorkspaceSwitcher({
     let cancelled = false
 
     async function loadOrganizations() {
-      const response = await fetch("/api/organizations")
+      const response = await fetch("/api/organizations", {
+        cache: "no-store",
+        credentials: "same-origin",
+      })
       if (!response.ok) {
-        setMessage("Unable to load organizations.")
+        if (response.status === 401) {
+          window.location.assign("/login")
+          return
+        }
+        setMessage(
+          `Unable to load organizations: ${await responseErrorMessage(response)}`
+        )
+        setOrganizationsLoading(false)
         return
       }
 
@@ -171,6 +194,7 @@ export function WorkspaceSwitcher({
 
       setOrganizations(data)
       setOrganizationId(nextOrganizationId)
+      setOrganizationsLoading(false)
     }
 
     loadOrganizations()
@@ -187,11 +211,21 @@ export function WorkspaceSwitcher({
     let cancelled = false
 
     async function loadWorkspaces() {
+      setWorkspacesLoading(true)
       const response = await fetch("/api/workspaces", {
+        cache: "no-store",
+        credentials: "same-origin",
         headers: headersFor(organizationId),
       })
       if (!response.ok) {
-        setMessage("Unable to load workspaces.")
+        if (response.status === 401) {
+          window.location.assign("/login")
+          return
+        }
+        setMessage(
+          `Unable to load workspaces: ${await responseErrorMessage(response)}`
+        )
+        setWorkspacesLoading(false)
         return
       }
 
@@ -211,13 +245,14 @@ export function WorkspaceSwitcher({
       setSelectedId(nextWorkspace?.id || null)
       setEditName(nextWorkspace?.name || "")
       persistSelection(organizationId, nextWorkspace?.id || null)
+      setWorkspacesLoading(false)
     }
 
     loadWorkspaces()
     return () => {
       cancelled = true
     }
-  }, [organizationId])
+  }, [organizationId, organizationsLoading])
 
   useEffect(() => {
     if (!organizationId || !managerOpen) {
@@ -263,19 +298,24 @@ export function WorkspaceSwitcher({
       return
     }
 
+    setCreatingWorkspace(true)
     const response = await fetch("/api/workspaces", {
       method: "POST",
+      cache: "no-store",
+      credentials: "same-origin",
       headers: headersFor(organizationId, selectedId),
       body: JSON.stringify({ name }),
     })
     const data = await response.json()
     if (!response.ok) {
       setMessage(data.error || "Unable to create workspace.")
+      setCreatingWorkspace(false)
       return
     }
 
     setDraftName("")
     setCreateDialogOpen(false)
+    setCreatingWorkspace(false)
     setWorkspaces((current) => [...current, data])
     setSwitchingWorkspaceName(workspaceLabel(data.name))
     persistSelection(organizationId, data.id)
@@ -327,6 +367,10 @@ export function WorkspaceSwitcher({
     const nextWorkspace = workspaces.find(
       (workspace) => workspace.id !== selectedWorkspace.id
     )
+    setDeleteDialogOpen(false)
+    setWorkspaces((current) =>
+      current.filter((workspace) => workspace.id !== selectedWorkspace.id)
+    )
     setMessage(`${workspaceLabel(selectedWorkspace.name)} archived.`)
     if (nextWorkspace) {
       setSwitchingWorkspaceName(workspaceLabel(nextWorkspace.name))
@@ -334,7 +378,16 @@ export function WorkspaceSwitcher({
       window.setTimeout(() => {
         window.location.reload()
       }, 450)
+      return
     }
+
+    setSelectedId(null)
+    setEditName("")
+    setManagerOpen(false)
+    persistSelection(organizationId, null)
+    window.setTimeout(() => {
+      window.location.reload()
+    }, 450)
   }
 
   async function inviteMember() {
@@ -443,6 +496,12 @@ export function WorkspaceSwitcher({
     selectedMembers,
     selectedInvitations,
   ])
+  const workspaceOptionsLoading =
+    organizationsLoading || Boolean(organizationId && workspacesLoading)
+  const workspaceSelectLabel =
+    workspaceOptionsLoading
+      ? "Loading..."
+      : selectedWorkspace?.name || "No workspace"
 
   return (
     <div className="grid gap-3">
@@ -473,11 +532,10 @@ export function WorkspaceSwitcher({
       )}
 
       <div className="grid gap-1">
-        <Label className="text-xs text-muted-foreground">Workspace</Label>
         <div className="flex items-center gap-2">
           <Select
             value={selectedId || ""}
-            disabled={!workspaces.length}
+            disabled={workspaceOptionsLoading || !workspaces.length}
             onValueChange={(value) => {
               if (value) {
                 startTransition(() => switchWorkspace(value))
@@ -485,9 +543,7 @@ export function WorkspaceSwitcher({
             }}
           >
             <SelectTrigger className="min-w-0 flex-1">
-              <SelectValue>
-                {selectedWorkspace?.name || "No workspace"}
-              </SelectValue>
+              <SelectValue>{workspaceSelectLabel}</SelectValue>
             </SelectTrigger>
             <SelectContent>
               {workspaces.map((workspace) => (
@@ -505,7 +561,7 @@ export function WorkspaceSwitcher({
                   type="button"
                   variant="outline"
                   size="icon"
-                  disabled={!selectedWorkspace}
+                  disabled={workspaceOptionsLoading || !selectedWorkspace}
                 />
               }
             >
@@ -669,7 +725,11 @@ export function WorkspaceSwitcher({
                     <Button
                       type="button"
                       variant="outline"
-                      disabled={!managerEnabled || selectedWorkspace?.has_connected_account}
+                      disabled={
+                        !managerEnabled ||
+                        !selectedWorkspace ||
+                        selectedWorkspace.has_connected_account
+                      }
                       onClick={archiveSelectedWorkspace}
                     >
                       <Archive className="size-4" />
@@ -678,8 +738,12 @@ export function WorkspaceSwitcher({
                     <Button
                       type="button"
                       variant="destructive"
-                      disabled={!managerEnabled || selectedWorkspace?.has_connected_account}
-                      onClick={archiveSelectedWorkspace}
+                      disabled={
+                        !managerEnabled ||
+                        !selectedWorkspace ||
+                        selectedWorkspace.has_connected_account
+                      }
+                      onClick={() => setDeleteDialogOpen(true)}
                     >
                       <Trash2 className="size-4" />
                       Delete
@@ -714,11 +778,19 @@ export function WorkspaceSwitcher({
                         <Button
                           type="button"
                           variant="outline"
+                          disabled={creatingWorkspace}
                           onClick={() => setCreateDialogOpen(false)}
                         >
                           Cancel
                         </Button>
-                        <Button type="button" onClick={createWorkspace}>
+                        <Button
+                          type="button"
+                          disabled={creatingWorkspace || !draftName.trim()}
+                          onClick={createWorkspace}
+                        >
+                          {creatingWorkspace && (
+                            <Loader2 className="size-4 animate-spin" />
+                          )}
                           Create and switch
                         </Button>
                       </div>
@@ -730,6 +802,43 @@ export function WorkspaceSwitcher({
           </Dialog>
         </div>
       </div>
+
+      <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Delete workspace</DialogTitle>
+            <DialogDescription>
+              This will archive{" "}
+              {selectedWorkspace
+                ? workspaceLabel(selectedWorkspace.name)
+                : "this workspace"}{" "}
+              and hide it from the workspace list.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-2 sm:flex sm:justify-end">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setDeleteDialogOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              disabled={
+                !managerEnabled ||
+                !selectedWorkspace ||
+                selectedWorkspace.has_connected_account
+              }
+              onClick={archiveSelectedWorkspace}
+            >
+              <Trash2 className="size-4" />
+              Delete workspace
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {message && <p className="text-xs text-muted-foreground">{message}</p>}
     </div>

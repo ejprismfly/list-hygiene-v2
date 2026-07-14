@@ -289,7 +289,7 @@ export async function getOrCreateDefaultOrganization(
 
 export async function resolveTenantContext(
   request: Request,
-  options: { requireWorkspace?: boolean } = {}
+  options: { requireWorkspace?: boolean; ignoreWorkspaceScope?: boolean } = {}
 ): Promise<
   | { ok: true; context: TenantContext; supabase: SupabaseClient }
   | { ok: false; status: number; error: string }
@@ -320,7 +320,9 @@ export async function resolveTenantContext(
     request,
     "organization_id"
   )
-  const requestedWorkspaceId = getRequestStringParam(request, "workspace_id")
+  const requestedWorkspaceId = options.ignoreWorkspaceScope
+    ? null
+    : getRequestStringParam(request, "workspace_id")
 
   let membershipQuery = supabase
     .from("organization_members")

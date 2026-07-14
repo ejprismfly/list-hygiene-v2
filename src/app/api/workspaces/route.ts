@@ -1,17 +1,486 @@
 import {
   canManageOrganization,
   errorJson,
+  getCurrentUser,
+  getRequestStringParam,
   json,
   makeSlug,
   readJsonBody,
   resolveTenantContext,
+  type OrganizationRole,
 } from "@/lib/api/tenant"
+import {
+  isDirectDatabaseConfigured,
+  queryOne,
+  queryRows,
+} from "@/lib/db/postgres"
 
 const workspaceSelect =
   "id, organization_id, name, slug, is_default, archived_at, created_at"
 
+type WorkspaceRow = {
+  id: string
+  organization_id: string
+  name: string
+  slug: string | null
+  is_default: boolean
+  archived_at: string | null
+  created_at: string
+  has_connected_account: boolean
+  member_count: number
+}
+
+type DirectWorkspaceContext = {
+  userId: string
+  userEmail: string | null
+  organizationId: string
+  role: OrganizationRole
+  allowedWorkspaceIds: string[]
+}
+
+async function resolveDirectWorkspaceContext(
+  request: Request
+): Promise<
+  | { ok: true; context: DirectWorkspaceContext }
+  | { ok: false; status: number; error: string }
+> {
+  const user = await getCurrentUser()
+  if (!user) {
+    return { ok: false, status: 401, error: "Not authenticated" }
+  }
+
+  const requestedOrganizationId = getRequestStringParam(
+    request,
+    "organization_id"
+  )
+
+  let memberships = await queryRows<{
+    organization_id: string
+    role: OrganizationRole
+    created_at: string
+  }>(
+    `
+      select organization_id::text, role, created_at::text
+      from public.organization_members
+      where user_id = $1::uuid
+        and status = 'active'
+        and ($2::uuid is null or organization_id = $2::uuid)
+      order by created_at asc
+    `,
+    [user.id, requestedOrganizationId]
+  )
+
+  if (!memberships.length) {
+    if (requestedOrganizationId) {
+      return { ok: false, status: 403, error: "Organization access denied" }
+    }
+
+    await queryRows(
+      "select public.ensure_default_organization_workspace($1::uuid, $2::text, '{}'::jsonb)",
+      [user.id, user.email || ""]
+    )
+
+    memberships = await queryRows<{
+      organization_id: string
+      role: OrganizationRole
+      created_at: string
+    }>(
+      `
+        select organization_id::text, role, created_at::text
+        from public.organization_members
+        where user_id = $1::uuid
+          and status = 'active'
+        order by created_at asc
+      `,
+      [user.id]
+    )
+  }
+
+  const membership = memberships[0]
+  if (!membership) {
+    return { ok: false, status: 403, error: "Organization access denied" }
+  }
+
+  const organizationId = membership.organization_id
+  const role = membership.role
+  const allowedWorkspaceIds = canManageOrganization(role)
+    ? (
+        await queryRows<{ id: string }>(
+          `
+            select id::text
+            from public.workspaces
+            where organization_id = $1::uuid
+              and archived_at is null
+            order by is_default desc, created_at asc
+          `,
+          [organizationId]
+        )
+      ).map((workspace) => workspace.id)
+    : (
+        await queryRows<{ workspace_id: string }>(
+          `
+            select workspace_id::text
+            from public.workspace_members
+            where organization_id = $1::uuid
+              and user_id = $2::uuid
+          `,
+          [organizationId, user.id]
+        )
+      ).map((workspace) => workspace.workspace_id)
+
+  return {
+    ok: true,
+    context: {
+      userId: user.id,
+      userEmail: user.email || null,
+      organizationId,
+      role,
+      allowedWorkspaceIds,
+    },
+  }
+}
+
+async function listDirectWorkspaces(context: DirectWorkspaceContext) {
+  if (!canManageOrganization(context.role) && !context.allowedWorkspaceIds.length) {
+    return []
+  }
+
+  return await queryRows<WorkspaceRow>(
+    `
+      select
+        w.id::text,
+        w.organization_id::text,
+        w.name,
+        w.slug,
+        w.is_default,
+        w.archived_at::text,
+        w.created_at::text,
+        exists (
+          select 1
+          from public.klaviyo_accounts ka
+          where ka.organization_id = w.organization_id
+            and ka.workspace_id = w.id
+            and ka.active = true
+        ) as has_connected_account,
+        (
+          select count(*)::int
+          from public.workspace_members wm
+          where wm.workspace_id = w.id
+        ) as member_count
+      from public.workspaces w
+      where w.organization_id = $1::uuid
+        and w.archived_at is null
+        and (
+          $2::boolean
+          or w.id = any($3::uuid[])
+        )
+      order by w.is_default desc, w.created_at asc
+    `,
+    [
+      context.organizationId,
+      canManageOrganization(context.role),
+      context.allowedWorkspaceIds,
+    ]
+  )
+}
+
+async function directGET(request: Request) {
+  const resolved = await resolveDirectWorkspaceContext(request)
+  if (!resolved.ok) {
+    return errorJson(resolved.error, resolved.status)
+  }
+
+  return json(await listDirectWorkspaces(resolved.context))
+}
+
+async function directPOST(request: Request) {
+  const resolved = await resolveDirectWorkspaceContext(request)
+  if (!resolved.ok) {
+    return errorJson(resolved.error, resolved.status)
+  }
+
+  const { context } = resolved
+  if (!canManageOrganization(context.role)) {
+    return errorJson("Only owners and admins can create workspaces", 403)
+  }
+
+  const body = await readJsonBody(request)
+  const name = typeof body.name === "string" ? body.name.trim() : ""
+  if (!name || name.length > 80) {
+    return errorJson("name must be a string up to 80 characters.", 400)
+  }
+
+  const activeWorkspace = await queryOne<{ count: number }>(
+    `
+      select count(*)::int
+      from public.workspaces
+      where organization_id = $1::uuid
+        and archived_at is null
+    `,
+    [context.organizationId]
+  )
+  const isDefault = Number(activeWorkspace?.count || 0) === 0
+
+  const workspace = await queryOne<WorkspaceRow>(
+    `
+      insert into public.workspaces (
+        organization_id,
+        name,
+        slug,
+        created_by_user_id,
+        is_default
+      )
+      values ($1::uuid, $2::text, $3::text, $4::uuid, $5::boolean)
+      returning
+        id::text,
+        organization_id::text,
+        name,
+        slug,
+        is_default,
+        archived_at::text,
+        created_at::text,
+        false as has_connected_account,
+        1 as member_count
+    `,
+    [
+      context.organizationId,
+      name,
+      makeSlug(name, "workspace"),
+      context.userId,
+      isDefault,
+    ]
+  )
+
+  if (!workspace) {
+    return errorJson("Unable to create workspace")
+  }
+
+  await queryRows(
+    `
+      insert into public.workspace_members (
+        organization_id,
+        workspace_id,
+        user_id,
+        role
+      )
+      values ($1::uuid, $2::uuid, $3::uuid, $4::text)
+      on conflict (workspace_id, user_id) do update
+        set role = excluded.role,
+            updated_at = now()
+    `,
+    [context.organizationId, workspace.id, context.userId, context.role]
+  )
+
+  return json(workspace, { status: 201 })
+}
+
+async function directPATCH(request: Request) {
+  const resolved = await resolveDirectWorkspaceContext(request)
+  if (!resolved.ok) {
+    return errorJson(resolved.error, resolved.status)
+  }
+
+  const { context } = resolved
+  if (!canManageOrganization(context.role)) {
+    return errorJson("Only owners and admins can update workspaces", 403)
+  }
+
+  const body = await readJsonBody(request)
+  const id = typeof body.id === "string" ? body.id : ""
+  if (!id) {
+    return errorJson("id must be a string.", 400)
+  }
+
+  const name =
+    body.name !== undefined && typeof body.name === "string"
+      ? body.name.trim()
+      : undefined
+  if (body.name !== undefined && (!name || name.length > 80)) {
+    return errorJson("name must be a string up to 80 characters.", 400)
+  }
+
+  const isDefault =
+    body.is_default === undefined
+      ? undefined
+      : typeof body.is_default === "boolean"
+        ? body.is_default
+        : null
+  if (isDefault === null) {
+    return errorJson("is_default must be a boolean.", 400)
+  }
+
+  if (name === undefined && isDefault === undefined) {
+    return errorJson("No updates provided.", 400)
+  }
+
+  if (isDefault === true) {
+    await queryRows(
+      `
+        update public.workspaces
+        set is_default = false,
+            updated_at = now()
+        where organization_id = $1::uuid
+          and archived_at is null
+      `,
+      [context.organizationId]
+    )
+  }
+
+  const workspace = await queryOne<WorkspaceRow>(
+    `
+      update public.workspaces
+      set
+        name = coalesce($3::text, name),
+        is_default = coalesce($4::boolean, is_default),
+        updated_at = now()
+      where organization_id = $1::uuid
+        and id = $2::uuid
+        and archived_at is null
+      returning
+        id::text,
+        organization_id::text,
+        name,
+        slug,
+        is_default,
+        archived_at::text,
+        created_at::text,
+        exists (
+          select 1
+          from public.klaviyo_accounts ka
+          where ka.organization_id = workspaces.organization_id
+            and ka.workspace_id = workspaces.id
+            and ka.active = true
+        ) as has_connected_account,
+        (
+          select count(*)::int
+          from public.workspace_members wm
+          where wm.workspace_id = workspaces.id
+        ) as member_count
+    `,
+    [context.organizationId, id, name || null, isDefault ?? null]
+  )
+
+  if (!workspace) {
+    return errorJson("Workspace not found", 404)
+  }
+
+  return json(workspace)
+}
+
+async function directDELETE(request: Request) {
+  const resolved = await resolveDirectWorkspaceContext(request)
+  if (!resolved.ok) {
+    return errorJson(resolved.error, resolved.status)
+  }
+
+  const { context } = resolved
+  if (!canManageOrganization(context.role)) {
+    return errorJson("Only owners and admins can archive workspaces", 403)
+  }
+
+  const body = await readJsonBody(request)
+  const id = typeof body.id === "string" ? body.id : ""
+  if (!id) {
+    return errorJson("id must be a string.", 400)
+  }
+
+  const workspace = await queryOne<{
+    id: string
+    is_default: boolean
+  }>(
+    `
+      select id::text, is_default
+      from public.workspaces
+      where organization_id = $1::uuid
+        and id = $2::uuid
+        and archived_at is null
+    `,
+    [context.organizationId, id]
+  )
+
+  if (!workspace) {
+    return errorJson("Workspace not found", 404)
+  }
+
+  const connectedAccounts = await queryOne<{ count: number }>(
+    `
+      select count(*)::int
+      from public.klaviyo_accounts
+      where organization_id = $1::uuid
+        and workspace_id = $2::uuid
+        and active = true
+    `,
+    [context.organizationId, id]
+  )
+  if (Number(connectedAccounts?.count || 0) > 0) {
+    return errorJson(
+      "Disconnect or move connected Klaviyo accounts before archiving this workspace.",
+      400
+    )
+  }
+
+  const archived = await queryOne<WorkspaceRow>(
+    `
+      update public.workspaces
+      set archived_at = now(),
+          is_default = false,
+          updated_at = now()
+      where organization_id = $1::uuid
+        and id = $2::uuid
+        and archived_at is null
+      returning
+        id::text,
+        organization_id::text,
+        name,
+        slug,
+        is_default,
+        archived_at::text,
+        created_at::text,
+        false as has_connected_account,
+        (
+          select count(*)::int
+          from public.workspace_members wm
+          where wm.workspace_id = workspaces.id
+        ) as member_count
+    `,
+    [context.organizationId, id]
+  )
+
+  if (!archived) {
+    return errorJson("Unable to archive workspace")
+  }
+
+  if (workspace.is_default) {
+    await queryRows(
+      `
+        with next_default as (
+          select id
+          from public.workspaces
+          where organization_id = $1::uuid
+            and archived_at is null
+          order by created_at asc
+          limit 1
+        )
+        update public.workspaces
+        set is_default = true,
+            updated_at = now()
+        where id = (select id from next_default)
+      `,
+      [context.organizationId]
+    )
+  }
+
+  return json(archived)
+}
+
 export async function GET(request: Request) {
-  const tenant = await resolveTenantContext(request)
+  if (isDirectDatabaseConfigured()) {
+    return directGET(request)
+  }
+
+  const tenant = await resolveTenantContext(request, {
+    ignoreWorkspaceScope: true,
+  })
   if (!tenant.ok) {
     return errorJson(tenant.error, tenant.status)
   }
@@ -84,7 +553,13 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const tenant = await resolveTenantContext(request)
+  if (isDirectDatabaseConfigured()) {
+    return directPOST(request)
+  }
+
+  const tenant = await resolveTenantContext(request, {
+    ignoreWorkspaceScope: true,
+  })
   if (!tenant.ok) {
     return errorJson(tenant.error, tenant.status)
   }
@@ -141,7 +616,13 @@ export async function POST(request: Request) {
 }
 
 export async function PATCH(request: Request) {
-  const tenant = await resolveTenantContext(request)
+  if (isDirectDatabaseConfigured()) {
+    return directPATCH(request)
+  }
+
+  const tenant = await resolveTenantContext(request, {
+    ignoreWorkspaceScope: true,
+  })
   if (!tenant.ok) {
     return errorJson(tenant.error, tenant.status)
   }
@@ -206,7 +687,13 @@ export async function PATCH(request: Request) {
 }
 
 export async function DELETE(request: Request) {
-  const tenant = await resolveTenantContext(request)
+  if (isDirectDatabaseConfigured()) {
+    return directDELETE(request)
+  }
+
+  const tenant = await resolveTenantContext(request, {
+    ignoreWorkspaceScope: true,
+  })
   if (!tenant.ok) {
     return errorJson(tenant.error, tenant.status)
   }
@@ -238,24 +725,6 @@ export async function DELETE(request: Request) {
     return errorJson(workspaceError?.message || "Workspace not found", 404)
   }
 
-  if (workspace.is_default) {
-    return errorJson("Default workspace cannot be archived.", 400)
-  }
-
-  const { count: workspaceCount, error: workspaceCountError } = await supabase
-    .from("workspaces")
-    .select("id", { count: "exact", head: true })
-    .eq("organization_id", context.organizationId)
-    .is("archived_at", null)
-
-  if (workspaceCountError) {
-    return errorJson(workspaceCountError.message)
-  }
-
-  if ((workspaceCount || 0) <= 1) {
-    return errorJson("At least one active workspace is required.", 400)
-  }
-
   const { count: connectedAccounts, error: connectedAccountsError } =
     await supabase
       .from("klaviyo_accounts")
@@ -277,7 +746,7 @@ export async function DELETE(request: Request) {
 
   const { data, error } = await supabase
     .from("workspaces")
-    .update({ archived_at: new Date().toISOString() })
+    .update({ archived_at: new Date().toISOString(), is_default: false })
     .eq("organization_id", context.organizationId)
     .eq("id", id)
     .is("archived_at", null)
@@ -286,6 +755,33 @@ export async function DELETE(request: Request) {
 
   if (error || !data) {
     return errorJson(error?.message || "Unable to archive workspace")
+  }
+
+  if (workspace.is_default) {
+    const { data: nextDefault, error: nextDefaultError } = await supabase
+      .from("workspaces")
+      .select("id")
+      .eq("organization_id", context.organizationId)
+      .is("archived_at", null)
+      .order("created_at", { ascending: true })
+      .limit(1)
+      .maybeSingle()
+
+    if (nextDefaultError) {
+      return errorJson(nextDefaultError.message)
+    }
+
+    if (nextDefault) {
+      const { error: promoteError } = await supabase
+        .from("workspaces")
+        .update({ is_default: true })
+        .eq("organization_id", context.organizationId)
+        .eq("id", nextDefault.id)
+
+      if (promoteError) {
+        return errorJson(promoteError.message)
+      }
+    }
   }
 
   return json(data)

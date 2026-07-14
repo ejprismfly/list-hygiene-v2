@@ -6,14 +6,13 @@ import {
   CircleUserRound,
   CreditCard,
   LayoutDashboard,
-  LogOut,
   Menu,
   Settings,
   X,
 } from "lucide-react"
 
-import { signOutAction } from "@/app/(auth)/actions"
 import { BrandLogo } from "@/components/app/brand-logo"
+import { LogoutForm } from "@/components/app/logout-form"
 import { WorkspaceSwitcher } from "@/components/app/workspace-switcher"
 import { Badge } from "@/components/ui/badge"
 import { Button, buttonVariants } from "@/components/ui/button"
@@ -79,16 +78,21 @@ export function MobileMenu({ active, userEmail }: MobileMenuProps) {
 
   return (
     <>
-      <header className="sticky top-0 z-40 flex items-center justify-between gap-3 border-b bg-background/95 px-4 py-3 md:hidden">
-        <div className="min-w-0">
+      <header className="sticky top-0 z-40 flex items-center gap-3 border-b bg-background/95 px-4 py-3 md:hidden">
+        <Button
+          type="button"
+          variant="outline"
+          size="icon"
+          aria-label="Open menu"
+          onClick={() => setOpen(true)}
+        >
+          <Menu className="size-4" />
+        </Button>
+
+        <div className="min-w-0 flex-1">
           <BrandLogo />
           <p className="truncate text-xs text-muted-foreground">{userEmail}</p>
         </div>
-
-        <Button type="button" variant="outline" onClick={() => setOpen(true)}>
-          <Menu className="size-4" />
-          Menu
-        </Button>
       </header>
 
       {open && (
@@ -138,16 +142,11 @@ export function MobileMenu({ active, userEmail }: MobileMenuProps) {
             </nav>
           </div>
 
-          <div className="grid gap-3 border-t bg-background pt-4">
+          <div className="grid gap-3 bg-background pt-4">
             <Badge variant="outline" className="w-fit max-w-full">
               <span className="truncate">{userEmail}</span>
             </Badge>
-            <form action={signOutAction}>
-              <Button type="submit" className="w-full gap-2">
-                <LogOut className="size-4" />
-                Logout
-              </Button>
-            </form>
+            <LogoutForm fullWidth showIcon />
           </div>
         </div>
       )}

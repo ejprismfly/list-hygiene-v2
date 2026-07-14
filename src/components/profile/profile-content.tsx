@@ -1,8 +1,8 @@
 import { Mail, MessageCircle } from "lucide-react"
 
-import { signOutAction } from "@/app/(auth)/actions"
+import { LogoutForm } from "@/components/app/logout-form"
 import { Badge } from "@/components/ui/badge"
-import { Button, buttonVariants } from "@/components/ui/button"
+import { buttonVariants } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Separator } from "@/components/ui/separator"
 
@@ -14,9 +14,7 @@ export function ProfileContent({ email }: { email: string }) {
           <h1 className="text-2xl font-semibold tracking-normal sm:text-3xl">
             Account Information
           </h1>
-          <form action={signOutAction}>
-            <Button type="submit">Logout</Button>
-          </form>
+          <LogoutForm />
         </div>
 
         <div className="grid gap-4">

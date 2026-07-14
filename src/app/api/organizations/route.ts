@@ -7,14 +7,92 @@ import {
   makeSlug,
   readJsonBody,
 } from "@/lib/api/tenant"
+import {
+  isDirectDatabaseConfigured,
+  queryRows,
+} from "@/lib/db/postgres"
 
 const selectOrganization = "id, name, slug, owner_user_id, created_at"
 const selectWorkspace = "id, organization_id, name, slug, is_default, created_at"
 
+type OrganizationRow = {
+  id: string
+  name: string
+  slug: string | null
+  owner_user_id: string
+  created_at: string
+  role: "owner" | "admin" | "member" | null
+}
+
+async function getOrganizationsFromPostgres(user: {
+  id: string
+  email?: string | null
+}) {
+  let organizations = await queryRows<OrganizationRow>(
+    `
+      select
+        o.id::text,
+        o.name,
+        o.slug,
+        o.owner_user_id::text,
+        o.created_at::text,
+        om.role
+      from public.organization_members om
+      join public.organizations o on o.id = om.organization_id
+      where om.user_id = $1::uuid
+        and om.status = 'active'
+      order by om.created_at asc, o.created_at asc
+    `,
+    [user.id]
+  )
+
+  if (!organizations.length) {
+    await queryRows(
+      "select public.ensure_default_organization_workspace($1::uuid, $2::text, '{}'::jsonb)",
+      [user.id, user.email || ""]
+    )
+
+    organizations = await queryRows<OrganizationRow>(
+      `
+        select
+          o.id::text,
+          o.name,
+          o.slug,
+          o.owner_user_id::text,
+          o.created_at::text,
+          om.role
+        from public.organization_members om
+        join public.organizations o on o.id = om.organization_id
+        where om.user_id = $1::uuid
+          and om.status = 'active'
+        order by om.created_at asc, o.created_at asc
+      `,
+      [user.id]
+    )
+  }
+
+  return organizations
+}
+
 export async function GET() {
   const user = await getCurrentUser()
   if (!user) {
+    console.warn("Organizations GET failed: not authenticated")
     return errorJson("Not authenticated", 401)
+  }
+
+  if (isDirectDatabaseConfigured()) {
+    try {
+      return json(await getOrganizationsFromPostgres(user))
+    } catch (error) {
+      console.error("Organizations GET direct database lookup failed:", {
+        user_id: user.id,
+        error,
+      })
+      return errorJson(
+        error instanceof Error ? error.message : "Unable to load organizations"
+      )
+    }
   }
 
   const supabase = await getDataClient()
@@ -25,6 +103,10 @@ export async function GET() {
     .eq("status", "active")
 
   if (membershipError) {
+    console.error("Organizations GET membership lookup failed:", {
+      user_id: user.id,
+      error: membershipError,
+    })
     return errorJson(membershipError.message)
   }
 
@@ -35,6 +117,11 @@ export async function GET() {
   if (!organizationIds.length) {
     const created = await getOrCreateDefaultOrganization(supabase, user)
     if (!created.ok) {
+      console.error("Organizations GET default creation failed:", {
+        user_id: user.id,
+        error: created.error,
+        status: created.status,
+      })
       return errorJson(created.error, created.status)
     }
     return json([created.organization])
@@ -47,6 +134,11 @@ export async function GET() {
     .order("created_at", { ascending: true })
 
   if (error) {
+    console.error("Organizations GET organization lookup failed:", {
+      user_id: user.id,
+      organization_ids: organizationIds,
+      error,
+    })
     return errorJson(error.message)
   }
 
