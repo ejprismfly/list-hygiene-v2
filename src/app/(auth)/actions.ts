@@ -33,8 +33,9 @@ function requireEmailAndPassword(email: string, password: string) {
 
 async function getRequestOrigin() {
   const headerList = await headers()
+  const configuredHost = process.env.NEXT_PUBLIC_APP_HOST?.replace(/\/+$/, "")
 
-  return headerList.get("origin") ?? "http://localhost:3000"
+  return configuredHost || headerList.get("origin") || "http://localhost:3000"
 }
 
 export async function loginAction(

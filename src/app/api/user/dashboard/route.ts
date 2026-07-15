@@ -9,6 +9,7 @@ import {
   buildDashboardReport,
   getCurrentMonthRange,
   type DashboardCategory,
+  type DashboardHistoricalPoint,
 } from "@/lib/dashboard/report"
 
 type CountOptions = {
@@ -17,6 +18,7 @@ type CountOptions = {
   tagged?: boolean
   suppress?: boolean
   category?: DashboardCategory
+  typoFixed?: boolean
 }
 
 export async function GET(request: Request) {
@@ -29,21 +31,46 @@ export async function GET(request: Request) {
   const now = new Date()
   const monthRange = getCurrentMonthRange(now)
 
-  async function countEmails(options: CountOptions = {}) {
-    let query = supabase
+  function scopedEmailCountQuery() {
+    const query = supabase
       .from("emails")
       .select("id", { count: "exact", head: true })
 
     if (context.legacyFallback || !context.organizationId) {
-      query = query.eq("user_id", context.user?.id)
-    } else {
-      query = query.eq("organization_id", context.organizationId)
-      if (context.workspaceId) {
-        query = query.eq("workspace_id", context.workspaceId)
-      } else if (!canManageOrganization(context.role)) {
-        query = query.in("workspace_id", context.allowedWorkspaceIds)
-      }
+      return query.eq("user_id", context.user?.id)
     }
+
+    let scoped = query.eq("organization_id", context.organizationId)
+    if (context.workspaceId) {
+      scoped = scoped.eq("workspace_id", context.workspaceId)
+    } else if (!canManageOrganization(context.role)) {
+      scoped = scoped.in("workspace_id", context.allowedWorkspaceIds)
+    }
+
+    return scoped
+  }
+
+  function scopedHistoricalQuery() {
+    const query = supabase
+      .from("emails_historical_performance")
+      .select("month, valid, invalid, risky, restricted, start, order_id")
+
+    if (context.legacyFallback || !context.organizationId) {
+      return query.eq("user_id", context.user?.id)
+    }
+
+    let scoped = query.eq("organization_id", context.organizationId)
+    if (context.workspaceId) {
+      scoped = scoped.eq("workspace_id", context.workspaceId)
+    } else if (!canManageOrganization(context.role)) {
+      scoped = scoped.in("workspace_id", context.allowedWorkspaceIds)
+    }
+
+    return scoped
+  }
+
+  async function countEmails(options: CountOptions = {}) {
+    let query = scopedEmailCountQuery()
 
     if (options.tagged !== undefined) {
       query = query.eq("tagged", options.tagged)
@@ -55,6 +82,10 @@ export async function GET(request: Request) {
 
     if (options.category) {
       query = query.eq("lh_category", options.category)
+    }
+
+    if (options.typoFixed !== undefined) {
+      query = query.eq("typo_fixed", options.typoFixed)
     }
 
     if (options.from) {
@@ -73,8 +104,37 @@ export async function GET(request: Request) {
     return count ?? 0
   }
 
+  async function loadHistorical(): Promise<DashboardHistoricalPoint[]> {
+    const query = scopedHistoricalQuery()
+      .order("start", { ascending: false })
+      .limit(12)
+
+    const { data, error } = await query
+    if (error) {
+      console.warn("Dashboard historical lookup failed:", error.message)
+      return []
+    }
+
+    return (data || [])
+      .reverse()
+      .map((row) => ({
+        month: String(row.month || ""),
+        valid: Number(row.valid || 0),
+        invalid: Number(row.invalid || 0),
+        risky: Number(row.risky || 0),
+        restricted: Number(row.restricted || 0),
+      }))
+  }
+
   try {
-    const [totalSuppressed, monthTotalTagged, monthSuppressed, ...categories] =
+    const [
+      totalSuppressed,
+      monthTotalTagged,
+      monthSuppressed,
+      typoFixes,
+      historical,
+      ...categories
+    ] =
       await Promise.all([
         countEmails({ tagged: true, suppress: true }),
         countEmails({
@@ -88,6 +148,13 @@ export async function GET(request: Request) {
           from: monthRange.start,
           to: monthRange.end,
         }),
+        countEmails({
+          tagged: true,
+          typoFixed: true,
+          from: monthRange.start,
+          to: monthRange.end,
+        }),
+        loadHistorical(),
         ...DASHBOARD_CATEGORY_KEYS.map((category) =>
           countEmails({
             tagged: true,
@@ -111,6 +178,8 @@ export async function GET(request: Request) {
         totalSuppressed,
         monthTotalTagged,
         monthSuppressed,
+        typoFixes,
+        historical,
         chart,
       })
     )

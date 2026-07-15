@@ -38,6 +38,8 @@ import {
 import { Switch } from "@/components/ui/switch"
 import { dashboardDemoData } from "@/lib/demo-data"
 
+type DashboardViewData = typeof dashboardDemoData
+
 const milestoneLabels = ["10", "100", "500", "1k", "10k", "100k", "500k", "1m"]
 const milestoneValues = [10, 100, 500, 1000, 10000, 100000, 500000, 1000000]
 const numberFormatter = new Intl.NumberFormat("en-US")
@@ -212,6 +214,18 @@ const emptyKpis = [
   },
 ]
 
+const emptyDashboardData: DashboardViewData = {
+  monthLabel: new Intl.DateTimeFormat("en-US", {
+    month: "long",
+    year: "numeric",
+  }).format(new Date()),
+  totalSuppressed: 0,
+  nextMilestoneRemaining: 10,
+  kpis: emptyKpis.map(({ label, value }) => ({ label, value })),
+  distribution: [],
+  historical: [],
+}
+
 const emailStatusFallbackColors = [
   "#346ce6",
   "#16a34a",
@@ -303,14 +317,18 @@ function renderEmailStatusSector(
 export function DashboardContent() {
   const [showDummyData, setShowDummyData] = useState(true)
   const [activeStatus, setActiveStatus] = useState("valid")
-  const kpis = showDummyData
-    ? dashboardDemoData.kpis.map((item, index) => ({
-        ...item,
-        icon: emptyKpis[index].icon,
-      }))
-    : emptyKpis
-  const distribution = showDummyData ? dashboardDemoData.distribution : []
-  const historical = showDummyData ? dashboardDemoData.historical : []
+  const [liveData, setLiveData] = useState<DashboardViewData | null>(null)
+  const [liveLoading, setLiveLoading] = useState(false)
+  const [liveError, setLiveError] = useState("")
+  const activeDashboardData = showDummyData
+    ? dashboardDemoData
+    : liveData || emptyDashboardData
+  const kpis = activeDashboardData.kpis.map((item, index) => ({
+    ...item,
+    icon: emptyKpis[index]?.icon || ShieldCheck,
+  }))
+  const distribution = activeDashboardData.distribution
+  const historical = activeDashboardData.historical
   const historicalChartData = historical.map((item) => ({
     ...item,
     total: item.valid + item.invalid + item.risky + item.restricted,
@@ -340,11 +358,50 @@ export function DashboardContent() {
       ? Math.round((activeChartItem.emails / distributionTotal) * 100)
       : 0
   const animatedActiveStatusPercent = useAnimatedNumber(activeStatusPercent, 350)
-  const totalSuppressed = showDummyData ? dashboardDemoData.totalSuppressed : 0
-  const nextMilestoneRemaining = showDummyData
-    ? dashboardDemoData.nextMilestoneRemaining
-    : 10
+  const totalSuppressed = activeDashboardData.totalSuppressed
+  const nextMilestoneRemaining = activeDashboardData.nextMilestoneRemaining
   const milestoneProgressPercent = getMilestoneProgressPercent(totalSuppressed)
+
+  useEffect(() => {
+    let cancelled = false
+
+    async function loadLiveDashboard() {
+      setLiveLoading(true)
+      setLiveError("")
+
+      try {
+        const response = await fetch("/api/user/dashboard", {
+          cache: "no-store",
+        })
+        if (!response.ok) {
+          throw new Error("Unable to load dashboard data.")
+        }
+
+        const data = (await response.json()) as DashboardViewData
+        if (!cancelled) {
+          setLiveData(data)
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setLiveError(
+            error instanceof Error
+              ? error.message
+              : "Unable to load dashboard data."
+          )
+        }
+      } finally {
+        if (!cancelled) {
+          setLiveLoading(false)
+        }
+      }
+    }
+
+    loadLiveDashboard()
+
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   return (
     <div className="grid gap-8">
@@ -355,7 +412,11 @@ export function DashboardContent() {
               Welcome. Take a look at what your dashboard will look like soon!
             </p>
             <p className="text-sm text-muted-foreground">
-              Toggle on or off to see dummy data.
+              {showDummyData
+                ? "Toggle off to see your workspace data."
+                : liveLoading
+                  ? "Loading workspace data."
+                  : liveError || "Showing your workspace data."}
             </p>
           </div>
           <Switch
@@ -422,7 +483,7 @@ export function DashboardContent() {
 
       <section className="grid gap-6">
         <h1 className="text-2xl font-semibold tracking-normal sm:text-3xl">
-          {dashboardDemoData.monthLabel}
+          {activeDashboardData.monthLabel}
         </h1>
         <div className="grid gap-6 lg:grid-cols-[1.2fr_0.85fr]">
           <div className="grid gap-3 sm:grid-cols-2">

@@ -105,6 +105,67 @@ test("workspace/billing/integration API surface exists in v2 app router", () => 
   }
 })
 
+test("legacy route aliases redirect to native v2 pages", () => {
+  const aliases = [
+    ["src/app/(app)/integration-settings/page.tsx", "/settings"],
+    ["src/app/(app)/billing-failed/page.tsx", "/billing/failed"],
+    ["src/app/(app)/billing-successful/page.tsx", "/billing"],
+  ]
+
+  for (const [route, target] of aliases) {
+    const content = read(route)
+    assert.match(content, new RegExp(`redirect\\("${target.replace("/", "\\/")}"\\)`))
+  }
+})
+
+test("side-by-side deployment docs capture live database constraints", () => {
+  const env = read(".env.example")
+  const guide = read("docs/deployment/v2-side-by-side.md")
+  const readiness = read("docs/deployment/live-db-readiness.md")
+  const demoSeed = read("docs/migration/sql/20260714_v2_efren_demo_seed.sql")
+
+  for (const key of [
+    "NEXT_PUBLIC_APP_HOST",
+    "NEXT_PUBLIC_ORG_WORKSPACES_ENABLED",
+    "ORG_WORKSPACES_ENABLED",
+    "SUPABASE_SERVICE_ROLE_KEY",
+    "DATABASE_URL",
+    "NEXT_PUBLIC_KLAVIYO_CLIENT_ID",
+    "KLAVIYO_CLIENT_SECRET",
+    "STRIPE_SECRET_KEY",
+    "STRIPE_WEBHOOK_SECRET",
+  ]) {
+    assert.match(env, new RegExp(`^${key}=`, "m"))
+  }
+
+  assert.match(guide, /Deploy v2 on a separate hostname/)
+  assert.match(guide, /same live Supabase database/)
+  assert.match(guide, /Do not run `supabase\/migrations\/20260713000000_v2_dev_bootstrap.sql` against live production/)
+  assert.match(guide, /keep Stripe webhook delivery on the current v1\/live endpoint/)
+  assert.match(readiness, /20260706_organizations_workspaces\.sql/)
+  assert.match(readiness, /20260706_backfill_organizations_workspaces\.sql/)
+  assert.match(readiness, /20260707_workspace_archiving\.sql/)
+  assert.match(readiness, /20260709_workspace_billing\.sql/)
+  assert.match(readiness, /20260709_workspace_report_tables\.sql/)
+  assert.match(readiness, /Do not run the v2 greenfield bootstrap migration on live/)
+  assert.match(readiness, /Keep Stripe webhooks pointed at v1/)
+  assert.match(demoSeed, /Dev\/test seed only/)
+  assert.match(demoSeed, /Do not run this against the current v1\/live database/)
+})
+
+test("side-by-side callbacks prefer the configured v2 host", () => {
+  const authActions = read("src/app/(auth)/actions.ts")
+  const settingsContent = read("src/components/settings/settings-content.tsx")
+  const stripe = read("src/lib/billing/stripe.ts")
+
+  assert.match(authActions, /NEXT_PUBLIC_APP_HOST\?\.replace\(\/\\\/\+\$\/, ""\)/)
+  assert.match(authActions, /configuredHost \|\| headerList\.get\("origin"\)/)
+  assert.match(settingsContent, /NEXT_PUBLIC_APP_HOST\?\.replace\(\/\\\/\+\$\/, ""\)/)
+  assert.match(settingsContent, /\$\{appHost\}\/api\/oauth\/klaviyo\/callback/)
+  assert.match(stripe, /NEXT_PUBLIC_APP_HOST \|\| "http:\/\/localhost:3000"/)
+  assert.match(stripe, /replace\(\n    \/\\\/\+\$\/,\n    ""\n  \)/)
+})
+
 test("dashboard remains the only component importing demo data", () => {
   const files = walk("src").filter((file) => /\.(ts|tsx)$/.test(file))
   const offenders = files.filter((file) => {
@@ -115,6 +176,20 @@ test("dashboard remains the only component importing demo data", () => {
   })
 
   assert.deepEqual(offenders, [])
+})
+
+test("dashboard non-demo mode is wired to workspace-scoped live API data", () => {
+  const component = read("src/components/dashboard/dashboard-content.tsx")
+  const route = read("src/app/api/user/dashboard/route.ts")
+  const report = read("src/lib/dashboard/report.ts")
+
+  assert.match(component, /fetch\("\/api\/user\/dashboard"/)
+  assert.match(component, /showDummyData\s+\?\s+dashboardDemoData\s+:\s+liveData/)
+  assert.match(route, /resolveTenantContext\(request, \{ requireWorkspace: true \}\)/)
+  assert.match(route, /emails_historical_performance/)
+  assert.match(route, /typo_fixed/)
+  assert.match(report, /distribution: DASHBOARD_CATEGORY_KEYS\.map/)
+  assert.match(report, /nextMilestoneRemaining/)
 })
 
 test("UI code stays on shadcn/local primitives and avoids extra UI kits", () => {

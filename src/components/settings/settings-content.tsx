@@ -130,8 +130,11 @@ export function SettingsContent({ connected = false }: SettingsContentProps) {
       "SameSite=Lax",
     ].join("; ")
 
+    const appHost =
+      process.env.NEXT_PUBLIC_APP_HOST?.replace(/\/+$/, "") ||
+      window.location.origin
     const redirectUri = encodeURIComponent(
-      `${window.location.origin}/api/oauth/klaviyo/callback`
+      `${appHost}/api/oauth/klaviyo/callback`
     )
     const scopes =
       "segments:read segments:write lists:read lists:write profiles:read profiles:write accounts:read subscriptions:write subscriptions:read"

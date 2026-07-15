@@ -1,3 +1,9 @@
+-- Dev/test seed only.
+--
+-- Do not run this against the current v1/live database. Some current live
+-- report summary tables intentionally do not have id columns, while this
+-- greenfield seed targets the v2 dev schema.
+
 begin;
 
 do $$

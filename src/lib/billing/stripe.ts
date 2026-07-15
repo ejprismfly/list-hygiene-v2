@@ -41,5 +41,8 @@ export async function createStripeCustomer(
 }
 
 export function appHost() {
-  return process.env.NEXT_PUBLIC_APP_HOST || "http://localhost:3000"
+  return (process.env.NEXT_PUBLIC_APP_HOST || "http://localhost:3000").replace(
+    /\/+$/,
+    ""
+  )
 }
