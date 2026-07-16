@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react"
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
-import { Button } from "@/components/ui/button"
+import { Button, buttonVariants } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Progress, ProgressLabel } from "@/components/ui/progress"
 import { Separator } from "@/components/ui/separator"
@@ -93,6 +93,7 @@ export function BillingContent({ email }: BillingContentProps) {
   const [billing, setBilling] = useState<BillingResponse>(emptyBilling)
   const [statusMessage, setStatusMessage] = useState("")
   const [loading, setLoading] = useState(true)
+  const [activePlanRange, setActivePlanRange] = useState("9999")
 
   useEffect(() => {
     let cancelled = false
@@ -107,7 +108,9 @@ export function BillingContent({ email }: BillingContentProps) {
 
       const data = (await response.json()) as BillingResponse
       if (!cancelled) {
+        const selectedGroup = data.plans.find((group) => group.selected)
         setBilling(data)
+        setActivePlanRange(selectedGroup?.range || data.plans[0]?.range || "9999")
         setLoading(false)
       }
     }
@@ -133,21 +136,34 @@ export function BillingContent({ email }: BillingContentProps) {
     return Math.round((used / total) * 10000) / 100
   }, [billing])
 
+  function openBillingRoute(url: string | null | undefined, fallback: string) {
+    try {
+      const route = new URL(url || fallback, window.location.origin)
+      window.location.assign(`${route.pathname}${route.search}${route.hash}`)
+    } catch {
+      window.location.assign(fallback)
+    }
+  }
+
   function openPortal() {
-    window.location.assign(billing.portal || "/api/billing/portal")
+    openBillingRoute(billing.portal, "/api/billing/portal")
   }
 
   function selectPlan(plan: BillingPlanRow) {
     if (plan.checkout_url) {
-      window.location.assign(plan.checkout_url)
+      openBillingRoute(plan.checkout_url, "/api/billing/checkout")
       return
     }
 
     setStatusMessage(`${plan.name} is already selected.`)
   }
 
-  const planRows = billing.plans.flatMap((group) => group.rows || [])
+  const activePlanGroup =
+    billing.plans.find((group) => group.range === activePlanRange) ||
+    billing.plans[0]
+  const planRows = activePlanGroup?.rows || []
   const hasPlanRows = planRows.length > 0
+  const isEnterprisePlanRange = activePlanRange === "enterprise"
   const paymentMethod = billing.payments[0]
 
   return (
@@ -206,7 +222,7 @@ export function BillingContent({ email }: BillingContentProps) {
           </Alert>
         )}
 
-        <Tabs defaultValue={billing.plans.find((group) => group.selected)?.range || "9999"}>
+        <Tabs value={activePlanRange} onValueChange={setActivePlanRange}>
           <TabsList className="h-auto w-full flex-wrap justify-start sm:w-fit">
             {billing.plans.length ? (
               billing.plans.map((group) => (
@@ -219,6 +235,7 @@ export function BillingContent({ email }: BillingContentProps) {
                 <TabsTrigger value="9999">{"<10k"}</TabsTrigger>
                 <TabsTrigger value="10000-50000">10k to 50k</TabsTrigger>
                 <TabsTrigger value="50000-1000000">50k to 1m</TabsTrigger>
+                <TabsTrigger value="enterprise">Enterprise</TabsTrigger>
               </>
             )}
           </TabsList>
@@ -254,6 +271,20 @@ export function BillingContent({ email }: BillingContentProps) {
                       </TableCell>
                     </TableRow>
                   ))
+                ) : isEnterprisePlanRange ? (
+                  <TableRow>
+                    <TableCell colSpan={4}>
+                      <div className="grid gap-3 py-4 sm:flex sm:items-center sm:justify-between">
+                        <span>Need more than 1m credits?</span>
+                        <a
+                          href="mailto:support@listhygiene.com?subject=Enterprise%20billing"
+                          className={buttonVariants({ className: "w-fit" })}
+                        >
+                          Contact support
+                        </a>
+                      </div>
+                    </TableCell>
+                  </TableRow>
                 ) : (
                   <TableRow>
                     <TableCell colSpan={4}>

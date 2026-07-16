@@ -229,6 +229,7 @@ export async function GET(request: Request) {
     { label: "<10k", range: "9999", selected: false },
     { label: "10k to 50k", range: "10000-50000", selected: false },
     { label: "50k to 1m", range: "50000-1000000", selected: false },
+    { label: "Enterprise", range: "enterprise", selected: false },
   ]
 
   const plans = groups.map((group) => {

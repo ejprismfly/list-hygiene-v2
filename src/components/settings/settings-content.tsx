@@ -115,8 +115,10 @@ export function SettingsContent({ connected = false }: SettingsContentProps) {
   }
 
   async function addKlaviyoConnection() {
+    const popup = window.open("", "Klaviyo OAuth", "scrollbars=yes,width=800,height=800")
     const clientId = process.env.NEXT_PUBLIC_KLAVIYO_CLIENT_ID
     if (!clientId) {
+      popup?.close()
       setStatusMessage("Klaviyo client ID is not configured.")
       return
     }
@@ -142,7 +144,12 @@ export function SettingsContent({ connected = false }: SettingsContentProps) {
       scopes
     )}&code_challenge_method=S256&code_challenge=${challenge}`
 
-    window.open(authUrl, "Klaviyo OAuth", "scrollbars=yes,width=800,height=800")
+    if (popup) {
+      popup.location.href = authUrl
+      return
+    }
+
+    window.location.assign(authUrl)
   }
 
   useEffect(() => {

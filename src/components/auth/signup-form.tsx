@@ -5,7 +5,6 @@ import Link from "next/link"
 
 import { signupAction } from "@/app/(auth)/actions"
 import { AuthMessage } from "@/components/auth/auth-message"
-import { SocialAuthButtons } from "@/components/auth/social-auth-buttons"
 import { Button, buttonVariants } from "@/components/ui/button"
 import {
   Card,
@@ -18,7 +17,6 @@ import {
 import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Separator } from "@/components/ui/separator"
 import { AUTH_FORM_INITIAL_STATE } from "@/lib/auth-form"
 
 export function SignupForm() {
@@ -34,12 +32,6 @@ export function SignupForm() {
         <CardDescription>Start with a new List Hygiene account.</CardDescription>
       </CardHeader>
       <CardContent className="grid gap-5">
-        <SocialAuthButtons />
-        <div className="flex items-center gap-3 text-xs text-muted-foreground">
-          <Separator className="flex-1" />
-          <span>Email</span>
-          <Separator className="flex-1" />
-        </div>
         <form action={formAction} className="grid gap-4">
           <AuthMessage state={state} />
           <div className="grid gap-2">

@@ -1,14 +1,9 @@
 import {
-  createStripeCustomer,
-  getOrCreateStripeCustomerByEmail,
-} from "@/lib/billing/stripe"
-import {
   getBillingContext,
-  getBillingTenantFields,
   getScopedBillingAccount,
-  updateStripeAccountById,
 } from "@/lib/billing/scope"
 import { errorJson, json } from "@/lib/api/tenant"
+import { ensureScopedStripeCustomer } from "@/lib/billing/customer"
 
 const BILLING_CONTEXT_TIMEOUT_MS = 6000
 
@@ -77,7 +72,7 @@ export async function POST(request: Request) {
     return errorJson(billing.error, billing.status)
   }
 
-  const { supabase, user, workspaceId } = billing.context
+  const { user } = billing.context
   const stripeAccount = getScopedBillingAccount(billing.context)
 
   if (!user.email) {
@@ -92,36 +87,7 @@ export async function POST(request: Request) {
     return errorJson("STRIPE_SECRET_KEY is not configured.", 500)
   }
 
-  const metadata = {
-    user_id: user.id,
-    user_email: user.email || "",
-    billing_scope: workspaceId ? "workspace" : "user",
-    ...(billing.context.organizationId
-      ? { organization_id: billing.context.organizationId }
-      : {}),
-    ...(workspaceId ? { workspace_id: workspaceId } : {}),
-  }
+  const customer = await ensureScopedStripeCustomer(billing.context)
 
-  const customer = workspaceId
-    ? await createStripeCustomer(
-        user.email,
-        metadata,
-        `customer_create_workspace_${workspaceId}`
-      )
-    : await getOrCreateStripeCustomerByEmail(user.email, metadata)
-
-  if (stripeAccount) {
-    await updateStripeAccountById(supabase, stripeAccount, {
-      customer_id: customer.id,
-      ...getBillingTenantFields(billing.context),
-    })
-  } else {
-    await supabase.from("stripe_accounts").insert({
-      user_id: user.id,
-      customer_id: customer.id,
-      ...getBillingTenantFields(billing.context),
-    })
-  }
-
-  return json({ customer_id: customer.id, user_id: user.id })
+  return json({ customer_id: customer.customerId, user_id: user.id })
 }

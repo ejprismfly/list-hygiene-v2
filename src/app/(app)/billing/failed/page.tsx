@@ -1,7 +1,7 @@
 import Link from "next/link"
 import type { Metadata } from "next"
 
-import { Button, buttonVariants } from "@/components/ui/button"
+import { buttonVariants } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { getAppUserOrRedirect } from "@/lib/app-session"
 
@@ -45,7 +45,9 @@ export default async function BillingFailedPage() {
         </p>
 
         <div className="grid gap-2 sm:flex sm:flex-wrap">
-          <Button>Retry Payment</Button>
+          <Link href="/billing" className={buttonVariants()}>
+            Retry Payment
+          </Link>
           <Link
             href="/billing"
             className={buttonVariants({ variant: "outline" })}

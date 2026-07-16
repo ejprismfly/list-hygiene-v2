@@ -23,6 +23,12 @@ type SegmentAccount = {
   token_expires_in?: string | null
 }
 
+type KlaviyoToken = {
+  access_token?: string
+  refresh_token?: string
+  expires_in?: number
+}
+
 type QueryError = { message: string } | null
 
 type ScopedQuery<T> = PromiseLike<{ data: T[] | null; error: QueryError }> & {
@@ -146,6 +152,7 @@ export async function POST(request: Request) {
   }
 
   let accessToken = account.access_token as string
+  const tokenUpdates: Record<string, unknown> = {}
   const expiresAt = account.token_expires_in
     ? new Date(account.token_expires_in).getTime()
     : 0
@@ -171,17 +178,26 @@ export async function POST(request: Request) {
         refresh_token: account.refresh_token,
       }),
     })
-    const tokenJson = await tokenResponse.json()
+    const tokenJson = (await tokenResponse.json()) as KlaviyoToken
     if (!tokenJson.access_token) {
       return errorJson("Token exchange failed", 400)
     }
     accessToken = tokenJson.access_token
+    tokenUpdates.access_token = tokenJson.access_token
+    if (tokenJson.refresh_token) {
+      tokenUpdates.refresh_token = tokenJson.refresh_token
+    }
+    if (tokenJson.expires_in) {
+      tokenUpdates.token_expires_in = new Date(
+        Date.now() + Number(tokenJson.expires_in) * 1000
+      ).toISOString()
+    }
   }
 
   const segments = await fetchKlaviyoSegments(accessToken)
   const updateQuery = supabase
     .from("klaviyo_accounts")
-    .update({ segments })
+    .update({ segments, ...tokenUpdates })
     .eq("id", id) as unknown as ScopedQuery<SegmentAccount>
   const { error: updateError } = await applyAccountScope(updateQuery, context)
 

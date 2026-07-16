@@ -59,11 +59,11 @@ Stripe:
 STRIPE_SECRET_KEY=
 ```
 
-During side-by-side testing, keep Stripe webhook delivery on the current v1/live endpoint. v2 can create checkout and portal sessions, but this repo does not currently contain a v2 Stripe webhook route. The current v1 webhook already understands workspace billing metadata.
+During side-by-side testing, keep Stripe webhook delivery on the current v1/live endpoint until you are ready to test v2 billing end to end. v2 now includes a native Stripe webhook route at `/api/billing/webhook`; before using it, configure Stripe webhook delivery to the v2 endpoint and set `STRIPE_WEBHOOK_SECRET` to that endpoint secret.
 
 ## Supabase Auth
 
-Add these URLs to Supabase Auth redirect allowlist before testing v2 login, signup, magic link, social login, and password reset:
+Add these URLs to Supabase Auth redirect allowlist before testing v2 login, signup, and password reset:
 
 ```text
 https://v2.listhygiene.com/auth/callback
@@ -98,6 +98,7 @@ Expected v2 writes during testing:
 - `organizations`, `organization_members`, `workspaces`, `workspace_members` default rows for legacy users.
 - `klaviyo_accounts` rows when a tester connects Klaviyo from v2.
 - `stripe_accounts` workspace rows if billing customer creation or checkout is tested.
+- Stripe webhook endpoint `/api/billing/webhook` receives signed events for checkout completion, subscription invoices, and subscription deletion.
 - `stripe_payment_methods` updates if payment method actions are tested.
 
 Existing v1 rows remain readable because v2 falls back to legacy user-scoped data where workspace rows do not exist.
@@ -105,7 +106,7 @@ Existing v1 rows remain readable because v2 falls back to legacy user-scoped dat
 ## Initial Release Checks
 
 1. Deploy v2 to a separate hostname with the env above.
-2. Confirm password login, magic link, Google/GitHub login, signup confirmation, forgot password, and logout.
+2. Confirm password login, signup confirmation, forgot password, and logout.
 3. Confirm default organization/workspace creation for an existing live user.
 4. Confirm workspace switch, create, rename, archive/delete, and forced create modal after deleting the last workspace.
 5. Confirm dashboard data changes by workspace.
@@ -113,11 +114,12 @@ Existing v1 rows remain readable because v2 falls back to legacy user-scoped dat
 7. Confirm connected-workspace delete is blocked while an active Klaviyo account exists.
 8. Confirm billing page loads without hanging.
 9. Test checkout only if you are comfortable creating live Stripe customer/subscription objects for the selected workspace.
-10. Keep v1 deployed and serving the main hostname as rollback until v2 webhook handling and any remaining route aliases are fully verified.
+10. If testing v2 billing webhooks, point a Stripe webhook endpoint at `{NEXT_PUBLIC_APP_HOST}/api/billing/webhook` and use its own `STRIPE_WEBHOOK_SECRET`.
+11. Keep v1 deployed and serving the main hostname as rollback until v2 webhook handling and any remaining route aliases are fully verified.
 
 ## Known Gaps Before Full Cutover
 
-- v2 does not include a native Stripe webhook route yet; keep v1 webhook active.
+- v2 includes a native Stripe webhook route, but do not switch live Stripe delivery from v1 until the v2 endpoint has been tested with signed events.
 - v2 does not include a dedicated `/team` page; team management is currently inside the workspace manager modal.
 - v2 does not include a dedicated `/workspaces` page; workspace management is currently inside the sidebar/mobile workspace manager.
 - Dashboard has live API wiring, but demo-data toggling remains in the dashboard UI for preview/testing.

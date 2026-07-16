@@ -8,7 +8,7 @@
 | `/reset-password` | Implemented | Updates password after recovery callback session. |
 | `/auth/callback` | Implemented | Exchanges Supabase auth code and redirects recovery flows. |
 | `/dashboard` | Implemented | Native dashboard with workspace-scoped API data and demo-data toggle for preview/testing. |
-| `/billing` | Implemented | Native billing UI with workspace-scoped billing API context. Stripe webhooks still stay on v1 during side-by-side testing. |
+| `/billing` | Implemented | Native billing UI with workspace-scoped billing API context. v2 has `/api/billing/webhook`, but keep live Stripe delivery on v1 until the v2 endpoint is signed-event tested. |
 | `/billing/failed` | Implemented | Matches payment failed reference layout. |
 | `/billing-failed` | Compatibility alias | Redirects to `/billing/failed`. |
 | `/billing-successful` | Compatibility alias | Redirects to `/billing`. |

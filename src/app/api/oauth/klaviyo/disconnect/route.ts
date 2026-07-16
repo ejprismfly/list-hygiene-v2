@@ -72,11 +72,12 @@ export async function POST(request: Request) {
   if (
     process.env.NEXT_PUBLIC_KLAVIYO_CLIENT_ID &&
     process.env.KLAVIYO_CLIENT_SECRET &&
-    account.access_token
+    (account.refresh_token || account.access_token)
   ) {
     const authKey = Buffer.from(
       `${process.env.NEXT_PUBLIC_KLAVIYO_CLIENT_ID}:${process.env.KLAVIYO_CLIENT_SECRET}`
     ).toString("base64")
+    const token = account.refresh_token || account.access_token
 
     await fetch("https://a.klaviyo.com/oauth/revoke", {
       method: "POST",
@@ -85,8 +86,8 @@ export async function POST(request: Request) {
         Authorization: `Basic ${authKey}`,
       },
       body: new URLSearchParams({
-        token: account.access_token,
-        token_type_hint: "refresh_token",
+        token: token || "",
+        token_type_hint: account.refresh_token ? "refresh_token" : "access_token",
       }),
     }).catch((error) => {
       console.error("Klaviyo revoke failed:", error)

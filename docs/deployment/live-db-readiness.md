@@ -71,9 +71,9 @@ shape during side-by-side testing.
 - Deploy v2 on a separate hostname from v1.
 - Set `NEXT_PUBLIC_APP_HOST` to the v2 hostname.
 - Add the v2 auth callback URL in Supabase Auth settings.
-- Configure Supabase Auth Google and GitHub providers before testing social login.
+- Supabase Auth password login/signup and password reset should be configured before testing auth.
 - Add the v2 Klaviyo callback URL in the Klaviyo app.
-- Keep Stripe webhooks pointed at v1 until a v2 webhook route is ported and tested.
+- Stripe webhook endpoint: v2 exposes `/api/billing/webhook`, but keep live Stripe webhooks pointed at v1 until the v2 endpoint has been tested with signed events and its own `STRIPE_WEBHOOK_SECRET`.
 - Use a small internal tester list first because v2 will create default organization/workspace rows for users who do not have them yet.
 
 ## Smoke Test

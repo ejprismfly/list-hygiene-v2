@@ -18,5 +18,6 @@ the side-by-side checklist in `docs/deployment/v2-side-by-side.md`.
 - Do not commit `.env.local`.
 - Do not copy live Supabase, Stripe, Klaviyo, or Plasmic secrets into this app.
 - Use `.env.example` only for variable names.
-- Keep Stripe webhooks pointed at the current v1/live endpoint until a v2
-  webhook route is ported and tested.
+- Keep Stripe webhooks pointed at the current v1/live endpoint until the v2
+  `/api/billing/webhook` endpoint is tested with signed events and its own
+  endpoint secret.
