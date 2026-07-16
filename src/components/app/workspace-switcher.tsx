@@ -46,24 +46,17 @@ import {
   WORKSPACE_ID_COOKIE,
   WORKSPACE_ORGANIZATION_COOKIE,
 } from "@/lib/workspace-utils"
+import {
+  ClientApiError,
+  invalidateWorkspaceClientData,
+  loadOrganizations,
+  loadWorkspaces,
+  type OrganizationOption,
+  type WorkspaceOption,
+} from "@/lib/workspace-client-data"
 
 type WorkspaceSwitcherProps = {
   showOrganization?: boolean
-}
-
-type OrganizationOption = {
-  id: string
-  name: string
-  role?: "owner" | "admin" | "member" | null
-}
-
-type WorkspaceOption = {
-  id: string
-  organization_id: string
-  name: string
-  is_default?: boolean | null
-  has_connected_account?: boolean
-  member_count?: number
 }
 
 type WorkspaceMember = {
@@ -116,13 +109,17 @@ function persistSelection(organizationId: string | null, workspaceId: string | n
   document.cookie = serializeClientCookie(WORKSPACE_ID_COOKIE, workspaceId)
 }
 
-async function responseErrorMessage(response: Response) {
-  try {
-    const data = (await response.json()) as { error?: string }
-    return data.error || response.statusText
-  } catch {
-    return response.statusText
+function handleLoadError(error: unknown, fallback: string) {
+  if (error instanceof ClientApiError) {
+    if (error.status === 401) {
+      window.location.assign("/login")
+      return ""
+    }
+
+    return `${fallback}: ${error.message}`
   }
+
+  return fallback
 }
 
 export function WorkspaceSwitcher({
@@ -163,24 +160,8 @@ export function WorkspaceSwitcher({
   useEffect(() => {
     let cancelled = false
 
-    async function loadOrganizations() {
-      const response = await fetch("/api/organizations", {
-        cache: "no-store",
-        credentials: "same-origin",
-      })
-      if (!response.ok) {
-        if (response.status === 401) {
-          window.location.assign("/login")
-          return
-        }
-        setMessage(
-          `Unable to load organizations: ${await responseErrorMessage(response)}`
-        )
-        setOrganizationsLoading(false)
-        return
-      }
-
-      const data = (await response.json()) as OrganizationOption[]
+    async function loadOrganizationOptions() {
+      const data = await loadOrganizations()
       if (cancelled) {
         return
       }
@@ -197,7 +178,13 @@ export function WorkspaceSwitcher({
       setOrganizationsLoading(false)
     }
 
-    loadOrganizations()
+    loadOrganizationOptions().catch((error: unknown) => {
+      const message = handleLoadError(error, "Unable to load organizations")
+      if (message) {
+        setMessage(message)
+      }
+      setOrganizationsLoading(false)
+    })
     return () => {
       cancelled = true
     }
@@ -208,28 +195,12 @@ export function WorkspaceSwitcher({
       return
     }
 
+    const activeOrganizationId = organizationId
     let cancelled = false
 
-    async function loadWorkspaces() {
+    async function loadWorkspaceOptions() {
       setWorkspacesLoading(true)
-      const response = await fetch("/api/workspaces", {
-        cache: "no-store",
-        credentials: "same-origin",
-        headers: headersFor(organizationId),
-      })
-      if (!response.ok) {
-        if (response.status === 401) {
-          window.location.assign("/login")
-          return
-        }
-        setMessage(
-          `Unable to load workspaces: ${await responseErrorMessage(response)}`
-        )
-        setWorkspacesLoading(false)
-        return
-      }
-
-      const data = (await response.json()) as WorkspaceOption[]
+      const data = await loadWorkspaces(activeOrganizationId)
       if (cancelled) {
         return
       }
@@ -244,11 +215,17 @@ export function WorkspaceSwitcher({
       setWorkspaces(data)
       setSelectedId(nextWorkspace?.id || null)
       setEditName(nextWorkspace?.name || "")
-      persistSelection(organizationId, nextWorkspace?.id || null)
+      persistSelection(activeOrganizationId, nextWorkspace?.id || null)
       setWorkspacesLoading(false)
     }
 
-    loadWorkspaces()
+    loadWorkspaceOptions().catch((error: unknown) => {
+      const message = handleLoadError(error, "Unable to load workspaces")
+      if (message) {
+        setMessage(message)
+      }
+      setWorkspacesLoading(false)
+    })
     return () => {
       cancelled = true
     }
@@ -316,6 +293,7 @@ export function WorkspaceSwitcher({
     setDraftName("")
     setCreateDialogOpen(false)
     setCreatingWorkspace(false)
+    invalidateWorkspaceClientData(organizationId)
     setWorkspaces((current) => [...current, data])
     setSwitchingWorkspaceName(workspaceLabel(data.name))
     persistSelection(organizationId, data.id)
@@ -340,6 +318,7 @@ export function WorkspaceSwitcher({
       return
     }
 
+    invalidateWorkspaceClientData(organizationId)
     setWorkspaces((current) =>
       current.map((workspace) =>
         workspace.id === data.id ? { ...workspace, name: data.name } : workspace
@@ -368,6 +347,7 @@ export function WorkspaceSwitcher({
       (workspace) => workspace.id !== selectedWorkspace.id
     )
     setDeleteDialogOpen(false)
+    invalidateWorkspaceClientData(organizationId)
     setWorkspaces((current) =>
       current.filter((workspace) => workspace.id !== selectedWorkspace.id)
     )

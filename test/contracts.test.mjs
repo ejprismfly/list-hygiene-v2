@@ -166,6 +166,53 @@ test("side-by-side callbacks prefer the configured v2 host", () => {
   assert.match(stripe, /replace\(\n    \/\\\/\+\$\/,\n    ""\n  \)/)
 })
 
+test("auth UI supports password, magic link, and social OAuth", () => {
+  const authActions = read("src/app/(auth)/actions.ts")
+  const loginForm = read("src/components/auth/login-form.tsx")
+  const signupForm = read("src/components/auth/signup-form.tsx")
+  const socialButtons = read("src/components/auth/social-auth-buttons.tsx")
+  const guide = read("docs/deployment/v2-side-by-side.md")
+
+  assert.match(authActions, /signInWithOtp/)
+  assert.match(authActions, /shouldCreateUser: true/)
+  assert.match(authActions, /signInWithOAuth/)
+  assert.match(authActions, /provider === "google" \|\| provider === "github"/)
+  assert.match(loginForm, /magicLinkAction/)
+  assert.match(loginForm, /Send magic link/)
+  assert.match(loginForm, /<SocialAuthButtons \/>/)
+  assert.match(signupForm, /<SocialAuthButtons \/>/)
+  assert.match(socialButtons, /Continue with Google/)
+  assert.match(socialButtons, /Continue with GitHub/)
+  assert.match(guide, /magic link, social login/)
+  assert.match(guide, /Google/)
+  assert.match(guide, /GitHub/)
+  assert.match(guide, /supabase-project-ref/)
+  assert.match(guide, /auth\/v1\/callback/)
+})
+
+test("page navigation avoids duplicate workspace bootstrap and remote auth checks", () => {
+  const appSession = read("src/lib/app-session.ts")
+  const proxy = read("src/lib/supabase/proxy.ts")
+  const tenant = read("src/lib/api/tenant.ts")
+  const workspaceClientData = read("src/lib/workspace-client-data.ts")
+  const workspaceGate = read("src/components/app/workspace-required-gate.tsx")
+  const workspaceSwitcher = read("src/components/app/workspace-switcher.tsx")
+
+  assert.match(appSession, /auth\.getSession\(\)/)
+  assert.doesNotMatch(appSession, /auth\.getUser\(\)/)
+  assert.match(proxy, /auth\.getSession\(\)/)
+  assert.doesNotMatch(proxy, /auth\.getUser\(\)/)
+  assert.match(tenant, /auth\.getUser\(\)/)
+  assert.match(workspaceClientData, /organizationCache\.pending/)
+  assert.match(workspaceClientData, /workspaceCaches/)
+  assert.match(workspaceGate, /loadOrganizations/)
+  assert.match(workspaceGate, /loadWorkspaces/)
+  assert.match(workspaceSwitcher, /loadOrganizations/)
+  assert.match(workspaceSwitcher, /loadWorkspaces/)
+  assert.doesNotMatch(workspaceGate, /fetch\("\/api\/organizations"/)
+  assert.doesNotMatch(workspaceSwitcher, /fetch\("\/api\/organizations"/)
+})
+
 test("dashboard remains the only component importing demo data", () => {
   const files = walk("src").filter((file) => /\.(ts|tsx)$/.test(file))
   const offenders = files.filter((file) => {

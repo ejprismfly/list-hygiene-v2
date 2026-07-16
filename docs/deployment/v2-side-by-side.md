@@ -63,7 +63,7 @@ During side-by-side testing, keep Stripe webhook delivery on the current v1/live
 
 ## Supabase Auth
 
-Add these URLs to Supabase Auth redirect allowlist before testing v2 login/signup/reset:
+Add these URLs to Supabase Auth redirect allowlist before testing v2 login, signup, magic link, social login, and password reset:
 
 ```text
 https://v2.listhygiene.com/auth/callback
@@ -71,6 +71,25 @@ https://v2.listhygiene.com
 ```
 
 Users will need to log in separately on v2 because v1 and v2 are on different hostnames. They still authenticate against the same Supabase Auth users table.
+
+Enable and configure these OAuth providers in Supabase before testing the social buttons:
+
+```text
+Google
+GitHub
+```
+
+In the Google/GitHub provider dashboards, use the provider callback URL shown by Supabase for this project, usually:
+
+```text
+https://<supabase-project-ref>.supabase.co/auth/v1/callback
+```
+
+Supabase will then redirect back to the v2 app callback URL:
+
+```text
+https://v2.listhygiene.com/auth/callback
+```
 
 ## Database Safety
 
@@ -86,7 +105,7 @@ Existing v1 rows remain readable because v2 falls back to legacy user-scoped dat
 ## Initial Release Checks
 
 1. Deploy v2 to a separate hostname with the env above.
-2. Confirm login, signup confirmation, forgot password, and logout.
+2. Confirm password login, magic link, Google/GitHub login, signup confirmation, forgot password, and logout.
 3. Confirm default organization/workspace creation for an existing live user.
 4. Confirm workspace switch, create, rename, archive/delete, and forced create modal after deleting the last workspace.
 5. Confirm dashboard data changes by workspace.

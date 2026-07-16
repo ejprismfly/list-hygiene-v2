@@ -3,6 +3,7 @@
 import { headers } from "next/headers"
 import { cookies } from "next/headers"
 import { redirect } from "next/navigation"
+import type { Provider } from "@supabase/supabase-js"
 
 import type { AuthFormState } from "@/lib/auth-form"
 import { getFormString } from "@/lib/auth-form"
@@ -29,6 +30,10 @@ function requireEmailAndPassword(email: string, password: string) {
   }
 
   return null
+}
+
+function isSupportedOAuthProvider(provider: string): provider is Provider {
+  return provider === "google" || provider === "github"
 }
 
 async function getRequestOrigin() {
@@ -73,6 +78,75 @@ export async function loginAction(
   }
 
   redirect("/dashboard")
+}
+
+export async function magicLinkAction(
+  _previousState: AuthFormState,
+  formData: FormData
+): Promise<AuthFormState> {
+  const email = getFormString(formData, "email")
+
+  if (!email) {
+    return { status: "error", message: "Email is required." }
+  }
+
+  if (!getSupabaseConfig()) {
+    return missingConfigState
+  }
+
+  const origin = await getRequestOrigin()
+  const supabase = await createClient()
+
+  try {
+    const { error } = await supabase.auth.signInWithOtp({
+      email,
+      options: {
+        emailRedirectTo: `${origin}/auth/callback`,
+        shouldCreateUser: true,
+      },
+    })
+
+    if (error) {
+      return { status: "error", message: error.message }
+    }
+  } catch {
+    return {
+      status: "error",
+      message: "Unable to send a sign-in link right now. Please try again.",
+    }
+  }
+
+  return {
+    status: "success",
+    message: "Check your email for a sign-in link.",
+  }
+}
+
+export async function oauthSignInAction(formData: FormData) {
+  const provider = getFormString(formData, "provider")
+
+  if (!isSupportedOAuthProvider(provider)) {
+    redirect("/login")
+  }
+
+  if (!getSupabaseConfig()) {
+    redirect("/login")
+  }
+
+  const origin = await getRequestOrigin()
+  const supabase = await createClient()
+  const { data, error } = await supabase.auth.signInWithOAuth({
+    provider,
+    options: {
+      redirectTo: `${origin}/auth/callback`,
+    },
+  })
+
+  if (error || !data.url) {
+    redirect("/login")
+  }
+
+  redirect(data.url)
 }
 
 export async function signupAction(

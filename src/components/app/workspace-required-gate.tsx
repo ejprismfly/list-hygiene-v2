@@ -14,24 +14,19 @@ import {
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import {
+  ClientApiError,
+  invalidateWorkspaceClientData,
+  loadOrganizations,
+  loadWorkspaces,
+  type OrganizationOption,
+} from "@/lib/workspace-client-data"
+import {
   readWorkspaceSelection,
   serializeClientCookie,
   writeWorkspaceSelection,
   WORKSPACE_ID_COOKIE,
   WORKSPACE_ORGANIZATION_COOKIE,
 } from "@/lib/workspace-utils"
-
-type OrganizationOption = {
-  id: string
-  name: string
-  role?: "owner" | "admin" | "member" | null
-}
-
-type WorkspaceOption = {
-  id: string
-  name: string
-  is_default?: boolean | null
-}
 
 function canManage(role?: string | null) {
   return role === "owner" || role === "admin"
@@ -54,13 +49,17 @@ function persistSelection(organizationId: string | null, workspaceId: string | n
   document.cookie = serializeClientCookie(WORKSPACE_ID_COOKIE, workspaceId)
 }
 
-async function responseErrorMessage(response: Response) {
-  try {
-    const data = (await response.json()) as { error?: string }
-    return data.error || response.statusText
-  } catch {
-    return response.statusText
+function handleLoadError(error: unknown, fallback: string) {
+  if (error instanceof ClientApiError) {
+    if (error.status === 401) {
+      window.location.assign("/login")
+      return ""
+    }
+
+    return `${fallback}: ${error.message}`
   }
+
+  return fallback
 }
 
 export function WorkspaceRequiredGate() {
@@ -74,25 +73,7 @@ export function WorkspaceRequiredGate() {
     let cancelled = false
 
     async function loadWorkspaceState() {
-      const organizationResponse = await fetch("/api/organizations", {
-        cache: "no-store",
-        credentials: "same-origin",
-      })
-      if (!organizationResponse.ok) {
-        if (organizationResponse.status === 401) {
-          window.location.assign("/login")
-          return
-        }
-        setMessage(
-          `Unable to load organizations: ${await responseErrorMessage(
-            organizationResponse
-          )}`
-        )
-        return
-      }
-
-      const organizations =
-        (await organizationResponse.json()) as OrganizationOption[]
+      const organizations = await loadOrganizations()
       if (cancelled) {
         return
       }
@@ -108,25 +89,7 @@ export function WorkspaceRequiredGate() {
         return
       }
 
-      const workspaceResponse = await fetch("/api/workspaces", {
-        cache: "no-store",
-        credentials: "same-origin",
-        headers: headersFor(nextOrganization.id),
-      })
-      if (!workspaceResponse.ok) {
-        if (workspaceResponse.status === 401) {
-          window.location.assign("/login")
-          return
-        }
-        setMessage(
-          `Unable to load workspaces: ${await responseErrorMessage(
-            workspaceResponse
-          )}`
-        )
-        return
-      }
-
-      const workspaces = (await workspaceResponse.json()) as WorkspaceOption[]
+      const workspaces = await loadWorkspaces(nextOrganization.id)
       if (cancelled) {
         return
       }
@@ -147,7 +110,12 @@ export function WorkspaceRequiredGate() {
       setWorkspaceRequired(true)
     }
 
-    loadWorkspaceState()
+    loadWorkspaceState().catch((error: unknown) => {
+      const message = handleLoadError(error, "Unable to load workspace state")
+      if (message) {
+        setMessage(message)
+      }
+    })
 
     return () => {
       cancelled = true
@@ -177,6 +145,7 @@ export function WorkspaceRequiredGate() {
       return
     }
 
+    invalidateWorkspaceClientData(organization.id)
     persistSelection(organization.id, data.id)
     setWorkspaceRequired(false)
     window.location.reload()
