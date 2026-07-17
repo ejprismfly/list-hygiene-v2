@@ -66,6 +66,7 @@ const providers = [
 
 export function SettingsContent({ connected = false }: SettingsContentProps) {
   const [connections, setConnections] = useState<KlaviyoConnection[]>([])
+  const [loadingConnections, setLoadingConnections] = useState(true)
   const [statusMessage, setStatusMessage] = useState("")
   const hasConnections = connections.length > 0
 
@@ -73,17 +74,29 @@ export function SettingsContent({ connected = false }: SettingsContentProps) {
     let cancelled = false
 
     async function loadConnections() {
-      const response = await fetch("/api/oauth/klaviyo/accounts")
-      if (!response.ok) {
-        if (connected) {
+      setLoadingConnections(true)
+
+      try {
+        const response = await fetch("/api/oauth/klaviyo/accounts")
+        if (!response.ok) {
+          if (!cancelled && connected) {
+            setStatusMessage("Unable to load Klaviyo connections.")
+          }
+          return
+        }
+
+        const data = (await response.json()) as KlaviyoConnection[]
+        if (!cancelled) {
+          setConnections(data)
+        }
+      } catch {
+        if (!cancelled && connected) {
           setStatusMessage("Unable to load Klaviyo connections.")
         }
-        return
-      }
-
-      const data = (await response.json()) as KlaviyoConnection[]
-      if (!cancelled) {
-        setConnections(data)
+      } finally {
+        if (!cancelled) {
+          setLoadingConnections(false)
+        }
       }
     }
 
@@ -156,9 +169,18 @@ export function SettingsContent({ connected = false }: SettingsContentProps) {
     function onMessage(event: MessageEvent) {
       if (event.data?.status === "connected") {
         setStatusMessage("Klaviyo connection added.")
+        setLoadingConnections(true)
         fetch("/api/oauth/klaviyo/accounts")
-          .then((response) => response.json())
+          .then((response) => {
+            if (!response.ok) {
+              throw new Error("Unable to load Klaviyo connections.")
+            }
+
+            return response.json()
+          })
           .then((data) => setConnections(data))
+          .catch(() => setStatusMessage("Unable to load Klaviyo connections."))
+          .finally(() => setLoadingConnections(false))
       }
       if (event.data?.status === "blocked") {
         setStatusMessage("That Klaviyo account is already connected.")
@@ -179,42 +201,48 @@ export function SettingsContent({ connected = false }: SettingsContentProps) {
         <p className="text-sm text-muted-foreground">{statusMessage}</p>
       )}
 
-      {hasConnections ? (
-        <Table className="min-w-[44rem]">
-          <TableHeader>
-            <TableRow>
-              <TableHead>Platform</TableHead>
-              <TableHead>Connection Name</TableHead>
-              <TableHead>Workspace</TableHead>
-              <TableHead>Connected</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead className="w-40" />
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {connections.map((connection) => (
-              <TableRow key={connection.id}>
-                <TableCell>{connection.platform || "Klaviyo"}</TableCell>
-                <TableCell>{connection.connection_name || "Klaviyo"}</TableCell>
-                <TableCell>Current workspace</TableCell>
-                <TableCell>{connection.connection_date || "-"}</TableCell>
-                <TableCell>
-                  <Badge variant="secondary">
-                    {connection.status || "Connected"}
-                  </Badge>
-                </TableCell>
-                <TableCell>
-                  <Link
-                    href={`/settings/klaviyo?id=${connection.id}`}
-                    className={buttonVariants({ className: "w-32" })}
-                  >
-                    Configure
-                  </Link>
-                </TableCell>
+      {loadingConnections ? (
+        <p className="text-lg text-muted-foreground">Loading connections...</p>
+      ) : hasConnections ? (
+        <div className="overflow-x-auto">
+          <Table className="min-w-[44rem]">
+            <TableHeader>
+              <TableRow>
+                <TableHead>Platform</TableHead>
+                <TableHead>Connection Name</TableHead>
+                <TableHead>Workspace</TableHead>
+                <TableHead>Connected</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead className="w-40" />
               </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+            </TableHeader>
+            <TableBody>
+              {connections.map((connection) => (
+                <TableRow key={connection.id}>
+                  <TableCell>{connection.platform || "Klaviyo"}</TableCell>
+                  <TableCell>
+                    {connection.connection_name || "Klaviyo"}
+                  </TableCell>
+                  <TableCell>Current workspace</TableCell>
+                  <TableCell>{connection.connection_date || "-"}</TableCell>
+                  <TableCell>
+                    <Badge variant="secondary">
+                      {connection.status || "Connected"}
+                    </Badge>
+                  </TableCell>
+                  <TableCell>
+                    <Link
+                      href={`/settings/klaviyo?id=${connection.id}`}
+                      className={buttonVariants({ className: "w-32" })}
+                    >
+                      Configure
+                    </Link>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
       ) : (
         <p className="text-lg text-muted-foreground">
           No Integration connected yet.

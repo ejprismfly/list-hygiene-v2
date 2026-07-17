@@ -27,10 +27,10 @@ export function OnboardingContent() {
         <p className="text-sm text-muted-foreground">
           Having any issues? Contact{" "}
           <a
-            href="mailto:support@prismfly.com"
+            href="mailto:support@listhygiene.com"
             className="font-medium underline underline-offset-4"
           >
-            support@prismfly.com
+            support@listhygiene.com
           </a>
         </p>
         <p className="mx-auto max-w-xl text-xs">

@@ -98,6 +98,10 @@ export function ConfigureConnectionContent() {
   }, [accountId])
 
   async function saveConnection() {
+    if (removed) {
+      return
+    }
+
     if (!accountId) {
       setStatusMessage("Select a Klaviyo connection to configure.")
       return
@@ -129,7 +133,7 @@ export function ConfigureConnectionContent() {
   }
 
   async function refreshSegments() {
-    if (!accountId) {
+    if (!accountId || removed) {
       return
     }
 
@@ -151,7 +155,7 @@ export function ConfigureConnectionContent() {
   }
 
   async function removeConnection() {
-    if (!accountId) {
+    if (!accountId || removed) {
       return
     }
 
@@ -201,8 +205,7 @@ export function ConfigureConnectionContent() {
   ]
 
   return (
-    <main className="min-h-svh bg-background p-4 sm:p-6 md:p-20">
-      <div className="mx-auto grid w-full max-w-3xl gap-4">
+    <div className="grid w-full max-w-3xl gap-4">
         <h1 className="mb-2 text-2xl font-semibold tracking-normal sm:mb-4 sm:text-3xl">
           Configure Your Connection
         </h1>
@@ -247,6 +250,7 @@ export function ConfigureConnectionContent() {
               </p>
             )}
             <Select
+              disabled={removed}
               value={selectedSegmentId || "all-emails"}
               onValueChange={(value) =>
                 setSelectedSegmentId(value === "all-emails" ? null : value)
@@ -302,6 +306,7 @@ export function ConfigureConnectionContent() {
                   {setting.description}
                 </p>
                 <Select
+                  disabled={removed}
                   value={setting.value}
                   onValueChange={(value) => {
                     if (value) {
@@ -329,7 +334,12 @@ export function ConfigureConnectionContent() {
           <Button type="button" disabled={removed} onClick={saveConnection}>
             Save
           </Button>
-          <Button type="button" variant="destructive" onClick={removeConnection}>
+          <Button
+            type="button"
+            variant="destructive"
+            disabled={removed}
+            onClick={removeConnection}
+          >
             Remove Connection
           </Button>
         </div>
@@ -350,7 +360,6 @@ export function ConfigureConnectionContent() {
             support@listhygiene.com
           </a>
         </p>
-      </div>
-    </main>
+    </div>
   )
 }
