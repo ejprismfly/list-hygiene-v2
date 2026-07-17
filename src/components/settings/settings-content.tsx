@@ -127,8 +127,38 @@ export function SettingsContent({ connected = false }: SettingsContentProps) {
       .replace(/=+$/, "")
   }
 
+  function klaviyoPopupFeatures() {
+    const width = 520
+    const height = 720
+    const left = Math.max(
+      0,
+      Math.round(window.screenX + (window.outerWidth - width) / 2)
+    )
+    const top = Math.max(
+      0,
+      Math.round(window.screenY + (window.outerHeight - height) / 2)
+    )
+
+    return [
+      "popup=yes",
+      `width=${width}`,
+      `height=${height}`,
+      `left=${left}`,
+      `top=${top}`,
+      "resizable=yes",
+      "scrollbars=yes",
+      "status=no",
+      "toolbar=no",
+      "menubar=no",
+    ].join(",")
+  }
+
   async function addKlaviyoConnection() {
-    const popup = window.open("", "Klaviyo OAuth", "scrollbars=yes,width=800,height=800")
+    const popup = window.open(
+      "about:blank",
+      "klaviyo-oauth",
+      klaviyoPopupFeatures()
+    )
     const clientId = process.env.NEXT_PUBLIC_KLAVIYO_CLIENT_ID
     if (!clientId) {
       popup?.close()
@@ -159,6 +189,7 @@ export function SettingsContent({ connected = false }: SettingsContentProps) {
 
     if (popup) {
       popup.location.href = authUrl
+      popup.focus()
       return
     }
 
