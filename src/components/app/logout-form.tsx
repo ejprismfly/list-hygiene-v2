@@ -4,6 +4,7 @@ import { LogOut } from "lucide-react"
 
 import { signOutAction } from "@/app/(auth)/actions"
 import { Button } from "@/components/ui/button"
+import { invalidateWorkspaceClientData } from "@/lib/workspace-client-data"
 import { clearWorkspaceClientState } from "@/lib/workspace-utils"
 
 type LogoutFormProps = {
@@ -20,6 +21,7 @@ export function LogoutForm({
       action={signOutAction}
       onSubmit={() => {
         clearWorkspaceClientState(window.localStorage)
+        invalidateWorkspaceClientData()
       }}
     >
       <Button type="submit" className={fullWidth ? "w-full gap-2" : "w-fit gap-2"}>

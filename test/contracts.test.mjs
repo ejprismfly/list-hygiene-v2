@@ -468,6 +468,7 @@ test("logout clears client workspace selection before server sign-out", () => {
 
   assert.match(logoutForm, /"use client"/)
   assert.match(logoutForm, /clearWorkspaceClientState\(window\.localStorage\)/)
+  assert.match(logoutForm, /invalidateWorkspaceClientData\(\)/)
   assert.match(logoutForm, /action=\{signOutAction\}/)
   assert.match(desktopShell, /<LogoutForm showIcon \/>/)
   assert.match(mobileShell, /<LogoutForm fullWidth showIcon \/>/)
