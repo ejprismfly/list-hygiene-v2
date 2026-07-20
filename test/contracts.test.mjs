@@ -190,6 +190,34 @@ test("auth UI is password-only", () => {
   assert.match(impersonate, /SUPABASE_SERVICE_ROLE_KEY/)
 })
 
+test("auth pages keep the v1 centered form composition", () => {
+  const authLayout = read("src/app/(auth)/layout.tsx")
+  const authShell = read("src/components/auth/auth-form-shell.tsx")
+  const passwordInput = read("src/components/auth/password-input.tsx")
+  const loginForm = read("src/components/auth/login-form.tsx")
+  const signupForm = read("src/components/auth/signup-form.tsx")
+  const forgotPasswordForm = read("src/components/auth/forgot-password-form.tsx")
+  const resetPasswordForm = read("src/components/auth/reset-password-form.tsx")
+
+  assert.match(authLayout, /<BrandLogo className="h-8" \/>/)
+  assert.match(authShell, /<h1 className="text-4xl/)
+  assert.match(authShell, /<Card className="w-full max-w-xs/)
+  assert.doesNotMatch(authShell, /CardHeader|CardTitle|CardDescription/)
+  assert.match(passwordInput, /Eye, EyeOff/)
+  assert.match(loginForm, /title="Login"/)
+  assert.match(loginForm, /Reset Password/)
+  assert.match(loginForm, /Sign up now!/)
+  assert.match(signupForm, /title="Sign Up"/)
+  assert.match(signupForm, /Create an account and get started/)
+  assert.match(signupForm, /Check Your Inbox!/)
+  assert.match(signupForm, /Terms of Use/)
+  assert.match(forgotPasswordForm, /title="Reset Password"/)
+  assert.match(forgotPasswordForm, /Send Reset Instructions/)
+  assert.match(forgotPasswordForm, /Back to Login/)
+  assert.match(resetPasswordForm, /title="Change Password"/)
+  assert.match(resetPasswordForm, /Update Password/)
+})
+
 test("page navigation avoids duplicate workspace bootstrap and remote auth checks", () => {
   const appSession = read("src/lib/app-session.ts")
   const proxy = read("src/lib/supabase/proxy.ts")
@@ -311,6 +339,22 @@ test("billing failed page avoids hard-coded plan and price details", () => {
 
 test("page metadata titles align with visible page headings", () => {
   assert.match(
+    read("src/app/(auth)/login/page.tsx"),
+    /title: "Login \| List Hygiene"/
+  )
+  assert.match(
+    read("src/app/(auth)/signup/page.tsx"),
+    /title: "Sign Up \| List Hygiene"/
+  )
+  assert.match(
+    read("src/app/(auth)/forgot-password/page.tsx"),
+    /title: "Forgot Password \| List Hygiene"/
+  )
+  assert.match(
+    read("src/app/(auth)/reset-password/page.tsx"),
+    /title: "Set New Password \| List Hygiene"/
+  )
+  assert.match(
     read("src/app/(app)/settings/page.tsx"),
     /title: "Integrations \| List Hygiene"/
   )
@@ -368,6 +412,12 @@ test("critical UI controls are wired to their own actions", () => {
   assert.match(configureConnection, /refreshing && <Loader2 className="size-4 animate-spin" \/>/)
   assert.match(configureConnection, /saving && <Loader2 className="size-4 animate-spin" \/>/)
   assert.match(configureConnection, /removing && <Loader2 className="size-4 animate-spin" \/>/)
+  assert.match(configureConnection, /Combobox/)
+  assert.match(configureConnection, /segment_search/)
+  assert.match(configureConnection, /segment_limit: "30"/)
+  assert.match(configureConnection, /itemToStringLabel=\{\(segment: SegmentOption\) => segment\.name\}/)
+  assert.match(configureConnection, /Selected segment/)
+  assert.match(configureConnection, /Search segments/)
   assert.doesNotMatch(configureConnection, /href="\/settings"/)
   assert.match(onboardingContent, /"use client"/)
   assert.match(onboardingContent, /onClick=\{connectKlaviyo\}/)
@@ -401,6 +451,12 @@ test("Klaviyo OAuth routes are workspace-scoped and maintain token lifecycle", (
   const segments = read("src/app/api/oauth/klaviyo/segments/route.ts")
   const disconnect = read("src/app/api/oauth/klaviyo/disconnect/route.ts")
 
+  assert.match(accounts, /function getSegmentName/)
+  assert.match(accounts, /segment\?\.name\?\.trim\(\)/)
+  assert.match(accounts, /"Unnamed segment"/)
+  assert.match(segments, /function getSegmentName/)
+  assert.match(segments, /segment\.name\?\.trim\(\)/)
+  assert.match(segments, /name: getSegmentName\(segment\)/)
   assert.match(callback, /klaviyo_pkce_verifier/)
   assert.match(callback, /window\.opener\?\.postMessage/)
   assert.match(callback, /workspace_id: tenantContext\.workspaceId/)

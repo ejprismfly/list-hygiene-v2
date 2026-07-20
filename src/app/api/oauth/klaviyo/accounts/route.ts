@@ -10,8 +10,9 @@ import { getStripeAccountForBilling } from "@/lib/billing/scope"
 
 type KlaviyoSegment = {
   id: string
+  name?: string | null
   attributes?: {
-    name?: string
+    name?: string | null
     created?: string
   }
 }
@@ -57,6 +58,14 @@ function applyAccountScope<T>(query: ScopedQuery<T>, context: TenantContext) {
   return scoped
 }
 
+function getSegmentName(segment?: KlaviyoSegment | null) {
+  return (
+    segment?.attributes?.name?.trim() ||
+    segment?.name?.trim() ||
+    "Unnamed segment"
+  )
+}
+
 function formatAccount(account: KlaviyoStoredAccount, firstOwnerUserId?: string | null) {
   const accountDetails = account.account_details || []
   const [details] = accountDetails
@@ -82,14 +91,11 @@ function formatAccount(account: KlaviyoStoredAccount, firstOwnerUserId?: string 
     active: account.active,
     segments: segments.map((segment) => ({
       id: segment.id,
-      name: segment.attributes?.name || segment.id,
+      name: getSegmentName(segment),
     })),
     selected_segment: {
       id: account.selected_segment?.id || null,
-      name:
-        account.selected_segment?.attributes?.name ||
-        account.selected_segment?.id ||
-        null,
+      name: account.selected_segment ? getSegmentName(account.selected_segment) : null,
     },
     connection_name: account.connection_name,
     fix_typos: account.fix_typos,

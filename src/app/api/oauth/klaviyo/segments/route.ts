@@ -9,8 +9,9 @@ import {
 
 type KlaviyoSegment = {
   id: string
+  name?: string | null
   attributes?: {
-    name?: string
+    name?: string | null
     created?: string
   }
 }
@@ -52,6 +53,14 @@ function applyAccountScope<T>(query: ScopedQuery<T>, context: TenantContext) {
   return scoped
 }
 
+function getSegmentName(segment: KlaviyoSegment) {
+  return (
+    segment.attributes?.name?.trim() ||
+    segment.name?.trim() ||
+    "Unnamed segment"
+  )
+}
+
 function sortAndMapSegments(segments: KlaviyoSegment[], search = "", limit = 10) {
   return segments
     .sort((a, b) => {
@@ -62,15 +71,13 @@ function sortAndMapSegments(segments: KlaviyoSegment[], search = "", limit = 10)
     .filter(
       (segment) =>
         !search ||
-        (segment.attributes?.name || "")
-          .toLowerCase()
-          .includes(search.toLowerCase()) ||
+        getSegmentName(segment).toLowerCase().includes(search.toLowerCase()) ||
         segment.id.toLowerCase().includes(search.toLowerCase())
     )
     .slice(0, limit)
     .map((segment) => ({
       id: segment.id,
-      name: segment.attributes?.name || segment.id,
+      name: getSegmentName(segment),
     }))
 }
 

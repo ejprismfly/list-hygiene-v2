@@ -7,6 +7,16 @@ import { CheckCircle2, Info, Loader2 } from "lucide-react"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import {
+  Combobox,
+  ComboboxContent,
+  ComboboxEmpty,
+  ComboboxInput,
+  ComboboxItem,
+  ComboboxList,
+  ComboboxTrigger,
+  ComboboxValue,
+} from "@/components/ui/combobox"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import {
@@ -41,6 +51,7 @@ type KlaviyoAccount = {
 }
 
 const retryOptions = ["0", "1", "2", "3", "6", "12"]
+const allEmailsSegment = { id: "all-emails", name: "All Emails" }
 
 function retryOptionLabel(option: string, unit: "month" | "retry") {
   if (option === "0") {
@@ -63,12 +74,45 @@ function retryOptionLabel(option: string, unit: "month" | "retry") {
   return label
 }
 
+function normalizeSegmentOption(segment?: SegmentOption | null) {
+  if (!segment?.id) {
+    return null
+  }
+
+  return {
+    id: segment.id,
+    name: segment.name?.trim() || "Unnamed segment",
+  }
+}
+
+function mergeSegmentOptions(...groups: (SegmentOption | null | undefined)[][]) {
+  const segments = new Map<string, SegmentOption>()
+
+  for (const group of groups) {
+    for (const option of group) {
+      const segment = normalizeSegmentOption(option)
+      if (!segment || segments.has(segment.id)) {
+        continue
+      }
+      segments.set(segment.id, segment)
+    }
+  }
+
+  return Array.from(segments.values())
+}
+
 export function ConfigureConnectionContent() {
   const searchParams = useSearchParams()
   const accountId = searchParams.get("id")
-  const [account, setAccount] = useState<KlaviyoAccount | null>(null)
   const [connectionName, setConnectionName] = useState("")
   const [selectedSegmentId, setSelectedSegmentId] = useState<string | null>(null)
+  const [selectedSegmentName, setSelectedSegmentName] = useState<string | null>(
+    null
+  )
+  const [segmentOptions, setSegmentOptions] = useState<SegmentOption[]>([])
+  const [segmentSearch, setSegmentSearch] = useState("")
+  const [segmentDropdownOpen, setSegmentDropdownOpen] = useState(false)
+  const [segmentsLoading, setSegmentsLoading] = useState(false)
   const [fixTypos, setFixTypos] = useState(true)
   const [fullMailboxRetries, setFullMailboxRetries] = useState("12")
   const [greylistedRetries, setGreylistedRetries] = useState("3")
@@ -105,9 +149,23 @@ export function ConfigureConnectionContent() {
           return
         }
 
-        setAccount(nextAccount)
         setConnectionName(nextAccount.connection_name || "")
         setSelectedSegmentId(nextAccount.selected_segment?.id || null)
+        setSelectedSegmentName(nextAccount.selected_segment?.name || null)
+        setSegmentOptions(
+          mergeSegmentOptions(
+            nextAccount.selected_segment?.id
+              ? [
+                  {
+                    id: nextAccount.selected_segment.id,
+                    name:
+                      nextAccount.selected_segment.name || "Selected segment",
+                  },
+                ]
+              : [],
+            nextAccount.segments || []
+          )
+        )
         setFixTypos(Boolean(nextAccount.fix_typos))
         setFullMailboxRetries(String(nextAccount.full_mailbox_retries ?? 12))
         setGreylistedRetries(String(nextAccount.greylisted_retries ?? 3))
@@ -129,6 +187,69 @@ export function ConfigureConnectionContent() {
       cancelled = true
     }
   }, [accountId])
+
+  useEffect(() => {
+    if (!accountId || removed || !segmentDropdownOpen) {
+      return
+    }
+
+    const controller = new AbortController()
+    let cancelled = false
+    const timeout = window.setTimeout(async () => {
+      setSegmentsLoading(true)
+      try {
+        const params = new URLSearchParams({
+          id: accountId,
+          segment_search: segmentSearch,
+          segment_limit: "30",
+        })
+        const response = await fetch(`/api/oauth/klaviyo/segments?${params}`, {
+          signal: controller.signal,
+        })
+        if (!response.ok) {
+          return
+        }
+        const data = (await response.json()) as SegmentOption[]
+        if (!cancelled) {
+          setSegmentOptions((current) =>
+            mergeSegmentOptions(
+              selectedSegmentId
+                ? [
+                    {
+                      id: selectedSegmentId,
+                      name: selectedSegmentName || "Selected segment",
+                    },
+                  ]
+                : [],
+              data,
+              current.filter((segment) => segment.id === selectedSegmentId)
+            )
+          )
+        }
+      } catch (error) {
+        if (!controller.signal.aborted) {
+          console.error("Unable to load Klaviyo segments", error)
+        }
+      } finally {
+        if (!cancelled) {
+          setSegmentsLoading(false)
+        }
+      }
+    }, 250)
+
+    return () => {
+      cancelled = true
+      controller.abort()
+      window.clearTimeout(timeout)
+    }
+  }, [
+    accountId,
+    removed,
+    segmentDropdownOpen,
+    segmentSearch,
+    selectedSegmentId,
+    selectedSegmentName,
+  ])
 
   async function saveConnection() {
     if (removed) {
@@ -188,8 +309,19 @@ export function ConfigureConnectionContent() {
         return
       }
 
-      setAccount((current) =>
-        current ? { ...current, segments: data.segments } : current
+      setSegmentOptions((current) =>
+        mergeSegmentOptions(
+          selectedSegmentId
+            ? [
+                {
+                  id: selectedSegmentId,
+                  name: selectedSegmentName || "Selected segment",
+                },
+              ]
+            : [],
+          data.segments,
+          current.filter((segment) => segment.id === selectedSegmentId)
+        )
       )
       setStatusMessage("Segments refreshed.")
     } finally {
@@ -255,6 +387,23 @@ export function ConfigureConnectionContent() {
       unit: "retry" as const,
     },
   ]
+  const selectedSegment =
+    selectedSegmentId
+      ? normalizeSegmentOption(
+          segmentOptions.find((segment) => segment.id === selectedSegmentId) ||
+            {
+              id: selectedSegmentId,
+              name: selectedSegmentName || "Selected segment",
+            }
+        )
+      : allEmailsSegment
+  const segmentChoices = [
+    allEmailsSegment,
+    ...mergeSegmentOptions(
+      selectedSegment?.id !== allEmailsSegment.id ? [selectedSegment] : [],
+      segmentOptions
+    ),
+  ]
 
   return (
     <div className="grid w-full max-w-3xl gap-4">
@@ -302,7 +451,7 @@ export function ConfigureConnectionContent() {
           </p>
           {accountLoading ? (
             <Skeleton className="h-4 w-64" />
-          ) : !account?.segments?.length ? (
+          ) : !segmentOptions.length ? (
             <p className="flex items-start gap-1 text-sm text-muted-foreground">
               <Info className="mt-0.5 size-4" />
               No segments found. Create a segment in Klaviyo, then refresh.
@@ -311,25 +460,65 @@ export function ConfigureConnectionContent() {
           {accountLoading ? (
             <Skeleton className="h-8 w-full sm:max-w-md" />
           ) : (
-            <Select
+            <Combobox
               disabled={removed}
-              value={selectedSegmentId || "all-emails"}
-              onValueChange={(value) =>
-                setSelectedSegmentId(value === "all-emails" ? null : value)
+              items={segmentChoices}
+              filter={null}
+              inputValue={segmentSearch}
+              itemToStringLabel={(segment: SegmentOption) => segment.name}
+              itemToStringValue={(segment: SegmentOption) => segment.id}
+              isItemEqualToValue={(item: SegmentOption, value: SegmentOption) =>
+                item.id === value.id
               }
+              value={selectedSegment}
+              onInputValueChange={(value) => setSegmentSearch(value)}
+              onOpenChange={(open) => {
+                setSegmentDropdownOpen(open)
+                if (open) {
+                  setSegmentSearch("")
+                }
+              }}
+              onValueChange={(segment) => {
+                if (!segment) {
+                  return
+                }
+                if (segment.id === allEmailsSegment.id) {
+                  setSelectedSegmentId(null)
+                  setSelectedSegmentName(null)
+                } else {
+                  setSelectedSegmentId(segment.id)
+                  setSelectedSegmentName(segment.name)
+                }
+                setSegmentSearch("")
+              }}
             >
-              <SelectTrigger className="w-full sm:max-w-md">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all-emails">All Emails</SelectItem>
-                {(account?.segments || []).map((segment) => (
-                  <SelectItem key={segment.id} value={segment.id}>
-                    {segment.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+              <ComboboxTrigger className="w-full sm:max-w-md">
+                <ComboboxValue>
+                  {(segment: SegmentOption | null) =>
+                    segment?.name || allEmailsSegment.name
+                  }
+                </ComboboxValue>
+              </ComboboxTrigger>
+              <ComboboxContent>
+                <div className="border-b p-1">
+                  <ComboboxInput placeholder="Search segments" />
+                </div>
+                {segmentsLoading ? (
+                  <div className="flex items-center gap-2 px-2 py-2 text-sm text-muted-foreground">
+                    <Loader2 className="size-4 animate-spin" />
+                    Loading segments
+                  </div>
+                ) : null}
+                <ComboboxEmpty>No matching segments found.</ComboboxEmpty>
+                <ComboboxList>
+                  {(segment: SegmentOption) => (
+                    <ComboboxItem key={segment.id} value={segment}>
+                      {segment.name}
+                    </ComboboxItem>
+                  )}
+                </ComboboxList>
+              </ComboboxContent>
+            </Combobox>
           )}
           <Button
             type="button"
