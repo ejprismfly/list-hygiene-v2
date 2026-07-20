@@ -6,15 +6,11 @@ import {
   resolveTenantContext,
   type TenantContext,
 } from "@/lib/api/tenant"
-
-type KlaviyoSegment = {
-  id: string
-  name?: string | null
-  attributes?: {
-    name?: string | null
-    created?: string
-  }
-}
+import {
+  fetchKlaviyoSegments,
+  sortAndMapSegments,
+  type KlaviyoSegment,
+} from "@/lib/klaviyo-segments"
 
 type SegmentAccount = {
   id: string
@@ -51,48 +47,6 @@ function applyAccountScope<T>(query: ScopedQuery<T>, context: TenantContext) {
   }
 
   return scoped
-}
-
-function getSegmentName(segment: KlaviyoSegment) {
-  return (
-    segment.attributes?.name?.trim() ||
-    segment.name?.trim() ||
-    "Unnamed segment"
-  )
-}
-
-function sortAndMapSegments(segments: KlaviyoSegment[], search = "", limit = 10) {
-  return segments
-    .sort((a, b) => {
-      const aDate = new Date(a.attributes?.created || 0).getTime()
-      const bDate = new Date(b.attributes?.created || 0).getTime()
-      return bDate - aDate
-    })
-    .filter(
-      (segment) =>
-        !search ||
-        getSegmentName(segment).toLowerCase().includes(search.toLowerCase()) ||
-        segment.id.toLowerCase().includes(search.toLowerCase())
-    )
-    .slice(0, limit)
-    .map((segment) => ({
-      id: segment.id,
-      name: getSegmentName(segment),
-    }))
-}
-
-async function fetchKlaviyoSegments(accessToken: string, limit = 300) {
-  const response = await fetch(
-    `https://a.klaviyo.com/api/segments/?page[size]=${limit}`,
-    {
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        Revision: "2024-10-15",
-      },
-    }
-  )
-  const data = await response.json()
-  return Array.isArray(data.data) ? data.data : []
 }
 
 export async function GET(request: Request) {
@@ -201,7 +155,15 @@ export async function POST(request: Request) {
     }
   }
 
-  const segments = await fetchKlaviyoSegments(accessToken)
+  let segments: KlaviyoSegment[]
+  try {
+    segments = await fetchKlaviyoSegments(accessToken)
+  } catch (error) {
+    return errorJson(
+      error instanceof Error ? error.message : "Unable to refresh segments.",
+      502
+    )
+  }
   const updateQuery = supabase
     .from("klaviyo_accounts")
     .update({ segments, ...tokenUpdates })

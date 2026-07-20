@@ -5,6 +5,14 @@ import { useSearchParams } from "next/navigation"
 import { CheckCircle2, Info, Loader2 } from "lucide-react"
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
+import {
+  Breadcrumb,
+  BreadcrumbItem,
+  BreadcrumbLink,
+  BreadcrumbList,
+  BreadcrumbPage,
+  BreadcrumbSeparator,
+} from "@/components/ui/breadcrumb"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import {
@@ -50,12 +58,13 @@ type KlaviyoAccount = {
   unexpected_error_retries?: number
 }
 
-const retryOptions = ["0", "1", "2", "3", "6", "12"]
+const fullMailboxRetryOptions = ["0", "6", "12", "24", "36"]
+const standardRetryOptions = ["0", "3", "6"]
 const allEmailsSegment = { id: "all-emails", name: "All Emails" }
 
 function retryOptionLabel(option: string, unit: "month" | "retry") {
   if (option === "0") {
-    return `Never ${unit === "month" ? "retry" : "retry"}`
+    return "Off"
   }
 
   const amount = Number(option)
@@ -363,6 +372,7 @@ export function ConfigureConnectionContent() {
       value: fullMailboxRetries,
       onChange: setFullMailboxRetries,
       unit: "month" as const,
+      options: fullMailboxRetryOptions,
     },
     {
       title: "Greylisted",
@@ -370,6 +380,7 @@ export function ConfigureConnectionContent() {
       value: greylistedRetries,
       onChange: setGreylistedRetries,
       unit: "retry" as const,
+      options: standardRetryOptions,
     },
     {
       title: "Mail Server Temporary Error",
@@ -378,6 +389,7 @@ export function ConfigureConnectionContent() {
       value: temporaryErrorRetries,
       onChange: setTemporaryErrorRetries,
       unit: "retry" as const,
+      options: standardRetryOptions,
     },
     {
       title: "Unexpected Error",
@@ -385,6 +397,7 @@ export function ConfigureConnectionContent() {
       value: unexpectedErrorRetries,
       onChange: setUnexpectedErrorRetries,
       unit: "retry" as const,
+      options: standardRetryOptions,
     },
   ]
   const selectedSegment =
@@ -407,9 +420,22 @@ export function ConfigureConnectionContent() {
 
   return (
     <div className="grid w-full max-w-3xl gap-4">
-      <h1 className="mb-2 text-2xl font-semibold tracking-normal sm:mb-4 sm:text-3xl">
-        Configure Your Connection
-      </h1>
+      <div className="mb-2 grid gap-2 sm:mb-4">
+        <Breadcrumb>
+          <BreadcrumbList>
+            <BreadcrumbItem>
+              <BreadcrumbLink href="/settings">Settings</BreadcrumbLink>
+            </BreadcrumbItem>
+            <BreadcrumbSeparator />
+            <BreadcrumbItem>
+              <BreadcrumbPage>Configure Your Connection</BreadcrumbPage>
+            </BreadcrumbItem>
+          </BreadcrumbList>
+        </Breadcrumb>
+        <h1 className="text-2xl font-semibold tracking-normal sm:text-3xl">
+          Configure Your Connection
+        </h1>
+      </div>
 
       <Card>
         <CardContent className="grid gap-3">
@@ -571,7 +597,7 @@ export function ConfigureConnectionContent() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {retryOptions.map((option) => (
+                  {setting.options.map((option) => (
                     <SelectItem key={option} value={option}>
                       {retryOptionLabel(option, setting.unit)}
                     </SelectItem>

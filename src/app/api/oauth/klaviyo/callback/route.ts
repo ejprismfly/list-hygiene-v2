@@ -8,6 +8,7 @@ import {
   getStripeAccountForBilling,
   updateStripeAccountById,
 } from "@/lib/billing/scope"
+import { fetchKlaviyoSegments } from "@/lib/klaviyo-segments"
 
 const scopes =
   "segments:read segments:write lists:read lists:write profiles:read profiles:write accounts:read subscriptions:write subscriptions:read"
@@ -44,17 +45,6 @@ function getCookie(request: Request, name: string) {
 
 async function getKlaviyoAccounts(accessToken: string) {
   const response = await fetch("https://a.klaviyo.com/api/accounts", {
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      Revision: "2024-10-15",
-    },
-  })
-  const json = await response.json()
-  return Array.isArray(json.data) ? json.data : []
-}
-
-async function getKlaviyoSegments(accessToken: string) {
-  const response = await fetch("https://a.klaviyo.com/api/segments/?page[size]=100", {
     headers: {
       Authorization: `Bearer ${accessToken}`,
       Revision: "2024-10-15",
@@ -117,7 +107,7 @@ export async function GET(request: Request) {
   }
 
   const accounts = await getKlaviyoAccounts(tokenJson.access_token)
-  const segments = await getKlaviyoSegments(tokenJson.access_token)
+  const segments = await fetchKlaviyoSegments(tokenJson.access_token)
   const [account] = accounts
   if (!account?.id) {
     return htmlMessage("failed")

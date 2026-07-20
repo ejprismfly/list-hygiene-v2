@@ -7,15 +7,7 @@ import {
   type TenantContext,
 } from "@/lib/api/tenant"
 import { getStripeAccountForBilling } from "@/lib/billing/scope"
-
-type KlaviyoSegment = {
-  id: string
-  name?: string | null
-  attributes?: {
-    name?: string | null
-    created?: string
-  }
-}
+import { getSegmentName, type KlaviyoSegment } from "@/lib/klaviyo-segments"
 
 type KlaviyoStoredAccount = {
   id: string
@@ -56,14 +48,6 @@ function applyAccountScope<T>(query: ScopedQuery<T>, context: TenantContext) {
   }
 
   return scoped
-}
-
-function getSegmentName(segment?: KlaviyoSegment | null) {
-  return (
-    segment?.attributes?.name?.trim() ||
-    segment?.name?.trim() ||
-    "Unnamed segment"
-  )
 }
 
 function formatAccount(account: KlaviyoStoredAccount, firstOwnerUserId?: string | null) {
