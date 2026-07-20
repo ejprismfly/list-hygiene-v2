@@ -245,13 +245,6 @@ export function SettingsContent({ connected = false }: SettingsContentProps) {
               <DialogTitle>Add Connections</DialogTitle>
             </DialogHeader>
 
-            <Badge
-              variant="secondary"
-              className="h-auto w-full justify-start rounded-lg px-4 py-3 text-sm"
-            >
-              Multiple connections coming soon.
-            </Badge>
-
             <div className="grid gap-3">
               {providers.map((provider) => {
                 const Icon = provider.icon
@@ -306,11 +299,6 @@ export function SettingsContent({ connected = false }: SettingsContentProps) {
             </DialogFooter>
           </DialogContent>
         </Dialog>
-
-        <div className="flex items-start gap-2 text-sm">
-          <Info className="mt-0.5 size-4" />
-          <span>Multiple connections will be available soon.</span>
-        </div>
       </div>
     </div>
   )
