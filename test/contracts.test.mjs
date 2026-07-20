@@ -527,7 +527,10 @@ test("dashboard non-demo mode is wired to workspace-scoped live API data", () =>
   const report = read("src/lib/dashboard/report.ts")
 
   assert.match(component, /fetch\("\/api\/user\/dashboard"/)
+  assert.match(component, /const \[showDummyData, setShowDummyData\] = useState\(false\)/)
   assert.match(component, /showDummyData\s+\?\s+dashboardDemoData\s+:\s+liveData/)
+  assert.match(component, /checked=\{showDummyData\}/)
+  assert.match(component, /onCheckedChange=\{setShowDummyData\}/)
   assert.match(route, /resolveTenantContext\(request, \{ requireWorkspace: true \}\)/)
   assert.match(route, /emails_historical_performance/)
   assert.match(route, /typo_fixed/)

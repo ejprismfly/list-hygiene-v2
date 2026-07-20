@@ -426,7 +426,7 @@ function renderEmailStatusSector(
 }
 
 export function DashboardContent() {
-  const [showDummyData, setShowDummyData] = useState(true)
+  const [showDummyData, setShowDummyData] = useState(false)
   const [activeStatus, setActiveStatus] = useState("valid")
   const [activeBreakdownCategory, setActiveBreakdownCategory] =
     useState<CategoryBreakdownKey>("valid")
