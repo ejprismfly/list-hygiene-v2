@@ -172,6 +172,8 @@ test("auth UI is password-only", () => {
   const loginForm = read("src/components/auth/login-form.tsx")
   const signupForm = read("src/components/auth/signup-form.tsx")
   const guide = read("docs/deployment/v2-side-by-side.md")
+  const pkg = read("package.json")
+  const impersonate = read("scripts/impersonate.mjs")
 
   assert.match(authActions, /signInWithPassword/)
   assert.match(authActions, /signUp/)
@@ -181,6 +183,11 @@ test("auth UI is password-only", () => {
   assert.doesNotMatch(guide, /magic link|social login|Google\/GitHub login/)
   assert.match(guide, /supabase-project-ref/)
   assert.match(guide, /auth\/v1\/callback/)
+  assert.match(pkg, /"impersonate": "node scripts\/impersonate\.mjs"/)
+  assert.match(impersonate, /auth\.admin\.generateLink/)
+  assert.match(impersonate, /type: "magiclink"/)
+  assert.match(impersonate, /\/auth\/callback\?next=/)
+  assert.match(impersonate, /SUPABASE_SERVICE_ROLE_KEY/)
 })
 
 test("page navigation avoids duplicate workspace bootstrap and remote auth checks", () => {
