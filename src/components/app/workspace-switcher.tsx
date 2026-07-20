@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useMemo, useState, useTransition } from "react"
+import { createPortal } from "react-dom"
 import {
   Archive,
   Loader2,
@@ -120,6 +121,34 @@ function handleLoadError(error: unknown, fallback: string) {
   }
 
   return fallback
+}
+
+function WorkspaceSwitchOverlay({
+  active,
+  workspaceName,
+}: {
+  active: boolean
+  workspaceName: string
+}) {
+  if (!active || typeof document === "undefined") {
+    return null
+  }
+
+  return createPortal(
+    <div
+      role="status"
+      aria-live="polite"
+      className="fixed inset-0 isolate z-[2147483647] grid cursor-wait place-items-center bg-background/85 backdrop-blur-sm"
+    >
+      <div className="grid justify-items-center gap-3 rounded-lg border bg-card p-5 text-card-foreground shadow-sm">
+        <Loader2 className="size-8 animate-spin" />
+        <p className="text-sm font-medium">
+          Switching to {workspaceName || "Workspace"}
+        </p>
+      </div>
+    </div>,
+    document.body
+  )
 }
 
 export function WorkspaceSwitcher({
@@ -490,20 +519,10 @@ export function WorkspaceSwitcher({
 
   return (
     <div className="grid gap-3">
-      {(switchingWorkspaceName || isPending) && (
-        <div
-          role="status"
-          aria-live="polite"
-          className="fixed inset-0 z-[9999] grid place-items-center bg-background/80 backdrop-blur-sm"
-        >
-          <div className="grid justify-items-center gap-3 rounded-lg border bg-card p-5 text-card-foreground shadow-sm">
-            <Loader2 className="size-8 animate-spin" />
-            <p className="text-sm font-medium">
-              Switching to {switchingWorkspaceName || "Workspace"}
-            </p>
-          </div>
-        </div>
-      )}
+      <WorkspaceSwitchOverlay
+        active={Boolean(switchingWorkspaceName || isPending)}
+        workspaceName={switchingWorkspaceName || "Workspace"}
+      />
 
       {showOrganization && (
         <div className="grid gap-1">
