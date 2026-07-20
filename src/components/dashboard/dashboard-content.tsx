@@ -39,8 +39,21 @@ import {
 import { Switch } from "@/components/ui/switch"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { dashboardDemoData } from "@/lib/demo-data"
+import {
+  DASHBOARD_CATEGORY_BREAKDOWN_CONFIG,
+  buildDerivedDashboardCategoryBreakdownRows,
+  type DashboardCategoryBreakdownSegment,
+} from "@/lib/dashboard/breakdown"
+import {
+  DASHBOARD_CATEGORY_KEYS,
+  type DashboardCategory,
+  type DashboardCategoryBreakdownPoint,
+  type DashboardHistoricalPoint,
+} from "@/lib/dashboard/report"
 
-type DashboardViewData = typeof dashboardDemoData
+type DashboardViewData = typeof dashboardDemoData & {
+  categoryBreakdown?: DashboardCategoryBreakdownPoint[]
+}
 
 const milestoneLabels = ["10", "100", "500", "1k", "10k", "100k", "500k", "1m"]
 const milestoneValues = [10, 100, 500, 1000, 10000, 100000, 500000, 1000000]
@@ -274,81 +287,9 @@ const historicalChartConfig: ChartConfig = {
   },
 }
 
-const categoryBreakdownKeys = [
-  "valid",
-  "invalid",
-  "risky",
-  "restricted",
-] as const
-
-type CategoryBreakdownKey = (typeof categoryBreakdownKeys)[number]
-
-type CategoryBreakdownSegment = {
-  key: string
-  label: string
-  color: string
-  weight: number
-}
-
 type CategoryBreakdownPoint = {
   month: string
   [key: string]: string | number
-}
-
-const categoryBreakdownSeries: Record<
-  CategoryBreakdownKey,
-  CategoryBreakdownSegment[]
-> = {
-  valid: [
-    { key: "validAccepted", label: "Valid", color: "#3f5d9f", weight: 9 },
-    { key: "validSecondary", label: "Secondary", color: "#7895cc", weight: 1 },
-  ],
-  invalid: [
-    { key: "invalidNoMailAccepted", label: "No mail accepted", color: "#3f5d9f", weight: 13 },
-    { key: "invalidFormat", label: "Invalid email format", color: "#7895cc", weight: 8 },
-    { key: "invalidNoMailbox", label: "No mailbox", color: "#6d54a8", weight: 12 },
-    { key: "invalidNoDns", label: "No DNS", color: "#a65397", weight: 9 },
-    { key: "invalidFullMailbox", label: "Full mailbox", color: "#f25292", weight: 6 },
-    { key: "invalidUnreachableDomain", label: "Unreachable domain", color: "#dc3f4e", weight: 11 },
-    { key: "invalidAntiSpam", label: "Anti-spam system", color: "#fb7133", weight: 11 },
-    { key: "invalidSmtpFailure", label: "SMTP failure", color: "#ff9f0a", weight: 10 },
-    { key: "invalidConnectionDropped", label: "Connection dropped", color: "#42cdb1", weight: 6 },
-    { key: "invalidNoResponse", label: "Mail server did not respond", color: "#0b9f95", weight: 8 },
-    { key: "invalidTimeout", label: "Connection timeout", color: "#bfdc3e", weight: 6 },
-  ],
-  risky: [
-    { key: "riskyTypo", label: "Typo", color: "#3f5d9f", weight: 18 },
-    { key: "riskyCatchAll", label: "Catch-all", color: "#7895cc", weight: 16 },
-    { key: "riskySpamTrap", label: "Possible spam trap", color: "#6d54a8", weight: 11 },
-    { key: "riskyRoleBased", label: "Role-based", color: "#a65397", weight: 11 },
-    { key: "riskyTemporary", label: "Temporary", color: "#f25292", weight: 8 },
-    { key: "riskyBots", label: "High risk (bots)", color: "#dc3f4e", weight: 10 },
-    { key: "riskyRoleCatchAll", label: "Role-based catch-all", color: "#fb7133", weight: 7 },
-    { key: "riskyForwarding", label: "Forwarding", color: "#ff9f0a", weight: 8 },
-    { key: "riskyUnexpected", label: "Unexpected error", color: "#42cdb1", weight: 5 },
-    { key: "riskyGreylisted", label: "Greylisted", color: "#0b9f95", weight: 6 },
-    {
-      key: "riskyMailServerTemporary",
-      label: "Mail server temporary error",
-      color: "#bfdc3e",
-      weight: 5,
-    },
-  ],
-  restricted: [
-    { key: "restrictedSpamTrap", label: "Spam trap", color: "#3f5d9f", weight: 3 },
-    {
-      key: "restrictedAbuseTied",
-      label: "Abuse-tied email",
-      color: "#7895cc",
-      weight: 2,
-    },
-    {
-      key: "restrictedSuppressed",
-      label: "Globally suppressed",
-      color: "#6d54a8",
-      weight: 5,
-    },
-  ],
 }
 
 type EmailStatusChartItem = {
@@ -369,26 +310,48 @@ function getEmailStatusColor(status: string, index: number) {
   )
 }
 
-function buildCategoryBreakdownRows(
-  historical: DashboardViewData["historical"],
-  category: CategoryBreakdownKey
-) {
-  const segments = categoryBreakdownSeries[category]
-  const totalWeight = segments.reduce((total, segment) => total + segment.weight, 0)
+function getLastTwelveEmptyHistoricalPoints() {
+  const formatter = new Intl.DateTimeFormat("en-US", { month: "short" })
+  const now = new Date()
 
-  return historical.map((point) => {
-    const total = Number(point[category] || 0)
-    let allocated = 0
+  return Array.from({ length: 12 }, (_, index) => {
+    const date = new Date(now.getFullYear(), now.getMonth() - (11 - index), 1)
+
+    return {
+      month: formatter.format(date),
+      valid: 0,
+      invalid: 0,
+      risky: 0,
+      restricted: 0,
+    }
+  })
+}
+
+function hasHistoricalValues(historical: DashboardHistoricalPoint[]) {
+  return historical.some(
+    (point) => point.valid || point.invalid || point.risky || point.restricted
+  )
+}
+
+function hasCategoryBreakdownValues(rows: DashboardCategoryBreakdownPoint[]) {
+  return rows.some((row) =>
+    DASHBOARD_CATEGORY_KEYS.some((category) =>
+      Object.values(row.categories[category] || {}).some((value) => value > 0)
+    )
+  )
+}
+
+function buildCategoryBreakdownRows(
+  breakdownRows: DashboardCategoryBreakdownPoint[],
+  category: DashboardCategory
+) {
+  const segments = DASHBOARD_CATEGORY_BREAKDOWN_CONFIG[category].segments
+
+  return breakdownRows.map((point) => {
     const row: CategoryBreakdownPoint = { month: point.month }
 
-    segments.forEach((segment, index) => {
-      const isLastSegment = index === segments.length - 1
-      const value = isLastSegment
-        ? Math.max(total - allocated, 0)
-        : Math.round((total * segment.weight) / totalWeight)
-
-      allocated += value
-      row[segment.key] = value
+    segments.forEach((segment) => {
+      row[segment.key] = Number(point.categories[category]?.[segment.key] || 0)
     })
 
     return row
@@ -396,7 +359,7 @@ function buildCategoryBreakdownRows(
 }
 
 function buildCategoryBreakdownChartConfig(
-  segments: CategoryBreakdownSegment[]
+  segments: DashboardCategoryBreakdownSegment[]
 ) {
   return segments.reduce<ChartConfig>((config, segment) => {
     config[segment.key] = {
@@ -429,27 +392,42 @@ export function DashboardContent() {
   const [showDummyData, setShowDummyData] = useState(false)
   const [activeStatus, setActiveStatus] = useState("valid")
   const [activeBreakdownCategory, setActiveBreakdownCategory] =
-    useState<CategoryBreakdownKey>("valid")
+    useState<DashboardCategory>("valid")
   const [liveData, setLiveData] = useState<DashboardViewData | null>(null)
   const [liveLoading, setLiveLoading] = useState(false)
   const [liveError, setLiveError] = useState("")
-  const activeDashboardData = showDummyData
+  const activeDashboardData: DashboardViewData = showDummyData
     ? dashboardDemoData
     : liveData || emptyDashboardData
   const kpis = activeDashboardData.kpis.map((item, index) => ({
     ...item,
     icon: emptyKpis[index]?.icon || ShieldCheck,
   }))
-  const distribution = activeDashboardData.distribution
-  const historical = activeDashboardData.historical
+  const distribution = activeDashboardData.distribution.length
+    ? activeDashboardData.distribution
+    : DASHBOARD_CATEGORY_KEYS.map((key) => ({
+        label: String(historicalChartConfig[key].label),
+        value: 0,
+      }))
+  const historical = activeDashboardData.historical.length
+    ? activeDashboardData.historical
+    : getLastTwelveEmptyHistoricalPoints()
   const historicalChartData = historical.map((item) => ({
     ...item,
     total: item.valid + item.invalid + item.risky + item.restricted,
   }))
   const visibleHistorical = historicalChartData.slice(-12)
-  const activeBreakdownSegments = categoryBreakdownSeries[activeBreakdownCategory]
+  const reportCategoryBreakdown = activeDashboardData.categoryBreakdown || []
+  const categoryBreakdownSource =
+    reportCategoryBreakdown.length &&
+    (hasCategoryBreakdownValues(reportCategoryBreakdown) ||
+      !hasHistoricalValues(visibleHistorical))
+      ? reportCategoryBreakdown
+      : buildDerivedDashboardCategoryBreakdownRows(visibleHistorical)
+  const activeBreakdownSegments =
+    DASHBOARD_CATEGORY_BREAKDOWN_CONFIG[activeBreakdownCategory].segments
   const categoryBreakdownData = buildCategoryBreakdownRows(
-    visibleHistorical,
+    categoryBreakdownSource,
     activeBreakdownCategory
   )
   const categoryBreakdownChartConfig = buildCategoryBreakdownChartConfig(
@@ -459,16 +437,25 @@ export function DashboardContent() {
     (total, item) => total + item.value,
     0
   )
-  const emailStatusChartData = distribution.map((item, index) => {
-    const status = toStatusKey(item.label)
+  const emailStatusChartData = distributionTotal
+    ? distribution.map((item, index) => {
+        const status = toStatusKey(item.label)
 
-    return {
-      status,
-      label: item.label,
-      emails: item.value,
-      fill: getEmailStatusColor(status, index),
-    }
-  })
+        return {
+          status,
+          label: item.label,
+          emails: item.value,
+          fill: getEmailStatusColor(status, index),
+        }
+      })
+    : [
+        {
+          status: "no-data",
+          label: "No Data",
+          emails: 1,
+          fill: "var(--foreground)",
+        },
+      ]
   const activeChartItem =
     emailStatusChartData.find((item) => item.status === activeStatus) ??
     emailStatusChartData[0]
@@ -635,90 +622,82 @@ export function DashboardContent() {
 
           <Card>
             <CardContent className="flex min-h-full flex-col justify-center gap-4">
-              {distribution.length ? (
-                <ChartContainer
-                  config={emailStatusChartConfig}
-                  className="mx-auto aspect-square h-[340px] w-full max-w-[380px]"
-                >
-                  <PieChart>
-                    <ChartTooltip
-                      cursor={false}
-                      content={
-                        <ChartTooltipContent hideLabel nameKey="status" />
+              <ChartContainer
+                config={emailStatusChartConfig}
+                className="mx-auto aspect-square h-[340px] w-full max-w-[380px]"
+              >
+                <PieChart>
+                  <ChartTooltip
+                    cursor={false}
+                    content={<ChartTooltipContent hideLabel nameKey="status" />}
+                  />
+                  <Pie
+                    data={emailStatusChartData}
+                    dataKey="emails"
+                    nameKey="label"
+                    innerRadius={72}
+                    outerRadius={125}
+                    strokeWidth={5}
+                    shape={(props: PieSectorShapeProps) =>
+                      renderEmailStatusSector(props, activeStatusKey)
+                    }
+                    onMouseEnter={(item) => {
+                      const payload =
+                        item.payload as EmailStatusChartItem | undefined
+
+                      if (payload?.status) {
+                        setActiveStatus(payload.status)
                       }
-                    />
-                    <Pie
-                      data={emailStatusChartData}
-                      dataKey="emails"
-                      nameKey="label"
-                      innerRadius={72}
-                      outerRadius={125}
-                      strokeWidth={5}
-                      shape={(props: PieSectorShapeProps) =>
-                        renderEmailStatusSector(props, activeStatusKey)
+                    }}
+                    onClick={(item) => {
+                      const payload =
+                        item.payload as EmailStatusChartItem | undefined
+
+                      if (payload?.status) {
+                        setActiveStatus(payload.status)
                       }
-                      onMouseEnter={(item) => {
-                        const payload =
-                          item.payload as EmailStatusChartItem | undefined
-
-                        if (payload?.status) {
-                          setActiveStatus(payload.status)
+                    }}
+                  >
+                    <Label
+                      content={({ viewBox }) => {
+                        if (
+                          !viewBox ||
+                          !("cx" in viewBox) ||
+                          !("cy" in viewBox) ||
+                          typeof viewBox.cx !== "number" ||
+                          typeof viewBox.cy !== "number"
+                        ) {
+                          return null
                         }
-                      }}
-                      onClick={(item) => {
-                        const payload =
-                          item.payload as EmailStatusChartItem | undefined
 
-                        if (payload?.status) {
-                          setActiveStatus(payload.status)
-                        }
-                      }}
-                    >
-                      <Label
-                        content={({ viewBox }) => {
-                          if (
-                            !viewBox ||
-                            !("cx" in viewBox) ||
-                            !("cy" in viewBox) ||
-                            typeof viewBox.cx !== "number" ||
-                            typeof viewBox.cy !== "number"
-                          ) {
-                            return null
-                          }
-
-                          return (
-                            <text
+                        return (
+                          <text
+                            x={viewBox.cx}
+                            y={viewBox.cy}
+                            textAnchor="middle"
+                            dominantBaseline="middle"
+                          >
+                            <tspan
                               x={viewBox.cx}
-                              y={viewBox.cy}
-                              textAnchor="middle"
-                              dominantBaseline="middle"
+                              y={viewBox.cy - 8}
+                              className="fill-foreground text-2xl font-semibold"
                             >
-                              <tspan
-                                x={viewBox.cx}
-                                y={viewBox.cy - 8}
-                                className="fill-foreground text-2xl font-semibold"
-                              >
-                                {formatNumber(animatedActiveStatusPercent)}%
-                              </tspan>
-                              <tspan
-                                x={viewBox.cx}
-                                y={viewBox.cy + 16}
-                                className="fill-muted-foreground text-xs"
-                              >
-                                {activeChartItem?.label}
-                              </tspan>
-                            </text>
-                          )
-                        }}
-                      />
-                    </Pie>
-                  </PieChart>
-                </ChartContainer>
-              ) : (
-                <div className="flex aspect-square w-full max-w-72 items-center justify-center self-center rounded-full bg-foreground p-16">
-                  <div className="size-full rounded-full bg-background" />
-                </div>
-              )}
+                              {formatNumber(animatedActiveStatusPercent)}%
+                            </tspan>
+                            <tspan
+                              x={viewBox.cx}
+                              y={viewBox.cy + 16}
+                              className="fill-muted-foreground text-xs"
+                            >
+                              {activeChartItem?.label}
+                            </tspan>
+                          </text>
+                        )
+                      }}
+                    />
+                  </Pie>
+                </PieChart>
+              </ChartContainer>
             </CardContent>
           </Card>
         </div>
@@ -730,155 +709,143 @@ export function DashboardContent() {
         </h2>
         <Card className="@container/card">
           <CardContent className="grid min-h-72 gap-5 pt-3 pb-5 sm:px-6">
-            {historical.length ? (
-              <>
-                <ChartContainer
-                  config={historicalChartConfig}
-                  className="aspect-auto h-[320px] w-full"
-                >
-                  <AreaChart
-                    data={visibleHistorical}
-                    margin={{
-                      top: 10,
-                      right: 20,
-                      left: 8,
-                      bottom: 0,
-                    }}
+            <ChartContainer
+              config={historicalChartConfig}
+              className="aspect-auto h-[320px] w-full"
+            >
+              <AreaChart
+                data={visibleHistorical}
+                margin={{
+                  top: 10,
+                  right: 20,
+                  left: 8,
+                  bottom: 0,
+                }}
+              >
+                <CartesianGrid vertical={false} />
+                <XAxis
+                  dataKey="month"
+                  tickLine={false}
+                  axisLine={false}
+                  tickMargin={8}
+                />
+                <YAxis
+                  tickLine={false}
+                  axisLine={false}
+                  tickMargin={8}
+                  tickFormatter={(value) => numberFormatter.format(value)}
+                />
+                <ChartTooltip
+                  cursor={false}
+                  content={<ChartTooltipContent />}
+                />
+                <defs>
+                  <linearGradient id="fillValid" x1="0" y1="0" x2="0" y2="1">
+                    <stop
+                      offset="5%"
+                      stopColor={historicalChartConfig.valid.color}
+                      stopOpacity={0.8}
+                    />
+                    <stop
+                      offset="95%"
+                      stopColor={historicalChartConfig.valid.color}
+                      stopOpacity={0.1}
+                    />
+                  </linearGradient>
+                  <linearGradient id="fillInvalid" x1="0" y1="0" x2="0" y2="1">
+                    <stop
+                      offset="5%"
+                      stopColor={historicalChartConfig.invalid.color}
+                      stopOpacity={0.8}
+                    />
+                    <stop
+                      offset="95%"
+                      stopColor={historicalChartConfig.invalid.color}
+                      stopOpacity={0.1}
+                    />
+                  </linearGradient>
+                  <linearGradient id="fillRisky" x1="0" y1="0" x2="0" y2="1">
+                    <stop
+                      offset="5%"
+                      stopColor={historicalChartConfig.risky.color}
+                      stopOpacity={0.8}
+                    />
+                    <stop
+                      offset="95%"
+                      stopColor={historicalChartConfig.risky.color}
+                      stopOpacity={0.1}
+                    />
+                  </linearGradient>
+                  <linearGradient
+                    id="fillRestricted"
+                    x1="0"
+                    y1="0"
+                    x2="0"
+                    y2="1"
                   >
-                    <CartesianGrid vertical={false} />
-                    <XAxis
-                      dataKey="month"
-                      tickLine={false}
-                      axisLine={false}
-                      tickMargin={8}
+                    <stop
+                      offset="5%"
+                      stopColor={historicalChartConfig.restricted.color}
+                      stopOpacity={0.8}
                     />
-                    <YAxis
-                      tickLine={false}
-                      axisLine={false}
-                      tickMargin={8}
-                      tickFormatter={(value) => numberFormatter.format(value)}
+                    <stop
+                      offset="95%"
+                      stopColor={historicalChartConfig.restricted.color}
+                      stopOpacity={0.1}
                     />
-                    <ChartTooltip
-                      cursor={false}
-                      content={<ChartTooltipContent />}
-                    />
-                    <defs>
-                      <linearGradient id="fillValid" x1="0" y1="0" x2="0" y2="1">
-                        <stop
-                          offset="5%"
-                          stopColor={historicalChartConfig.valid.color}
-                          stopOpacity={0.8}
-                        />
-                        <stop
-                          offset="95%"
-                          stopColor={historicalChartConfig.valid.color}
-                          stopOpacity={0.1}
-                        />
-                      </linearGradient>
-                      <linearGradient id="fillInvalid" x1="0" y1="0" x2="0" y2="1">
-                        <stop
-                          offset="5%"
-                          stopColor={historicalChartConfig.invalid.color}
-                          stopOpacity={0.8}
-                        />
-                        <stop
-                          offset="95%"
-                          stopColor={historicalChartConfig.invalid.color}
-                          stopOpacity={0.1}
-                        />
-                      </linearGradient>
-                      <linearGradient id="fillRisky" x1="0" y1="0" x2="0" y2="1">
-                        <stop
-                          offset="5%"
-                          stopColor={historicalChartConfig.risky.color}
-                          stopOpacity={0.8}
-                        />
-                        <stop
-                          offset="95%"
-                          stopColor={historicalChartConfig.risky.color}
-                          stopOpacity={0.1}
-                        />
-                      </linearGradient>
-                      <linearGradient
-                        id="fillRestricted"
-                        x1="0"
-                        y1="0"
-                        x2="0"
-                        y2="1"
-                      >
-                        <stop
-                          offset="5%"
-                          stopColor={historicalChartConfig.restricted.color}
-                          stopOpacity={0.8}
-                        />
-                        <stop
-                          offset="95%"
-                          stopColor={historicalChartConfig.restricted.color}
-                          stopOpacity={0.1}
-                        />
-                      </linearGradient>
-                    </defs>
-                    <Area
-                      dataKey="valid"
-                      name="valid"
-                      type="natural"
-                      fill="url(#fillValid)"
-                      fillOpacity={0.4}
-                      stroke={historicalChartConfig.valid.color}
-                      stackId="a"
-                    />
-                    <Area
-                      dataKey="risky"
-                      name="risky"
-                      type="natural"
-                      fill="url(#fillRisky)"
-                      fillOpacity={0.4}
-                      stroke={historicalChartConfig.risky.color}
-                      stackId="a"
-                    />
-                    <Area
-                      dataKey="invalid"
-                      name="invalid"
-                      type="natural"
-                      fill="url(#fillInvalid)"
-                      fillOpacity={0.4}
-                      stroke={historicalChartConfig.invalid.color}
-                      stackId="a"
-                    />
-                    <Area
-                      dataKey="restricted"
-                      name="restricted"
-                      type="natural"
-                      fill="url(#fillRestricted)"
-                      fillOpacity={0.4}
-                      stroke={historicalChartConfig.restricted.color}
-                      stackId="a"
-                    />
-                  </AreaChart>
-                </ChartContainer>
-                <div className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-sm text-muted-foreground">
-                  {categoryBreakdownKeys.map((status) => (
-                    <div key={status} className="flex items-center gap-2">
-                      <span
-                        className="size-2.5 rounded-full"
-                        style={{
-                          backgroundColor: historicalChartConfig[status].color,
-                        }}
-                      />
-                      <span>{historicalChartConfig[status].label}</span>
-                    </div>
-                  ))}
+                  </linearGradient>
+                </defs>
+                <Area
+                  dataKey="valid"
+                  name="valid"
+                  type="natural"
+                  fill="url(#fillValid)"
+                  fillOpacity={0.4}
+                  stroke={historicalChartConfig.valid.color}
+                  stackId="a"
+                />
+                <Area
+                  dataKey="risky"
+                  name="risky"
+                  type="natural"
+                  fill="url(#fillRisky)"
+                  fillOpacity={0.4}
+                  stroke={historicalChartConfig.risky.color}
+                  stackId="a"
+                />
+                <Area
+                  dataKey="invalid"
+                  name="invalid"
+                  type="natural"
+                  fill="url(#fillInvalid)"
+                  fillOpacity={0.4}
+                  stroke={historicalChartConfig.invalid.color}
+                  stackId="a"
+                />
+                <Area
+                  dataKey="restricted"
+                  name="restricted"
+                  type="natural"
+                  fill="url(#fillRestricted)"
+                  fillOpacity={0.4}
+                  stroke={historicalChartConfig.restricted.color}
+                  stackId="a"
+                />
+              </AreaChart>
+            </ChartContainer>
+            <div className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-sm text-muted-foreground">
+              {DASHBOARD_CATEGORY_KEYS.map((status) => (
+                <div key={status} className="flex items-center gap-2">
+                  <span
+                    className="size-2.5 rounded-full"
+                    style={{
+                      backgroundColor: historicalChartConfig[status].color,
+                    }}
+                  />
+                  <span>{historicalChartConfig[status].label}</span>
                 </div>
-              </>
-            ) : (
-              <div className="flex min-h-60 items-end gap-3 border-b border-l px-4 py-3">
-                <div className="grid w-full gap-8 py-3">
-                  {Array.from({ length: 6 }).map((_, index) => (
-                    <div key={index} className="border-t" />
-                  ))}
-                </div>
-              </div>
-            )}
+              ))}
+            </div>
           </CardContent>
         </Card>
       </section>
@@ -890,11 +857,11 @@ export function DashboardContent() {
         <Tabs
           value={activeBreakdownCategory}
           onValueChange={(value) =>
-            setActiveBreakdownCategory(value as CategoryBreakdownKey)
+            setActiveBreakdownCategory(value as DashboardCategory)
           }
         >
           <TabsList className="h-auto w-full flex-wrap justify-start sm:w-fit">
-            {categoryBreakdownKeys.map((status) => (
+            {DASHBOARD_CATEGORY_KEYS.map((status) => (
               <TabsTrigger key={status} value={status}>
                 {historicalChartConfig[status].label}
               </TabsTrigger>
@@ -903,80 +870,68 @@ export function DashboardContent() {
 
           <Card>
             <CardContent className="grid min-h-72 gap-5 pt-5 pb-6 sm:px-6">
-              {categoryBreakdownData.length ? (
-                <>
-                  <ChartContainer
-                    config={categoryBreakdownChartConfig}
-                    className="aspect-auto h-[320px] w-full sm:h-[380px]"
-                  >
-                    <BarChart
-                      data={categoryBreakdownData}
-                      margin={{
-                        top: 10,
-                        right: 16,
-                        left: 4,
-                        bottom: 0,
+              <ChartContainer
+                config={categoryBreakdownChartConfig}
+                className="aspect-auto h-[320px] w-full sm:h-[380px]"
+              >
+                <BarChart
+                  data={categoryBreakdownData}
+                  margin={{
+                    top: 10,
+                    right: 16,
+                    left: 4,
+                    bottom: 0,
+                  }}
+                >
+                  <CartesianGrid vertical={false} />
+                  <XAxis
+                    dataKey="month"
+                    tickLine={false}
+                    tickMargin={8}
+                    axisLine={false}
+                  />
+                  <YAxis
+                    width={56}
+                    tickLine={false}
+                    axisLine={false}
+                    tickMargin={8}
+                    tickFormatter={(value) => numberFormatter.format(value)}
+                  />
+                  <ChartTooltip
+                    cursor={false}
+                    content={<ChartTooltipContent />}
+                  />
+                  {activeBreakdownSegments.map((segment, index) => (
+                    <Bar
+                      key={segment.key}
+                      dataKey={segment.key}
+                      stackId={activeBreakdownCategory}
+                      fill={segment.color}
+                      maxBarSize={64}
+                      radius={
+                        index === 0
+                          ? [0, 0, 4, 4]
+                          : index === activeBreakdownSegments.length - 1
+                            ? [4, 4, 0, 0]
+                            : [0, 0, 0, 0]
+                      }
+                    />
+                  ))}
+                </BarChart>
+              </ChartContainer>
+              <div className="flex flex-wrap items-center justify-center gap-x-5 gap-y-3 text-sm text-muted-foreground">
+                {activeBreakdownSegments.map((segment) => (
+                  <div key={segment.key} className="flex items-center gap-2">
+                    <span
+                      className="size-3 rounded-full"
+                      style={{
+                        backgroundColor: segment.color,
                       }}
-                    >
-                      <CartesianGrid vertical={false} />
-                      <XAxis
-                        dataKey="month"
-                        tickLine={false}
-                        tickMargin={8}
-                        axisLine={false}
-                      />
-                      <YAxis
-                        width={56}
-                        tickLine={false}
-                        axisLine={false}
-                        tickMargin={8}
-                        tickFormatter={(value) => numberFormatter.format(value)}
-                      />
-                      <ChartTooltip
-                        cursor={false}
-                        content={<ChartTooltipContent />}
-                      />
-                      {activeBreakdownSegments.map((segment, index) => (
-                        <Bar
-                          key={segment.key}
-                          dataKey={segment.key}
-                          stackId={activeBreakdownCategory}
-                          fill={segment.color}
-                          maxBarSize={64}
-                          radius={
-                            index === 0
-                              ? [0, 0, 4, 4]
-                              : index === activeBreakdownSegments.length - 1
-                                ? [4, 4, 0, 0]
-                                : [0, 0, 0, 0]
-                          }
-                        />
-                      ))}
-                    </BarChart>
-                  </ChartContainer>
-                  <div className="flex flex-wrap items-center justify-center gap-x-5 gap-y-3 text-sm text-muted-foreground">
-                    {activeBreakdownSegments.map((segment) => (
-                      <div key={segment.key} className="flex items-center gap-2">
-                        <span
-                          className="size-3 rounded-full"
-                          style={{
-                            backgroundColor: segment.color,
-                          }}
-                        />
-                        <span>{segment.label}</span>
-                      </div>
-                    ))}
+                    />
+                    <span>{segment.label}</span>
                   </div>
-                </>
-              ) : (
-                <div className="flex min-h-60 items-end gap-3 border-b border-l px-4 py-3">
-                  <div className="grid w-full gap-8 py-3">
-                    {Array.from({ length: 6 }).map((_, index) => (
-                      <div key={index} className="border-t" />
-                    ))}
-                  </div>
-                </div>
-              )}
+                ))}
+              </div>
             </CardContent>
           </Card>
         </Tabs>

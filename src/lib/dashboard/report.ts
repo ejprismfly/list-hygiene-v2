@@ -33,6 +33,13 @@ export type DashboardHistoricalPoint = {
   restricted: number
 }
 
+export type DashboardCategoryBreakdownPoint = {
+  month: string
+  monthStart?: string
+  sortIdx?: number
+  categories: Record<DashboardCategory, Record<string, number>>
+}
+
 export function getCurrentMonthRange(now = new Date()) {
   const start = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0)
 
@@ -74,6 +81,7 @@ export function calculateSuppressedPercentage(suppressed: number, total: number)
 
 export function buildDashboardReport(
   counts: DashboardCounts & {
+    categoryBreakdown?: DashboardCategoryBreakdownPoint[]
     historical?: DashboardHistoricalPoint[]
     typoFixes?: number
   },
@@ -115,6 +123,7 @@ export function buildDashboardReport(
       label: key.charAt(0).toUpperCase() + key.slice(1),
       value: counts.chart[key],
     })),
+    categoryBreakdown: counts.categoryBreakdown || [],
     historical: counts.historical || [],
     milestones: {
       total_suppressed: counts.totalSuppressed,
