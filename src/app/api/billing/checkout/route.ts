@@ -9,6 +9,7 @@ export async function GET(request: Request) {
   const referer = request.headers.get("referer") || "/billing"
   const url = new URL(request.url)
   const priceId = url.searchParams.get("price_id")
+  const billingHost = appHost(request)
 
   if (!priceId) {
     return NextResponse.redirect(new URL(referer, request.url), 302)
@@ -54,15 +55,15 @@ export async function GET(request: Request) {
     billing_scope: workspaceId ? "workspace" : "user",
     credits: credits.toString(),
     old_subscription_id: stripeAccount?.subscription_id || "",
-    checkout_url: `${appHost()}/api/billing/checkout?price_id=${priceId}`,
+    checkout_url: `${billingHost}/api/billing/checkout?price_id=${priceId}`,
   }
 
   const session = await stripe.checkout.sessions.create({
     mode: "subscription",
     customer: customerId,
     line_items: [{ price: priceId, quantity: 1 }],
-    success_url: `${appHost()}/billing?success=true&session_id={CHECKOUT_SESSION_ID}`,
-    cancel_url: `${appHost()}/billing/failed?cancel=true&session_id={CHECKOUT_SESSION_ID}`,
+    success_url: `${billingHost}/billing?success=true&session_id={CHECKOUT_SESSION_ID}`,
+    cancel_url: `${billingHost}/billing/failed?cancel=true&session_id={CHECKOUT_SESSION_ID}`,
     metadata: stripeMetadata,
     subscription_data: { metadata: stripeMetadata },
   })

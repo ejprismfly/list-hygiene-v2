@@ -14,6 +14,7 @@ export async function GET(request: Request) {
 
   const { user } = billing.context
   const stripeAccount = getScopedBillingAccount(billing.context)
+  const billingHost = appHost(request)
   const subscription: {
     name: string | null
     credits: number | null
@@ -72,7 +73,7 @@ export async function GET(request: Request) {
         exp_month: payment.card?.exp_month,
         exp_year: payment.card?.exp_year,
         active: !isExpired,
-        set_default_url: `${appHost()}/api/billing/payment?payment_id=${payment.id}`,
+        set_default_url: `${billingHost}/api/billing/payment?payment_id=${payment.id}`,
       }
     })
 
@@ -93,7 +94,7 @@ export async function GET(request: Request) {
     payment_methods: paymentMethods,
     customer,
     subscription,
-    portal: `${appHost()}/api/billing/portal`,
+    portal: `${billingHost}/api/billing/portal`,
     credits_remaining: stripeAccount?.credits_remaining || 0,
     credits_used: stripeAccount?.credits_used || 0,
     credits_plan: stripeAccount?.credits_plan || 0,

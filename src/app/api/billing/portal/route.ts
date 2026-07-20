@@ -32,7 +32,7 @@ export async function GET(request: Request) {
   const stripe = getStripeClient()
   const session = await stripe.billingPortal.sessions.create({
     customer: customerId,
-    return_url: `${appHost()}/billing`,
+    return_url: `${appHost(request)}/billing`,
   })
 
   return NextResponse.redirect(session.url, 302)

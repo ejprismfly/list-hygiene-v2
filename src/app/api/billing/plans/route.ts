@@ -46,6 +46,7 @@ export async function GET(request: Request) {
     return errorJson(billing.error, billing.status)
   }
 
+  const billingHost = appHost(request)
   const stripeAccount = getScopedBillingAccount(billing.context)
   const currentCreditsPlan = Number(stripeAccount?.credits_plan || 0)
   const stripe = getStripeClient()
@@ -82,7 +83,7 @@ export async function GET(request: Request) {
           selected || !prices[0]?.id
             ? null
             : appendBillingScopeParams(
-                `${appHost()}/api/billing/checkout?price_id=${prices[0].id}`,
+                `${billingHost}/api/billing/checkout?price_id=${prices[0].id}`,
                 billing.context
               ),
         action_label:

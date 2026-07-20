@@ -63,6 +63,7 @@ export async function GET(request: Request) {
     return errorJson(billing.error, billing.status)
   }
 
+  const billingHost = appHost(request)
   const stripeAccount = getScopedBillingAccount(billing.context)
   const currentCreditsPlan = Number(stripeAccount?.credits_plan || 0)
   const creditsUsed = Number(stripeAccount?.credits_used || 0)
@@ -119,7 +120,7 @@ export async function GET(request: Request) {
 
         if (!result.selected && price?.id) {
           result.checkout_url = appendBillingScopeParams(
-            `${appHost()}/api/billing/checkout?price_id=${price.id}`,
+            `${billingHost}/api/billing/checkout?price_id=${price.id}`,
             billing.context
           )
         }
@@ -192,7 +193,7 @@ export async function GET(request: Request) {
           active: !isExpired,
           is_expired: isExpired,
           is_default: defaultPaymentMethodId === payment.id,
-          set_default_url: `${appHost()}/api/billing/payment?payment_id=${payment.id}`,
+          set_default_url: `${billingHost}/api/billing/payment?payment_id=${payment.id}`,
         }
       })
     }
@@ -258,7 +259,7 @@ export async function GET(request: Request) {
     items,
     customer,
     payments,
-    portal: `${appHost()}/api/billing/portal`,
+    portal: `${billingHost}/api/billing/portal`,
     billing_context: {
       customer_id: stripeAccount?.customer_id || null,
       organization_id: billing.context.organizationId,
