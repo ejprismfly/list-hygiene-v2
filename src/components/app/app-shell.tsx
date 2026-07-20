@@ -134,7 +134,7 @@ export function AppShell({ active, userEmail, children }: AppShellProps) {
             </div>
           </div>
 
-          <div className="shrink-0 px-2 pt-3 pb-1">
+          <div className="shrink-0 pt-3 pb-1">
             <ProfileNavLink active={active} userEmail={userEmail} />
           </div>
         </aside>

@@ -51,7 +51,7 @@ export function ResetPasswordForm() {
             required
           />
         </div>
-        <Button type="submit" className="mx-auto min-w-36" disabled={pending}>
+        <Button type="submit" className="w-full" disabled={pending}>
           {pending ? "Updating" : "Update Password"}
         </Button>
       </form>

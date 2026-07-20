@@ -107,7 +107,7 @@ export function SignupForm({ nextPath = "/dashboard" }: { nextPath?: string }) {
             </a>
           </Label>
         </div>
-        <Button type="submit" className="mx-auto min-w-24" disabled={pending}>
+        <Button type="submit" className="w-full" disabled={pending}>
           {pending ? "Signing up" : "Sign Up"}
         </Button>
       </form>

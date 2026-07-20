@@ -1,6 +1,13 @@
 import type { ReactNode } from "react"
 
-import { Card, CardContent, CardFooter } from "@/components/ui/card"
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card"
 import { cn } from "@/lib/utils"
 
 type AuthFormShellProps = {
@@ -21,26 +28,21 @@ export function AuthFormShell({
   className,
 }: AuthFormShellProps) {
   return (
-    <section className={cn("grid w-full justify-items-center gap-6", className)}>
-      <div className="grid justify-items-center gap-1 text-center">
-        <h1 className="text-4xl font-semibold tracking-normal text-foreground">
-          {title}
-        </h1>
-        {description ? (
-          <p className="max-w-xs text-sm font-medium text-muted-foreground">
-            {description}
-          </p>
-        ) : null}
-      </div>
+    <section className={cn("grid w-full gap-6", className)}>
+      {message ? <div className="w-full">{message}</div> : null}
 
-      {message ? <div className="w-full max-w-xs">{message}</div> : null}
-
-      <Card className="w-full max-w-xs rounded-lg shadow-sm">
+      <Card className="w-full">
+        <CardHeader className="text-center">
+          <CardTitle className="text-xl">{title}</CardTitle>
+          {description ? (
+            <CardDescription>{description}</CardDescription>
+          ) : null}
+        </CardHeader>
         <CardContent>
           {children}
         </CardContent>
         {footer ? (
-          <CardFooter className="justify-center gap-1 border-0 bg-transparent pt-1 text-center text-sm">
+          <CardFooter className="justify-center gap-1 text-center text-sm">
             {footer}
           </CardFooter>
         ) : null}
@@ -63,15 +65,17 @@ export function AuthSuccessState({
   footer,
 }: AuthSuccessStateProps) {
   return (
-    <section className="grid w-full max-w-md justify-items-center gap-4 text-center">
-      {icon ? <div className="text-foreground">{icon}</div> : null}
-      <h1 className="text-3xl font-semibold tracking-normal text-foreground">
-        {title}
-      </h1>
-      <div className="grid gap-2 text-sm font-medium text-muted-foreground">
-        {description}
-      </div>
-      {footer ? <div className="text-sm text-muted-foreground">{footer}</div> : null}
-    </section>
+    <Card className="w-full">
+      <CardHeader className="items-center text-center">
+        {icon ? <div className="text-foreground">{icon}</div> : null}
+        <CardTitle className="text-xl">{title}</CardTitle>
+        <CardDescription className="grid gap-2">{description}</CardDescription>
+      </CardHeader>
+      {footer ? (
+        <CardFooter className="justify-center text-center text-sm">
+          {footer}
+        </CardFooter>
+      ) : null}
+    </Card>
   )
 }

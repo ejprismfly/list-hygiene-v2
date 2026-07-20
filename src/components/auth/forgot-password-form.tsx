@@ -67,7 +67,7 @@ export function ForgotPasswordForm() {
             required
           />
         </div>
-        <Button type="submit" className="mx-auto min-w-40" disabled={pending}>
+        <Button type="submit" className="w-full" disabled={pending}>
           {pending ? "Sending" : "Send Reset Instructions"}
         </Button>
       </form>
