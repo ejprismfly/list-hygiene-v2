@@ -81,18 +81,18 @@ export function SignupForm({ nextPath = "/dashboard" }: { nextPath?: string }) {
             required
           />
         </div>
-        <div className="flex items-start gap-3">
-          <Checkbox id="terms" name="terms" className="mt-1 size-5" />
+        <div className="flex items-start gap-2.5">
+          <Checkbox id="terms" name="terms" className="mt-0.5 size-4" />
           <Label
             htmlFor="terms"
-            className="text-xs leading-5 font-normal text-foreground"
+            className="text-xs leading-6 font-normal text-muted-foreground"
           >
             I have read and accept the{" "}
             <a
               href="https://listhygiene.com/policy/terms"
               target="_blank"
               rel="noreferrer"
-              className="text-primary underline-offset-4 hover:underline"
+              className="font-medium text-foreground underline-offset-4 hover:underline"
             >
               Terms of Use
             </a>{" "}
@@ -101,7 +101,7 @@ export function SignupForm({ nextPath = "/dashboard" }: { nextPath?: string }) {
               href="https://listhygiene.com/policy/privacy"
               target="_blank"
               rel="noreferrer"
-              className="text-primary underline-offset-4 hover:underline"
+              className="font-medium text-foreground underline-offset-4 hover:underline"
             >
               Privacy Policy
             </a>
