@@ -5,7 +5,7 @@ import { SettingsContent } from "@/components/settings/settings-content"
 import { getAppUserOrRedirect } from "@/lib/app-session"
 
 export const metadata: Metadata = {
-  title: "Settings | List Hygiene",
+  title: "Integrations | List Hygiene",
 }
 
 export const dynamic = "force-dynamic"

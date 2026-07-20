@@ -5,7 +5,7 @@ import { ConfigureConnectionContent } from "@/components/settings/configure-conn
 import { getAppUserOrRedirect } from "@/lib/app-session"
 
 export const metadata: Metadata = {
-  title: "Configure Connection | List Hygiene",
+  title: "Configure Your Connection | List Hygiene",
 }
 
 export const dynamic = "force-dynamic"

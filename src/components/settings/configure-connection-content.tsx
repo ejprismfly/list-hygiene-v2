@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react"
 import { useSearchParams } from "next/navigation"
-import { CheckCircle2, Info } from "lucide-react"
+import { CheckCircle2, Info, Loader2 } from "lucide-react"
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
@@ -17,6 +17,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Separator } from "@/components/ui/separator"
+import { Skeleton } from "@/components/ui/skeleton"
 import { Switch } from "@/components/ui/switch"
 
 type SegmentOption = {
@@ -74,6 +75,10 @@ export function ConfigureConnectionContent() {
   const [temporaryErrorRetries, setTemporaryErrorRetries] = useState("3")
   const [unexpectedErrorRetries, setUnexpectedErrorRetries] = useState("3")
   const [statusMessage, setStatusMessage] = useState("")
+  const [accountLoading, setAccountLoading] = useState(Boolean(accountId))
+  const [saving, setSaving] = useState(false)
+  const [refreshing, setRefreshing] = useState(false)
+  const [removing, setRemoving] = useState(false)
   const [removed, setRemoved] = useState(false)
 
   useEffect(() => {
@@ -84,30 +89,39 @@ export function ConfigureConnectionContent() {
     let cancelled = false
 
     async function loadAccount() {
-      const response = await fetch(`/api/oauth/klaviyo/accounts?id=${accountId}`)
-      if (!response.ok) {
-        setStatusMessage("Unable to load Klaviyo connection.")
-        return
-      }
+      setAccountLoading(true)
+      try {
+        const response = await fetch(`/api/oauth/klaviyo/accounts?id=${accountId}`)
+        if (!response.ok) {
+          if (!cancelled) {
+            setStatusMessage("Unable to load Klaviyo connection.")
+          }
+          return
+        }
 
-      const accounts = (await response.json()) as KlaviyoAccount[]
-      const nextAccount = accounts[0]
-      if (!nextAccount || cancelled) {
-        return
-      }
+        const accounts = (await response.json()) as KlaviyoAccount[]
+        const nextAccount = accounts[0]
+        if (!nextAccount || cancelled) {
+          return
+        }
 
-      setAccount(nextAccount)
-      setConnectionName(nextAccount.connection_name || "")
-      setSelectedSegmentId(nextAccount.selected_segment?.id || null)
-      setFixTypos(Boolean(nextAccount.fix_typos))
-      setFullMailboxRetries(String(nextAccount.full_mailbox_retries ?? 12))
-      setGreylistedRetries(String(nextAccount.greylisted_retries ?? 3))
-      setTemporaryErrorRetries(
-        String(nextAccount.mail_server_temporary_error_retries ?? 3)
-      )
-      setUnexpectedErrorRetries(
-        String(nextAccount.unexpected_error_retries ?? 3)
-      )
+        setAccount(nextAccount)
+        setConnectionName(nextAccount.connection_name || "")
+        setSelectedSegmentId(nextAccount.selected_segment?.id || null)
+        setFixTypos(Boolean(nextAccount.fix_typos))
+        setFullMailboxRetries(String(nextAccount.full_mailbox_retries ?? 12))
+        setGreylistedRetries(String(nextAccount.greylisted_retries ?? 3))
+        setTemporaryErrorRetries(
+          String(nextAccount.mail_server_temporary_error_retries ?? 3)
+        )
+        setUnexpectedErrorRetries(
+          String(nextAccount.unexpected_error_retries ?? 3)
+        )
+      } finally {
+        if (!cancelled) {
+          setAccountLoading(false)
+        }
+      }
     }
 
     loadAccount()
@@ -127,28 +141,33 @@ export function ConfigureConnectionContent() {
     }
 
     setRemoved(false)
-    const response = await fetch("/api/oauth/klaviyo/accounts", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        id: accountId,
-        segment_id: selectedSegmentId,
-        connection_name: connectionName,
-        fix_typos: fixTypos,
-        full_mailbox_retries: Number(fullMailboxRetries),
-        greylisted_retries: Number(greylistedRetries),
-        mail_server_temporary_error_retries: Number(temporaryErrorRetries),
-        unexpected_error_retries: Number(unexpectedErrorRetries),
-      }),
-    })
+    setSaving(true)
+    try {
+      const response = await fetch("/api/oauth/klaviyo/accounts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: accountId,
+          segment_id: selectedSegmentId,
+          connection_name: connectionName,
+          fix_typos: fixTypos,
+          full_mailbox_retries: Number(fullMailboxRetries),
+          greylisted_retries: Number(greylistedRetries),
+          mail_server_temporary_error_retries: Number(temporaryErrorRetries),
+          unexpected_error_retries: Number(unexpectedErrorRetries),
+        }),
+      })
 
-    if (!response.ok) {
-      const data = await response.json()
-      setStatusMessage(data.error || "Unable to save Klaviyo settings.")
-      return
+      if (!response.ok) {
+        const data = await response.json()
+        setStatusMessage(data.error || "Unable to save Klaviyo settings.")
+        return
+      }
+
+      setStatusMessage(`${connectionName || "Klaviyo"} settings saved.`)
+    } finally {
+      setSaving(false)
     }
-
-    setStatusMessage(`${connectionName || "Klaviyo"} settings saved.`)
   }
 
   async function refreshSegments() {
@@ -156,21 +175,26 @@ export function ConfigureConnectionContent() {
       return
     }
 
-    const response = await fetch("/api/oauth/klaviyo/segments", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: accountId }),
-    })
-    const data = await response.json()
-    if (!response.ok) {
-      setStatusMessage(data.error || "Unable to refresh segments.")
-      return
-    }
+    setRefreshing(true)
+    try {
+      const response = await fetch("/api/oauth/klaviyo/segments", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: accountId }),
+      })
+      const data = await response.json()
+      if (!response.ok) {
+        setStatusMessage(data.error || "Unable to refresh segments.")
+        return
+      }
 
-    setAccount((current) =>
-      current ? { ...current, segments: data.segments } : current
-    )
-    setStatusMessage("Segments refreshed.")
+      setAccount((current) =>
+        current ? { ...current, segments: data.segments } : current
+      )
+      setStatusMessage("Segments refreshed.")
+    } finally {
+      setRefreshing(false)
+    }
   }
 
   async function removeConnection() {
@@ -178,20 +202,25 @@ export function ConfigureConnectionContent() {
       return
     }
 
-    const response = await fetch("/api/oauth/klaviyo/disconnect", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: accountId }),
-    })
+    setRemoving(true)
+    try {
+      const response = await fetch("/api/oauth/klaviyo/disconnect", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: accountId }),
+      })
 
-    if (!response.ok) {
-      const data = await response.json()
-      setStatusMessage(data.error || "Unable to remove Klaviyo connection.")
-      return
+      if (!response.ok) {
+        const data = await response.json()
+        setStatusMessage(data.error || "Unable to remove Klaviyo connection.")
+        return
+      }
+
+      setRemoved(true)
+      setStatusMessage("Klaviyo connection removed from this workspace.")
+    } finally {
+      setRemoving(false)
     }
-
-    setRemoved(true)
-    setStatusMessage("Klaviyo connection removed from this workspace.")
   }
 
   const retrySettings = [
@@ -238,13 +267,17 @@ export function ConfigureConnectionContent() {
           <Label htmlFor="connection-name" className="text-xl">
             Name This Connection
           </Label>
-          <Input
-            id="connection-name"
-            name="connection-name"
-            value={connectionName}
-            onChange={(event) => setConnectionName(event.target.value)}
-            disabled={removed}
-          />
+          {accountLoading ? (
+            <Skeleton className="h-9 w-full" />
+          ) : (
+            <Input
+              id="connection-name"
+              name="connection-name"
+              value={connectionName}
+              onChange={(event) => setConnectionName(event.target.value)}
+              disabled={removed}
+            />
+          )}
         </CardContent>
       </Card>
 
@@ -267,38 +300,45 @@ export function ConfigureConnectionContent() {
             Select a Klaviyo segment to monitor for new email addresses to
             check.
           </p>
-          {!account?.segments?.length && (
+          {accountLoading ? (
+            <Skeleton className="h-4 w-64" />
+          ) : !account?.segments?.length ? (
             <p className="flex items-start gap-1 text-sm text-muted-foreground">
               <Info className="mt-0.5 size-4" />
               No segments found. Create a segment in Klaviyo, then refresh.
             </p>
+          ) : null}
+          {accountLoading ? (
+            <Skeleton className="h-8 w-full sm:max-w-md" />
+          ) : (
+            <Select
+              disabled={removed}
+              value={selectedSegmentId || "all-emails"}
+              onValueChange={(value) =>
+                setSelectedSegmentId(value === "all-emails" ? null : value)
+              }
+            >
+              <SelectTrigger className="w-full sm:max-w-md">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all-emails">All Emails</SelectItem>
+                {(account?.segments || []).map((segment) => (
+                  <SelectItem key={segment.id} value={segment.id}>
+                    {segment.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           )}
-          <Select
-            disabled={removed}
-            value={selectedSegmentId || "all-emails"}
-            onValueChange={(value) =>
-              setSelectedSegmentId(value === "all-emails" ? null : value)
-            }
-          >
-            <SelectTrigger className="w-full sm:max-w-md">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all-emails">All Emails</SelectItem>
-              {(account?.segments || []).map((segment) => (
-                <SelectItem key={segment.id} value={segment.id}>
-                  {segment.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
           <Button
             type="button"
             variant="outline"
             className="w-fit"
-            disabled={!accountId || removed}
+            disabled={!accountId || accountLoading || refreshing || removed}
             onClick={refreshSegments}
           >
+            {refreshing && <Loader2 className="size-4 animate-spin" />}
             Refresh
           </Button>
         </CardContent>
@@ -330,7 +370,7 @@ export function ConfigureConnectionContent() {
                 {setting.description}
               </p>
               <Select
-                disabled={removed}
+                disabled={accountLoading || removed}
                 value={setting.value}
                 onValueChange={(value) => {
                   if (value) {
@@ -355,15 +395,21 @@ export function ConfigureConnectionContent() {
       </Card>
 
       <div className="mt-2 grid gap-3 sm:flex sm:items-center sm:justify-between">
-        <Button type="button" disabled={removed} onClick={saveConnection}>
+        <Button
+          type="button"
+          disabled={accountLoading || saving || removed}
+          onClick={saveConnection}
+        >
+          {saving && <Loader2 className="size-4 animate-spin" />}
           Save
         </Button>
         <Button
           type="button"
           variant="destructive"
-          disabled={removed}
+          disabled={accountLoading || removing || removed}
           onClick={removeConnection}
         >
+          {removing && <Loader2 className="size-4 animate-spin" />}
           Remove Connection
         </Button>
       </div>

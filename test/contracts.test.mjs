@@ -234,6 +234,29 @@ test("billing manage opens Stripe portal and plan actions open checkout", () => 
   assert.doesNotMatch(billingFailed, /<Button>Retry Payment<\/Button>/)
 })
 
+test("billing plan card shows separate trial, plan, and overage usage states", () => {
+  const billingContent = read("src/components/billing/billing-content.tsx")
+  const billingRoute = read("src/app/api/billing/route.ts")
+  const billingScope = read("src/lib/billing/scope.ts")
+
+  assert.match(billingContent, /Trial Usage/)
+  assert.match(billingContent, /Plan Usage/)
+  assert.match(billingContent, /Overage Usage/)
+  assert.match(billingContent, /trialRemaining > 0/)
+  assert.match(billingContent, /!billing\.account\.trial_completed/)
+  assert.match(billingContent, /overageUsed > 0/)
+  assert.match(billingContent, /Resets \{resetDate\}/)
+  assert.match(billingContent, /UsageProgressSkeleton/)
+  assert.match(billingContent, /PlanTableSkeleton/)
+  assert.match(billingContent, /loading \?\s*\(\s*<PlanTableSkeleton \/>/)
+  assert.match(billingRoute, /trial_remaining: trialRemaining/)
+  assert.match(billingRoute, /overage_remaining/)
+  assert.match(billingRoute, /reset_date: resetDate/)
+  assert.match(billingScope, /"trial_remaining"/)
+  assert.match(billingScope, /"overage_remaining"/)
+  assert.match(billingScope, /"reset_date"/)
+})
+
 test("billing webhook covers Stripe subscription and payment-method scenarios", () => {
   const route = read("src/app/api/billing/webhook/route.ts")
   const webhook = read("src/lib/billing/webhook.ts")
@@ -242,10 +265,17 @@ test("billing webhook covers Stripe subscription and payment-method scenarios", 
   assert.match(route, /stripe\.webhooks\.constructEvent\(rawBody, signature, webhookSecret\)/)
   assert.match(route, /case "checkout\.session\.completed":/)
   assert.match(route, /case "invoice\.paid":/)
+  assert.match(route, /case "invoice\.payment_failed":/)
+  assert.match(route, /case "customer\.updated":/)
+  assert.match(route, /case "payment_method\.attached":/)
+  assert.match(route, /case "payment_method\.detached":/)
   assert.match(route, /case "customer\.subscription\.deleted":/)
+  assert.match(route, /expand: \["default_payment_method", "latest_invoice\.payment_intent"\]/)
   assert.match(route, /subscription\.metadata\?\.stripe_account_id/)
   assert.match(route, /stripeAccount\.subscription_id !== subscriptionId/)
   assert.match(route, /stripe\.subscriptions\.cancel/)
+  assert.match(route, /syncPaymentMethodsForCustomer/)
+  assert.match(route, /previous_attributes/)
   assert.match(route, /cachePaymentMethods\(\{ stripe, stripeAccount, supabase \}\)/)
   assert.match(webhook, /subscription_create/)
   assert.match(webhook, /subscription_update/)
@@ -260,6 +290,27 @@ test("billing webhook covers Stripe subscription and payment-method scenarios", 
   assert.match(checkout, /stripe_account_id/)
   assert.match(checkout, /organization_id/)
   assert.match(checkout, /workspace_id/)
+})
+
+test("billing failed page avoids hard-coded plan and price details", () => {
+  const billingFailed = read("src/app/(app)/billing/failed/page.tsx")
+
+  assert.match(billingFailed, /getCheckoutSummary/)
+  assert.match(billingFailed, /checkout\.sessions\.retrieve\(sessionId\)/)
+  assert.match(billingFailed, /checkout\.sessions\.listLineItems\(sessionId/)
+  assert.doesNotMatch(billingFailed, /<span>1K<\/span>/)
+  assert.doesNotMatch(billingFailed, /<span>\$30<\/span>/)
+})
+
+test("page metadata titles align with visible page headings", () => {
+  assert.match(
+    read("src/app/(app)/settings/page.tsx"),
+    /title: "Integrations \| List Hygiene"/
+  )
+  assert.match(
+    read("src/app/(app)/settings/klaviyo/page.tsx"),
+    /title: "Configure Your Connection \| List Hygiene"/
+  )
 })
 
 test("critical UI controls are wired to their own actions", () => {
@@ -291,7 +342,9 @@ test("critical UI controls are wired to their own actions", () => {
   assert.match(klaviyoOAuth, /window\.location\.assign\(authUrl\)/)
   assert.match(settingsContent, /href=\{`\/settings\/klaviyo\?id=\$\{connection\.id\}`\}/)
   assert.match(settingsContent, /loadingConnections/)
-  assert.match(settingsContent, /Loading connections\.\.\./)
+  assert.match(settingsContent, /ConnectionsTableSkeleton/)
+  assert.match(settingsContent, /<Skeleton className="h-4 w-20" \/>/)
+  assert.doesNotMatch(settingsContent, /Loading connections\.\.\./)
   assert.match(settingsContent, /<div className="overflow-x-auto">\s*<Table className="min-w-\[38rem\]">/)
   assert.doesNotMatch(settingsContent, /<TableHead>Workspace<\/TableHead>/)
   assert.match(settingsContent, /Multiple connections coming soon\./)
@@ -304,7 +357,10 @@ test("critical UI controls are wired to their own actions", () => {
   assert.match(configureConnection, /onClick=\{saveConnection\}/)
   assert.match(configureConnection, /onClick=\{removeConnection\}/)
   assert.match(configureConnection, /if \(!accountId \|\| removed\)/)
-  assert.match(configureConnection, /disabled=\{removed\}[\s\S]*onClick=\{removeConnection\}/)
+  assert.match(configureConnection, /accountLoading/)
+  assert.match(configureConnection, /refreshing && <Loader2 className="size-4 animate-spin" \/>/)
+  assert.match(configureConnection, /saving && <Loader2 className="size-4 animate-spin" \/>/)
+  assert.match(configureConnection, /removing && <Loader2 className="size-4 animate-spin" \/>/)
   assert.doesNotMatch(configureConnection, /href="\/settings"/)
   assert.match(onboardingContent, /"use client"/)
   assert.match(onboardingContent, /onClick=\{connectKlaviyo\}/)
@@ -447,7 +503,9 @@ test("workspace selector shows loading state without a field label", () => {
   const switcher = read("src/components/app/workspace-switcher.tsx")
 
   assert.match(switcher, /workspacesLoading/)
-  assert.match(switcher, /Loading\.\.\./)
+  assert.match(switcher, /<Loader2 className="size-4 animate-spin" \/>/)
+  assert.match(switcher, /Loading/)
+  assert.doesNotMatch(switcher, /Loading\.\.\./)
   assert.doesNotMatch(
     switcher,
     /<Label className="text-xs text-muted-foreground">Workspace<\/Label>/
@@ -505,6 +563,7 @@ test("floating dialogs and selects stack above the mobile menu overlay", () => {
 
   assert.match(mobileShell, /z-\[60\]/)
   assert.match(workspaceSwitcher, /<Dialog[\s\S]*open=\{createDialogOpen\}/)
-  assert.match(dialog, /z-\[100\]/)
-  assert.match(select, /z-\[110\]/)
+  assert.match(workspaceSwitcher, /<DialogContent className="max-h-\[calc\(100svh-2rem\)\] overflow-y-auto sm:max-w-3xl">/)
+  assert.match(dialog, /z-\[1000\]/)
+  assert.match(select, /z-\[1100\]/)
 })

@@ -73,6 +73,7 @@ export async function GET(request: Request) {
   const trialRemaining = Number(stripeAccount?.trial_remaining || 0)
   const overagePlan = Number(stripeAccount?.overage_plan || 0)
   const overageUsed = Number(stripeAccount?.overage_used || 0)
+  const overageRemaining = Number(stripeAccount?.overage_remaining || 0)
   const resetDate = stripeAccount?.reset_date || ""
   const trialCompleted = trialPlan === 0 || trialUsed >= trialPlan
 
@@ -218,6 +219,7 @@ export async function GET(request: Request) {
     reset_date: resetDate ? formatResetDateOnly(resetDate) : "-",
     overage_used: overageUsed,
     overage_plan: overagePlan,
+    overage_remaining: overageRemaining,
     overage_percentage: overagePlan
       ? `${((overageUsed / overagePlan) * 100).toFixed(2)}%`
       : "0%",

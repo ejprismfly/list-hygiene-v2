@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react"
 import {
   BadgeCheck,
   Check,
+  Loader2,
   ShieldCheck,
   Sparkles,
   WandSparkles,
@@ -411,12 +412,17 @@ export function DashboardContent() {
             <p className="text-base font-medium">
               Welcome. Take a look at what your dashboard will look like soon!
             </p>
-            <p className="text-sm text-muted-foreground">
-              {showDummyData
-                ? "Toggle off to see your workspace data."
-                : liveLoading
-                  ? "Loading workspace data."
-                  : liveError || "Showing your workspace data."}
+            <p className="flex items-center gap-2 text-sm text-muted-foreground">
+              {!showDummyData && liveLoading && (
+                <Loader2 className="size-4 animate-spin" />
+              )}
+              <span>
+                {showDummyData
+                  ? "Toggle off to see your workspace data."
+                  : liveLoading
+                    ? "Loading workspace data."
+                    : liveError || "Showing your workspace data."}
+              </span>
             </p>
           </div>
           <Switch

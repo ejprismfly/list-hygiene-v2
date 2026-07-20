@@ -480,7 +480,12 @@ export function WorkspaceSwitcher({
     organizationsLoading || Boolean(organizationId && workspacesLoading)
   const workspaceSelectLabel =
     workspaceOptionsLoading
-      ? "Loading..."
+      ? (
+          <span className="inline-flex items-center gap-2">
+            <Loader2 className="size-4 animate-spin" />
+            Loading
+          </span>
+        )
       : selectedWorkspace?.name || "No workspace"
 
   return (

@@ -23,6 +23,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
+import { Skeleton } from "@/components/ui/skeleton"
 import { startKlaviyoOAuth } from "@/lib/klaviyo-oauth"
 
 type SettingsContentProps = {
@@ -63,6 +64,45 @@ const providers = [
     icon: Mail,
   },
 ]
+
+function ConnectionsTableSkeleton() {
+  return (
+    <div className="overflow-x-auto">
+      <Table className="min-w-[38rem]">
+        <TableHeader>
+          <TableRow>
+            <TableHead>Platform</TableHead>
+            <TableHead>Connection Name</TableHead>
+            <TableHead>Connected</TableHead>
+            <TableHead>Status</TableHead>
+            <TableHead className="w-40" />
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {Array.from({ length: 2 }).map((_, index) => (
+            <TableRow key={index}>
+              <TableCell>
+                <Skeleton className="h-4 w-20" />
+              </TableCell>
+              <TableCell>
+                <Skeleton className="h-4 w-32" />
+              </TableCell>
+              <TableCell>
+                <Skeleton className="h-4 w-24" />
+              </TableCell>
+              <TableCell>
+                <Skeleton className="h-5 w-20 rounded-full" />
+              </TableCell>
+              <TableCell>
+                <Skeleton className="h-8 w-32" />
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </div>
+  )
+}
 
 export function SettingsContent({ connected = false }: SettingsContentProps) {
   const [connections, setConnections] = useState<KlaviyoConnection[]>([])
@@ -150,7 +190,7 @@ export function SettingsContent({ connected = false }: SettingsContentProps) {
       )}
 
       {loadingConnections ? (
-        <p className="text-lg text-muted-foreground">Loading connections...</p>
+        <ConnectionsTableSkeleton />
       ) : hasConnections ? (
         <div className="overflow-x-auto">
           <Table className="min-w-[38rem]">

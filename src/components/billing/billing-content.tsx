@@ -1,12 +1,14 @@
 "use client"
 
 import { useEffect, useMemo, useState } from "react"
+import { Info } from "lucide-react"
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Button, buttonVariants } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Progress, ProgressLabel } from "@/components/ui/progress"
+import { Progress } from "@/components/ui/progress"
 import { Separator } from "@/components/ui/separator"
+import { Skeleton } from "@/components/ui/skeleton"
 import {
   Table,
   TableBody,
@@ -44,10 +46,18 @@ type BillingResponse = {
     current_plan: string
     credits_used: number
     credits_plan: number
+    credits_remaining: number
     trial_plan: number
     trial_used: number
+    trial_remaining: number
+    trial_completed: boolean
     trial_percentage: string
     usage_percentage: string
+    reset_date: string
+    overage_used: number
+    overage_plan: number
+    overage_remaining: number
+    overage_percentage: string
     total: string
     invoice_date: string
   }
@@ -76,10 +86,18 @@ const emptyBilling: BillingResponse = {
     current_plan: "None",
     credits_used: 0,
     credits_plan: 0,
+    credits_remaining: 0,
     trial_plan: 0,
     trial_used: 0,
+    trial_remaining: 0,
+    trial_completed: true,
     trial_percentage: "0%",
     usage_percentage: "0%",
+    reset_date: "-",
+    overage_used: 0,
+    overage_plan: 0,
+    overage_remaining: 0,
+    overage_percentage: "0%",
     total: "$0",
     invoice_date: "-",
   },
@@ -87,6 +105,101 @@ const emptyBilling: BillingResponse = {
   customer: {},
   payments: [],
   portal: "/api/billing/portal",
+}
+
+function formatUsageCount(value: number) {
+  return Number(value || 0).toLocaleString()
+}
+
+function calculateUsagePercent(used: number, total: number) {
+  if (!total) {
+    return 0
+  }
+
+  return Math.min(100, Math.round((used / total) * 10000) / 100)
+}
+
+function formatUsagePercent(value: number) {
+  return `${value.toFixed(2)}%`
+}
+
+function UsageProgressRow({
+  label,
+  used,
+  total,
+  percent,
+  info,
+}: {
+  label: string
+  used: number
+  total: number
+  percent: number
+  info?: string
+}) {
+  return (
+    <div className="grid gap-2">
+      <div className="flex items-center justify-between gap-4 text-sm">
+        <span className="inline-flex min-w-0 items-center gap-1.5">
+          <span>
+            {label} ({formatUsagePercent(percent)})
+          </span>
+          {info && (
+            <Info
+              aria-label={info}
+              className="size-4 shrink-0 text-muted-foreground"
+            >
+              <title>{info}</title>
+            </Info>
+          )}
+        </span>
+        <span className="shrink-0 text-muted-foreground">
+          {formatUsageCount(used)} of {formatUsageCount(total)}
+        </span>
+      </div>
+      <Progress
+        aria-label={`${label}: ${formatUsageCount(used)} of ${formatUsageCount(
+          total
+        )}`}
+        className="gap-0"
+        value={percent}
+      />
+    </div>
+  )
+}
+
+function UsageProgressSkeleton() {
+  return (
+    <div className="grid gap-2">
+      <div className="flex items-center justify-between gap-4">
+        <Skeleton className="h-4 w-36" />
+        <Skeleton className="h-4 w-16" />
+      </div>
+      <Skeleton className="h-1 w-full rounded-full" />
+    </div>
+  )
+}
+
+function PlanTableSkeleton() {
+  return (
+    <>
+      {Array.from({ length: 3 }).map((_, index) => (
+        <TableRow key={index}>
+          <TableCell>
+            <Skeleton className="h-4 w-16" />
+          </TableCell>
+          <TableCell>
+            <Skeleton className="h-4 w-12" />
+          </TableCell>
+          <TableCell>
+            <Skeleton className="h-4 w-14" />
+          </TableCell>
+          <TableCell>
+            <Skeleton className="h-8 w-32" />
+          </TableCell>
+        </TableRow>
+      ))}
+    </>
+  )
 }
 
 export function BillingContent({ email }: BillingContentProps) {
@@ -99,19 +212,33 @@ export function BillingContent({ email }: BillingContentProps) {
     let cancelled = false
 
     async function loadBilling() {
-      const response = await fetch("/api/billing")
-      if (!response.ok) {
-        setStatusMessage("Unable to load billing for this workspace.")
-        setLoading(false)
-        return
-      }
+      setLoading(true)
 
-      const data = (await response.json()) as BillingResponse
-      if (!cancelled) {
-        const selectedGroup = data.plans.find((group) => group.selected)
-        setBilling(data)
-        setActivePlanRange(selectedGroup?.range || data.plans[0]?.range || "9999")
-        setLoading(false)
+      try {
+        const response = await fetch("/api/billing")
+        if (!response.ok) {
+          if (!cancelled) {
+            setStatusMessage("Unable to load billing for this workspace.")
+          }
+          return
+        }
+
+        const data = (await response.json()) as BillingResponse
+        if (!cancelled) {
+          const selectedGroup = data.plans.find((group) => group.selected)
+          setBilling(data)
+          setActivePlanRange(
+            selectedGroup?.range || data.plans[0]?.range || "9999"
+          )
+        }
+      } catch {
+        if (!cancelled) {
+          setStatusMessage("Unable to load billing for this workspace.")
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false)
+        }
       }
     }
 
@@ -121,20 +248,38 @@ export function BillingContent({ email }: BillingContentProps) {
     }
   }, [])
 
-  const usagePercent = useMemo(() => {
-    const total =
-      billing.account.credits_plan || billing.account.trial_plan || 0
-    const used =
-      billing.account.credits_plan > 0
-        ? billing.account.credits_used
-        : billing.account.trial_used
-
-    if (!total) {
-      return 0
-    }
-
-    return Math.round((used / total) * 10000) / 100
+  const trialUsagePercent = useMemo(() => {
+    return calculateUsagePercent(
+      billing.account.trial_used,
+      billing.account.trial_plan
+    )
   }, [billing])
+
+  const planUsagePercent = useMemo(() => {
+    return calculateUsagePercent(
+      billing.account.credits_used,
+      billing.account.credits_plan
+    )
+  }, [billing])
+
+  const overageUsagePercent = useMemo(() => {
+    return calculateUsagePercent(
+      billing.account.overage_used,
+      billing.account.overage_plan
+    )
+  }, [billing])
+
+  const trialRemaining = Number(billing.account.trial_remaining || 0)
+  const trialActive =
+    billing.account.trial_plan > 0 &&
+    trialRemaining > 0 &&
+    !billing.account.trial_completed
+  const overageUsed = Number(billing.account.overage_used || 0)
+  const overageTotal =
+    billing.account.overage_plan ||
+    billing.account.overage_used + billing.account.overage_remaining
+  const showOverage = overageUsed > 0
+  const resetDate = billing.account.reset_date || billing.account.invoice_date
 
   function openBillingRoute(url: string | null | undefined, fallback: string) {
     try {
@@ -175,25 +320,68 @@ export function BillingContent({ email }: BillingContentProps) {
         <Card className="w-full max-w-xl">
           <CardHeader>
             <CardTitle>
-              Current Plan: {loading ? "Loading" : billing.account.current_plan}
+              {loading ? (
+                <Skeleton className="h-7 w-48" />
+              ) : (
+                <>Current Plan: {billing.account.current_plan}</>
+              )}
             </CardTitle>
           </CardHeader>
-          <CardContent className="grid gap-4">
-            <Progress value={usagePercent}>
-              <ProgressLabel>Usage ({usagePercent.toFixed(2)}%)</ProgressLabel>
-              <span className="ml-auto text-sm text-muted-foreground">
-                {billing.account.credits_used || billing.account.trial_used} of{" "}
-                {billing.account.credits_plan || billing.account.trial_plan}
-              </span>
-            </Progress>
+          <CardContent className="grid gap-5">
+            {loading ? (
+              <>
+                <UsageProgressSkeleton />
+                <UsageProgressSkeleton />
+                <Skeleton className="h-3 w-32" />
+              </>
+            ) : (
+              <>
+                {trialActive && (
+                  <UsageProgressRow
+                    label="Trial Usage"
+                    percent={trialUsagePercent}
+                    total={billing.account.trial_plan}
+                    used={billing.account.trial_used}
+                  />
+                )}
+                <UsageProgressRow
+                  label="Plan Usage"
+                  percent={planUsagePercent}
+                  total={billing.account.credits_plan}
+                  used={billing.account.credits_used}
+                />
+                {resetDate && resetDate !== "-" && (
+                  <p className="text-xs text-muted-foreground">
+                    Resets {resetDate}
+                  </p>
+                )}
+                {showOverage && (
+                  <UsageProgressRow
+                    info="Overage credits are used after plan credits are exhausted."
+                    label="Overage Usage"
+                    percent={overageUsagePercent}
+                    total={overageTotal}
+                    used={billing.account.overage_used}
+                  />
+                )}
+              </>
+            )}
             <div className="grid gap-2 text-sm">
               <div className="flex items-center justify-between">
                 <span>Monthly total:</span>
-                <span>{billing.account.total}</span>
+                {loading ? (
+                  <Skeleton className="h-4 w-12" />
+                ) : (
+                  <span>{billing.account.total}</span>
+                )}
               </div>
               <div className="flex items-center justify-between">
                 <span>Next Invoice date:</span>
-                <span>{billing.account.invoice_date}</span>
+                {loading ? (
+                  <Skeleton className="h-4 w-24" />
+                ) : (
+                  <span>{billing.account.invoice_date}</span>
+                )}
               </div>
             </div>
           </CardContent>
@@ -210,7 +398,7 @@ export function BillingContent({ email }: BillingContentProps) {
               Each credit represents an email verification.
             </p>
           </div>
-          <Button type="button" onClick={openPortal}>
+          <Button type="button" disabled={loading} onClick={openPortal}>
             Manage
           </Button>
         </div>
@@ -253,7 +441,9 @@ export function BillingContent({ email }: BillingContentProps) {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {hasPlanRows ? (
+                {loading ? (
+                  <PlanTableSkeleton />
+                ) : hasPlanRows ? (
                   planRows.map((plan) => (
                     <TableRow key={plan.id}>
                       <TableCell>{plan.display_credits || "-"}</TableCell>
@@ -303,7 +493,7 @@ export function BillingContent({ email }: BillingContentProps) {
           <h2 className="text-2xl font-semibold tracking-normal sm:text-3xl">
             Billing Contact
           </h2>
-          <Button type="button" onClick={openPortal}>
+          <Button type="button" disabled={loading} onClick={openPortal}>
             Edit
           </Button>
         </div>
@@ -311,17 +501,25 @@ export function BillingContent({ email }: BillingContentProps) {
           <CardContent className="grid gap-4 sm:grid-cols-2">
             <div className="grid gap-1">
               <p className="text-sm font-medium">Email</p>
-              <p className="text-sm text-muted-foreground">
-                {billing.customer.email || email}
-              </p>
+              {loading ? (
+                <Skeleton className="h-4 w-48" />
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  {billing.customer.email || email}
+                </p>
+              )}
             </div>
             <div className="grid gap-1">
               <p className="text-sm font-medium">Payment method</p>
-              <p className="text-sm text-muted-foreground">
-                {paymentMethod
-                  ? `${paymentMethod.brand} ending in ${paymentMethod.last4}`
-                  : "No payment method"}
-              </p>
+              {loading ? (
+                <Skeleton className="h-4 w-40" />
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  {paymentMethod
+                    ? `${paymentMethod.brand} ending in ${paymentMethod.last4}`
+                    : "No payment method"}
+                </p>
+              )}
             </div>
           </CardContent>
         </Card>

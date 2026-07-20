@@ -29,7 +29,7 @@ async function setDefaultPaymentMethodFromCheckout(
   const customerId =
     typeof session.customer === "string" ? session.customer : session.customer?.id
   if (!customerId) {
-    return
+    return null
   }
 
   let paymentMethodId: string | null = null
@@ -53,10 +53,48 @@ async function setDefaultPaymentMethodFromCheckout(
       typeof setupIntent.payment_method === "string"
         ? setupIntent.payment_method
         : setupIntent.payment_method?.id || null
+  } else if (session.mode === "subscription" && session.subscription) {
+    const subscriptionId =
+      typeof session.subscription === "string"
+        ? session.subscription
+        : session.subscription.id
+    const subscription = await stripe.subscriptions.retrieve(subscriptionId, {
+      expand: ["default_payment_method", "latest_invoice.payment_intent"],
+    })
+    const defaultPaymentMethod = subscription.default_payment_method
+    if (typeof defaultPaymentMethod === "string") {
+      paymentMethodId = defaultPaymentMethod
+    } else if (defaultPaymentMethod?.id) {
+      paymentMethodId = defaultPaymentMethod.id
+    } else {
+      const latestInvoice = subscription.latest_invoice as
+        | (Stripe.Invoice & {
+            payment_intent?: string | Stripe.PaymentIntent | null
+          })
+        | string
+        | null
+      const paymentIntent =
+        latestInvoice && typeof latestInvoice !== "string"
+          ? latestInvoice.payment_intent
+          : null
+
+      if (typeof paymentIntent === "string") {
+        const intent = await stripe.paymentIntents.retrieve(paymentIntent)
+        paymentMethodId =
+          typeof intent.payment_method === "string"
+            ? intent.payment_method
+            : intent.payment_method?.id || null
+      } else if (paymentIntent?.payment_method) {
+        paymentMethodId =
+          typeof paymentIntent.payment_method === "string"
+            ? paymentIntent.payment_method
+            : paymentIntent.payment_method?.id || null
+      }
+    }
   }
 
   if (!paymentMethodId) {
-    return
+    return null
   }
 
   const newPaymentMethod = await stripe.paymentMethods.retrieve(paymentMethodId)
@@ -80,6 +118,8 @@ async function setDefaultPaymentMethodFromCheckout(
   await stripe.customers.update(customerId, {
     invoice_settings: { default_payment_method: paymentMethodId },
   })
+
+  return paymentMethodId
 }
 
 async function findStripeAccount({
@@ -204,6 +244,60 @@ async function handleInvoicePaid({
   await cachePaymentMethods({ stripe, stripeAccount, supabase })
 }
 
+async function syncPaymentMethodsForCustomer({
+  customerId,
+  stripe,
+  stripeAccountId,
+  supabase,
+}: {
+  customerId?: string | null
+  stripe: Stripe
+  stripeAccountId?: string | null
+  supabase: ReturnType<typeof createAdminClient>
+}) {
+  if (!customerId) {
+    return
+  }
+
+  const stripeAccount = await findStripeAccount({
+    customerId,
+    stripeAccountId,
+    supabase,
+  })
+  if (!stripeAccount) {
+    return
+  }
+
+  await cachePaymentMethods({ stripe, stripeAccount, supabase })
+}
+
+async function handleInvoicePaymentFailed({
+  invoice,
+  stripe,
+  supabase,
+}: {
+  invoice: Stripe.Invoice
+  stripe: Stripe
+  supabase: ReturnType<typeof createAdminClient>
+}) {
+  const subscriptionId = getInvoiceSubscriptionId(invoice)
+  const customerId =
+    typeof invoice.customer === "string" ? invoice.customer : invoice.customer?.id
+  let stripeAccountId: string | null = null
+
+  if (subscriptionId) {
+    const subscription = await stripe.subscriptions.retrieve(subscriptionId)
+    stripeAccountId = subscription.metadata?.stripe_account_id || null
+  }
+
+  await syncPaymentMethodsForCustomer({
+    customerId,
+    stripe,
+    stripeAccountId,
+    supabase,
+  })
+}
+
 async function handleSubscriptionDeleted({
   subscription,
   supabase,
@@ -265,10 +359,21 @@ export async function POST(request: Request) {
 
   switch (event.type) {
     case "checkout.session.completed":
-      await setDefaultPaymentMethodFromCheckout(
-        stripe,
-        event.data.object as Stripe.Checkout.Session
-      )
+      {
+        const session = event.data.object as Stripe.Checkout.Session
+        await setDefaultPaymentMethodFromCheckout(stripe, session)
+        const customerId =
+          typeof session.customer === "string"
+            ? session.customer
+            : session.customer?.id
+
+        await syncPaymentMethodsForCustomer({
+          customerId,
+          stripe,
+          stripeAccountId: session.metadata?.stripe_account_id || null,
+          supabase,
+        })
+      }
       break
     case "invoice.paid":
       await handleInvoicePaid({
@@ -276,6 +381,43 @@ export async function POST(request: Request) {
         stripe,
         supabase,
       })
+      break
+    case "invoice.payment_failed":
+      await handleInvoicePaymentFailed({
+        invoice: event.data.object as Stripe.Invoice,
+        stripe,
+        supabase,
+      })
+      break
+    case "customer.updated":
+      await syncPaymentMethodsForCustomer({
+        customerId: (event.data.object as Stripe.Customer).id,
+        stripe,
+        supabase,
+      })
+      break
+    case "payment_method.attached":
+    case "payment_method.detached":
+      {
+        const paymentMethod = event.data.object as Stripe.PaymentMethod
+        const previousAttributes = event.data.previous_attributes as
+          | { customer?: string | Stripe.Customer | null }
+          | undefined
+        const previousCustomer = previousAttributes?.customer
+        const customerId =
+          typeof paymentMethod.customer === "string"
+            ? paymentMethod.customer
+            : paymentMethod.customer?.id ||
+              (typeof previousCustomer === "string"
+                ? previousCustomer
+                : previousCustomer?.id || null)
+
+        await syncPaymentMethodsForCustomer({
+          customerId,
+          stripe,
+          supabase,
+        })
+      }
       break
     case "customer.subscription.deleted":
       await handleSubscriptionDeleted({
