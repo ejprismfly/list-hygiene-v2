@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState, useTransition } from "react"
 import { createPortal } from "react-dom"
 import {
   Archive,
+  Copy,
   Loader2,
   Plus,
   Settings,
@@ -76,6 +77,8 @@ type WorkspaceInvitation = {
   role: "admin" | "member"
   status: "pending" | "accepted" | "revoked" | "expired"
   workspace_ids: string[]
+  invite_url?: string
+  token?: string
 }
 
 function workspaceLabel(name: string) {
@@ -166,6 +169,7 @@ export function WorkspaceSwitcher({
   const [draftName, setDraftName] = useState("")
   const [inviteEmail, setInviteEmail] = useState("")
   const [inviteRole, setInviteRole] = useState<"admin" | "member">("member")
+  const [lastInviteLink, setLastInviteLink] = useState("")
   const [createDialogOpen, setCreateDialogOpen] = useState(false)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [managerOpen, setManagerOpen] = useState(false)
@@ -182,6 +186,7 @@ export function WorkspaceSwitcher({
     member.workspace_ids.includes(selectedId || "")
   )
   const selectedInvitations = invitations.filter((invitation) =>
+    invitation.status === "pending" &&
     invitation.workspace_ids.includes(selectedId || "")
   )
   const managerEnabled = canManage(selectedOrganization?.role)
@@ -406,14 +411,48 @@ export function WorkspaceSwitcher({
       return
     }
 
+    const payload = {
+      email,
+      role: inviteRole,
+      workspace_ids: [selectedWorkspace.id],
+    }
+    const memberResponse = await fetch("/api/organizations/members", {
+      method: "POST",
+      headers: headersFor(organizationId, selectedId),
+      body: JSON.stringify(payload),
+    })
+    const memberData = await memberResponse.json()
+
+    if (memberResponse.ok) {
+      setInviteEmail("")
+      setInviteRole("member")
+      setLastInviteLink("")
+      setMembers((current) => {
+        const nextMember = memberData as WorkspaceMember
+        const existingIndex = current.findIndex(
+          (member) => member.user_id === nextMember.user_id
+        )
+        if (existingIndex === -1) {
+          return [nextMember, ...current]
+        }
+
+        return current.map((member, index) =>
+          index === existingIndex ? nextMember : member
+        )
+      })
+      setMessage(`${email} added to ${workspaceLabel(selectedWorkspace.name)}.`)
+      return
+    }
+
+    if (memberResponse.status !== 404) {
+      setMessage(memberData.error || "Unable to add member.")
+      return
+    }
+
     const response = await fetch("/api/organizations/invitations", {
       method: "POST",
       headers: headersFor(organizationId, selectedId),
-      body: JSON.stringify({
-        email,
-        role: inviteRole,
-        workspace_ids: [selectedWorkspace.id],
-      }),
+      body: JSON.stringify(payload),
     })
     const data = await response.json()
     if (!response.ok) {
@@ -423,8 +462,32 @@ export function WorkspaceSwitcher({
 
     setInviteEmail("")
     setInviteRole("member")
-    setInvitations((current) => [data, ...current])
+    setLastInviteLink(data.invite_url || "")
+    setInvitations((current) => {
+      const invitation = data as WorkspaceInvitation
+      const existingIndex = current.findIndex((item) => item.id === invitation.id)
+      if (existingIndex === -1) {
+        return [invitation, ...current]
+      }
+
+      return current.map((item, index) =>
+        index === existingIndex ? invitation : item
+      )
+    })
     setMessage(`${email} invited to ${workspaceLabel(selectedWorkspace.name)}.`)
+  }
+
+  async function copyInviteLink() {
+    if (!lastInviteLink) {
+      return
+    }
+
+    try {
+      await navigator.clipboard.writeText(lastInviteLink)
+      setMessage("Invite link copied.")
+    } catch {
+      setMessage("Unable to copy invite link.")
+    }
   }
 
   async function updateMemberRole(member: WorkspaceMember, role: "admin" | "member") {
@@ -644,6 +707,27 @@ export function WorkspaceSwitcher({
                     </Button>
                   </div>
 
+                  {lastInviteLink ? (
+                    <div className="grid gap-2">
+                      <Label htmlFor="latest-invite-link">Invite link</Label>
+                      <div className="grid gap-2 sm:flex">
+                        <Input
+                          id="latest-invite-link"
+                          value={lastInviteLink}
+                          readOnly
+                        />
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={copyInviteLink}
+                        >
+                          <Copy className="size-4" />
+                          Copy
+                        </Button>
+                      </div>
+                    </div>
+                  ) : null}
+
                   <div className="overflow-x-auto">
                     <Table className="min-w-[38rem]">
                       <TableHeader>
@@ -662,7 +746,7 @@ export function WorkspaceSwitcher({
                             : `member:${row.user_id}`
                           const email = row.email || "No email"
                           const status = row.status
-                          const role = row.role === "owner" ? "admin" : row.role
+                          const role = row.role
 
                           return (
                             <TableRow key={key}>
@@ -673,10 +757,12 @@ export function WorkspaceSwitcher({
                               <TableCell>
                                 {isInvitation ? (
                                   role
+                                ) : row.role === "owner" ? (
+                                  <Badge variant="secondary">owner</Badge>
                                 ) : (
                                   <Select
                                     value={role}
-                                    disabled={!managerEnabled || row.role === "owner"}
+                                    disabled={!managerEnabled}
                                     onValueChange={(value) =>
                                       updateMemberRole(
                                         row,

@@ -7,6 +7,7 @@ import {
   readJsonBody,
   resolveTenantContext,
 } from "@/lib/api/tenant"
+import { buildInviteUrl } from "@/lib/url-safety.cjs"
 
 const invitationSelect =
   "id, organization_id, email, role, workspace_ids, status, expires_at, created_at"
@@ -21,6 +22,19 @@ const normalizeWorkspaceIds = (value: unknown) => {
 
 const hashToken = (token: string) => {
   return crypto.createHash("sha256").update(token).digest("hex")
+}
+
+const buildInvitationResponse = (request: Request, invitation: object, token: string) => {
+  return {
+    ...invitation,
+    token,
+    invite_url: buildInviteUrl({
+      requestUrl: request.url,
+      originHeader: request.headers.get("origin"),
+      configuredHost: process.env.NEXT_PUBLIC_APP_HOST,
+      token,
+    }),
+  }
 }
 
 export async function GET(request: Request) {
@@ -97,6 +111,49 @@ export async function POST(request: Request) {
   }
 
   const token = crypto.randomBytes(32).toString("hex")
+  const { data: existingInvitation, error: existingInvitationError } =
+    await supabase
+      .from("organization_invitations")
+      .select(invitationSelect)
+      .eq("organization_id", context.organizationId)
+      .eq("email", email)
+      .eq("status", "pending")
+      .maybeSingle()
+
+  if (existingInvitationError) {
+    return errorJson(existingInvitationError.message)
+  }
+
+  if (existingInvitation) {
+    const existingWorkspaceIds = Array.isArray(existingInvitation.workspace_ids)
+      ? existingInvitation.workspace_ids.filter(
+          (id): id is string => typeof id === "string" && !!id
+        )
+      : []
+    const mergedWorkspaceIds = Array.from(
+      new Set([...existingWorkspaceIds, ...workspaceIds])
+    )
+
+    const { data, error } = await supabase
+      .from("organization_invitations")
+      .update({
+        role,
+        workspace_ids: mergedWorkspaceIds,
+        token_hash: hashToken(token),
+        invited_by_user_id: context.user?.id,
+        expires_at: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString(),
+      })
+      .eq("id", existingInvitation.id)
+      .select(invitationSelect)
+      .single()
+
+    if (error || !data) {
+      return errorJson(error?.message || "Unable to refresh invitation")
+    }
+
+    return json(buildInvitationResponse(request, data, token))
+  }
+
   const { data, error } = await supabase
     .from("organization_invitations")
     .insert({
@@ -114,7 +171,7 @@ export async function POST(request: Request) {
     return errorJson(error?.message || "Unable to create invitation")
   }
 
-  return json({ ...data, token }, { status: 201 })
+  return json(buildInvitationResponse(request, data, token), { status: 201 })
 }
 
 export async function PATCH(request: Request) {

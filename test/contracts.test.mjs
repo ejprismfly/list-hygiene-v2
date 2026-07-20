@@ -86,6 +86,7 @@ test("workspace/billing/integration API surface exists in v2 app router", () => 
     "src/app/api/organizations/members/route.ts",
     "src/app/api/organizations/invitations/route.ts",
     "src/app/api/organizations/invitations/accept/route.ts",
+    "src/app/(auth)/invite/page.tsx",
     "src/app/api/oauth/klaviyo/accounts/route.ts",
     "src/app/api/oauth/klaviyo/callback/route.ts",
     "src/app/api/oauth/klaviyo/disconnect/route.ts",
@@ -188,6 +189,44 @@ test("auth UI is password-only", () => {
   assert.match(impersonate, /type: "magiclink"/)
   assert.match(impersonate, /\/auth\/callback\?next=/)
   assert.match(impersonate, /SUPABASE_SERVICE_ROLE_KEY/)
+})
+
+test("team invitations are usable by existing and new users", () => {
+  const workspaceSwitcher = read("src/components/app/workspace-switcher.tsx")
+  const invitationsRoute = read("src/app/api/organizations/invitations/route.ts")
+  const acceptRoute = read("src/app/api/organizations/invitations/accept/route.ts")
+  const invitePage = read("src/app/(auth)/invite/page.tsx")
+  const inviteAcceptance = read("src/components/auth/invite-acceptance.tsx")
+  const loginForm = read("src/components/auth/login-form.tsx")
+  const signupForm = read("src/components/auth/signup-form.tsx")
+  const authActions = read("src/app/(auth)/actions.ts")
+  const authCallback = read("src/app/auth/callback/route.ts")
+
+  assert.match(workspaceSwitcher, /fetch\("\/api\/organizations\/members"/)
+  assert.match(workspaceSwitcher, /memberResponse\.status !== 404/)
+  assert.match(workspaceSwitcher, /fetch\("\/api\/organizations\/invitations"/)
+  assert.match(workspaceSwitcher, /data\.invite_url/)
+  assert.match(workspaceSwitcher, /copyInviteLink/)
+  assert.match(workspaceSwitcher, /status === "pending"/)
+  assert.match(invitationsRoute, /buildInviteUrl/)
+  assert.match(invitationsRoute, /invite_url/)
+  assert.match(invitationsRoute, /existingInvitation/)
+  assert.match(invitationsRoute, /token_hash: hashToken\(token\)/)
+  assert.match(acceptRoute, /Invitation has already been accepted/)
+  assert.match(acceptRoute, /accepted_by_user_id === user\.id/)
+  assert.match(invitePage, /title: "Accept Invite \| List Hygiene"/)
+  assert.match(invitePage, /<InviteAcceptance token=\{token \|\| ""\} userEmail=\{userEmail\} \/>/)
+  assert.match(inviteAcceptance, /\/api\/organizations\/invitations\/accept/)
+  assert.match(inviteAcceptance, /writeWorkspaceSelection/)
+  assert.match(inviteAcceptance, /WORKSPACE_ORGANIZATION_COOKIE/)
+  assert.match(inviteAcceptance, /href=\{`\/login\?\$\{authQuery\}`\}/)
+  assert.match(inviteAcceptance, /href=\{`\/signup\?\$\{authQuery\}`\}/)
+  assert.match(loginForm, /<input type="hidden" name="next" value=\{nextPath\} \/>/)
+  assert.match(signupForm, /<input type="hidden" name="next" value=\{nextPath\} \/>/)
+  assert.match(authActions, /safeNextPath/)
+  assert.match(authActions, /redirect\(nextPath\)/)
+  assert.match(authActions, /buildAuthCallbackUrl\(origin, nextPath\)/)
+  assert.match(authCallback, /safeNextPath/)
 })
 
 test("auth pages keep the v1 centered form composition", () => {

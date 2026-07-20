@@ -9,6 +9,7 @@ import type { AuthFormState } from "@/lib/auth-form"
 import { getFormString } from "@/lib/auth-form"
 import { getSupabaseConfig } from "@/lib/supabase/env"
 import { createClient } from "@/lib/supabase/server"
+import { safeNextPath } from "@/lib/url-safety.cjs"
 import {
   WORKSPACE_ID_COOKIE,
   WORKSPACE_ORGANIZATION_COOKIE,
@@ -43,12 +44,29 @@ async function getRequestOrigin() {
   return configuredHost || headerList.get("origin") || "http://localhost:3000"
 }
 
+function getNextPath(formData: FormData) {
+  return safeNextPath(getFormString(formData, "next"))
+}
+
+function buildAuthCallbackUrl(origin: string, nextPath: string, type?: string) {
+  const url = new URL("/auth/callback", origin)
+  if (nextPath !== "/dashboard") {
+    url.searchParams.set("next", nextPath)
+  }
+  if (type) {
+    url.searchParams.set("type", type)
+  }
+
+  return url.toString()
+}
+
 export async function loginAction(
   _previousState: AuthFormState,
   formData: FormData
 ): Promise<AuthFormState> {
   const email = getFormString(formData, "email")
   const password = getFormString(formData, "password")
+  const nextPath = getNextPath(formData)
   const validationError = requireEmailAndPassword(email, password)
 
   if (validationError) {
@@ -77,7 +95,7 @@ export async function loginAction(
     }
   }
 
-  redirect("/dashboard")
+  redirect(nextPath)
 }
 
 export async function magicLinkAction(
@@ -85,6 +103,7 @@ export async function magicLinkAction(
   formData: FormData
 ): Promise<AuthFormState> {
   const email = getFormString(formData, "email")
+  const nextPath = getNextPath(formData)
 
   if (!email) {
     return { status: "error", message: "Email is required." }
@@ -101,7 +120,7 @@ export async function magicLinkAction(
     const { error } = await supabase.auth.signInWithOtp({
       email,
       options: {
-        emailRedirectTo: `${origin}/auth/callback`,
+        emailRedirectTo: buildAuthCallbackUrl(origin, nextPath),
         shouldCreateUser: true,
       },
     })
@@ -124,6 +143,7 @@ export async function magicLinkAction(
 
 export async function oauthSignInAction(formData: FormData) {
   const provider = getFormString(formData, "provider")
+  const nextPath = getNextPath(formData)
 
   if (!isSupportedOAuthProvider(provider)) {
     redirect("/login")
@@ -138,7 +158,7 @@ export async function oauthSignInAction(formData: FormData) {
   const { data, error } = await supabase.auth.signInWithOAuth({
     provider,
     options: {
-      redirectTo: `${origin}/auth/callback`,
+      redirectTo: buildAuthCallbackUrl(origin, nextPath),
     },
   })
 
@@ -155,6 +175,7 @@ export async function signupAction(
 ): Promise<AuthFormState> {
   const email = getFormString(formData, "email")
   const password = getFormString(formData, "password")
+  const nextPath = getNextPath(formData)
   const termsAccepted = formData.get("terms") === "on"
   const validationError = requireEmailAndPassword(email, password)
 
@@ -181,7 +202,7 @@ export async function signupAction(
       email,
       password,
       options: {
-        emailRedirectTo: `${origin}/auth/callback`,
+        emailRedirectTo: buildAuthCallbackUrl(origin, nextPath),
       },
     })
 
@@ -216,11 +237,12 @@ export async function forgotPasswordAction(
   }
 
   const origin = await getRequestOrigin()
+  const callbackUrl = buildAuthCallbackUrl(origin, "/dashboard", "recovery")
   const supabase = await createClient()
 
   try {
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${origin}/auth/callback?type=recovery`,
+      redirectTo: callbackUrl,
     })
 
     if (error) {

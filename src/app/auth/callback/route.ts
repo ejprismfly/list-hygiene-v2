@@ -2,14 +2,7 @@ import { type NextRequest, NextResponse } from "next/server"
 
 import { getSupabaseConfig } from "@/lib/supabase/env"
 import { createClient } from "@/lib/supabase/server"
-
-function safeNextPath(nextPath: string | null) {
-  if (!nextPath || !nextPath.startsWith("/") || nextPath.startsWith("//")) {
-    return "/dashboard"
-  }
-
-  return nextPath
-}
+import { safeNextPath } from "@/lib/url-safety.cjs"
 
 export async function GET(request: NextRequest) {
   const requestUrl = new URL(request.url)

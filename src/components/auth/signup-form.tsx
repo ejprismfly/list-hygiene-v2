@@ -14,11 +14,15 @@ import { Label } from "@/components/ui/label"
 import { PasswordInput } from "@/components/auth/password-input"
 import { AUTH_FORM_INITIAL_STATE } from "@/lib/auth-form"
 
-export function SignupForm() {
+export function SignupForm({ nextPath = "/dashboard" }: { nextPath?: string }) {
   const [state, formAction, pending] = useActionState(
     signupAction,
     AUTH_FORM_INITIAL_STATE
   )
+  const authQuery =
+    nextPath === "/dashboard"
+      ? ""
+      : `?${new URLSearchParams({ next: nextPath }).toString()}`
 
   if (state.status === "success") {
     return (
@@ -47,7 +51,7 @@ export function SignupForm() {
         <>
           <span className="text-muted-foreground">Already have an account?</span>
           <Link
-            href="/login"
+            href={`/login${authQuery}`}
             className={buttonVariants({ variant: "link", size: "sm" })}
           >
             Sign In
@@ -56,6 +60,7 @@ export function SignupForm() {
       }
     >
       <form action={formAction} className="grid gap-4">
+        <input type="hidden" name="next" value={nextPath} />
         <div className="grid gap-2">
           <Label htmlFor="email">Email</Label>
           <Input

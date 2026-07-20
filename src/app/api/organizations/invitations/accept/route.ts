@@ -31,13 +31,37 @@ export async function POST(request: Request) {
   const supabase = await getDataClient()
   const { data: invitation, error } = await supabase
     .from("organization_invitations")
-    .select("id, organization_id, email, role, workspace_ids, status, expires_at")
+    .select(
+      "id, organization_id, email, role, workspace_ids, status, expires_at, accepted_by_user_id"
+    )
     .eq("token_hash", hashToken(token))
-    .eq("status", "pending")
     .single()
 
   if (error || !invitation) {
     return errorJson("Invitation not found", 404)
+  }
+
+  const role = invitation.role === "admin" ? "admin" : "member"
+  const workspaceIds = Array.isArray(invitation.workspace_ids)
+    ? invitation.workspace_ids.filter(
+        (id): id is string => typeof id === "string"
+      )
+    : []
+
+  if (invitation.status === "accepted") {
+    if (invitation.accepted_by_user_id === user.id) {
+      return json({
+        organization_id: invitation.organization_id,
+        role,
+        workspace_ids: workspaceIds,
+      })
+    }
+
+    return errorJson("Invitation has already been accepted", 409)
+  }
+
+  if (invitation.status !== "pending") {
+    return errorJson("Invitation is no longer pending", 409)
   }
 
   if (new Date(String(invitation.expires_at)).getTime() < Date.now()) {
@@ -56,7 +80,6 @@ export async function POST(request: Request) {
     )
   }
 
-  const role = invitation.role === "admin" ? "admin" : "member"
   const { error: memberError } = await supabase
     .from("organization_members")
     .upsert(
@@ -72,12 +95,6 @@ export async function POST(request: Request) {
   if (memberError) {
     return errorJson(memberError.message)
   }
-
-  const workspaceIds = Array.isArray(invitation.workspace_ids)
-    ? invitation.workspace_ids.filter(
-        (id): id is string => typeof id === "string"
-      )
-    : []
 
   if (workspaceIds.length) {
     const { error: workspaceError } = await supabase
