@@ -1,9 +1,47 @@
-import Link from "next/link"
+"use client"
 
-import { buttonVariants } from "@/components/ui/button"
+import { useEffect, useState } from "react"
+
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
+import { startKlaviyoOAuth } from "@/lib/klaviyo-oauth"
 
 export function OnboardingContent() {
+  const [statusMessage, setStatusMessage] = useState("")
+
+  useEffect(() => {
+    function onMessage(event: MessageEvent) {
+      if (event.data?.status === "connected") {
+        setStatusMessage("Klaviyo connected. Opening integration settings.")
+        window.setTimeout(() => {
+          window.location.assign("/settings?connected=1")
+        }, 600)
+      }
+
+      if (event.data?.status === "blocked") {
+        setStatusMessage("That Klaviyo account is already connected.")
+        window.setTimeout(() => {
+          window.location.assign("/settings")
+        }, 900)
+      }
+
+      if (event.data?.status === "failed") {
+        setStatusMessage("Unable to connect Klaviyo. Please try again.")
+      }
+    }
+
+    window.addEventListener("message", onMessage)
+    return () => window.removeEventListener("message", onMessage)
+  }, [])
+
+  async function connectKlaviyo() {
+    setStatusMessage("")
+    await startKlaviyoOAuth({
+      onMissingClientId: () =>
+        setStatusMessage("Klaviyo client ID is not configured."),
+    })
+  }
+
   return (
     <main className="flex min-h-svh items-center justify-center bg-background p-4 sm:p-6">
       <div className="grid max-w-3xl gap-5 text-center">
@@ -20,10 +58,13 @@ export function OnboardingContent() {
           </Badge>
         </div>
         <div className="pt-4">
-          <Link href="/settings/klaviyo" className={buttonVariants()}>
+          <Button type="button" onClick={connectKlaviyo}>
             Connect Klaviyo
-          </Link>
+          </Button>
         </div>
+        {statusMessage && (
+          <p className="text-sm text-muted-foreground">{statusMessage}</p>
+        )}
         <p className="text-sm text-muted-foreground">
           Having any issues? Contact{" "}
           <a

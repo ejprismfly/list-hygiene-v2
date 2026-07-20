@@ -303,6 +303,9 @@ export function BillingContent({ email }: BillingContentProps) {
           <h2 className="text-2xl font-semibold tracking-normal sm:text-3xl">
             Billing Contact
           </h2>
+          <Button type="button" onClick={openPortal}>
+            Edit
+          </Button>
         </div>
         <Card>
           <CardContent className="grid gap-4 sm:grid-cols-2">

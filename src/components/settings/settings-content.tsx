@@ -10,7 +10,6 @@ import {
   Dialog,
   DialogClose,
   DialogContent,
-  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -24,6 +23,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
+import { startKlaviyoOAuth } from "@/lib/klaviyo-oauth"
 
 type SettingsContentProps = {
   connected?: boolean
@@ -106,94 +106,11 @@ export function SettingsContent({ connected = false }: SettingsContentProps) {
     }
   }, [connected])
 
-  function randomString(length: number) {
-    const charset =
-      "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~"
-    const values = new Uint8Array(length)
-    crypto.getRandomValues(values)
-
-    return Array.from(values, (value) => charset[value % charset.length]).join("")
-  }
-
-  async function codeChallenge(verifier: string) {
-    const digest = await crypto.subtle.digest(
-      "SHA-256",
-      new TextEncoder().encode(verifier)
-    )
-
-    return btoa(String.fromCharCode(...new Uint8Array(digest)))
-      .replace(/\+/g, "-")
-      .replace(/\//g, "_")
-      .replace(/=+$/, "")
-  }
-
-  function klaviyoPopupFeatures() {
-    const width = 520
-    const height = 720
-    const left = Math.max(
-      0,
-      Math.round(window.screenX + (window.outerWidth - width) / 2)
-    )
-    const top = Math.max(
-      0,
-      Math.round(window.screenY + (window.outerHeight - height) / 2)
-    )
-
-    return [
-      "popup=yes",
-      `width=${width}`,
-      `height=${height}`,
-      `left=${left}`,
-      `top=${top}`,
-      "resizable=yes",
-      "scrollbars=yes",
-      "status=no",
-      "toolbar=no",
-      "menubar=no",
-    ].join(",")
-  }
-
   async function addKlaviyoConnection() {
-    const popup = window.open(
-      "about:blank",
-      "klaviyo-oauth",
-      klaviyoPopupFeatures()
-    )
-    const clientId = process.env.NEXT_PUBLIC_KLAVIYO_CLIENT_ID
-    if (!clientId) {
-      popup?.close()
-      setStatusMessage("Klaviyo client ID is not configured.")
-      return
-    }
-
-    const verifier = randomString(64)
-    const challenge = await codeChallenge(verifier)
-    document.cookie = [
-      `klaviyo_pkce_verifier=${verifier}`,
-      "Path=/",
-      `Max-Age=${10 * 60}`,
-      "SameSite=Lax",
-    ].join("; ")
-
-    const appHost =
-      process.env.NEXT_PUBLIC_APP_HOST?.replace(/\/+$/, "") ||
-      window.location.origin
-    const redirectUri = encodeURIComponent(
-      `${appHost}/api/oauth/klaviyo/callback`
-    )
-    const scopes =
-      "segments:read segments:write lists:read lists:write profiles:read profiles:write accounts:read subscriptions:write subscriptions:read"
-    const authUrl = `https://www.klaviyo.com/oauth/authorize?response_type=code&client_id=${clientId}&redirect_uri=${redirectUri}&scope=${encodeURIComponent(
-      scopes
-    )}&code_challenge_method=S256&code_challenge=${challenge}`
-
-    if (popup) {
-      popup.location.href = authUrl
-      popup.focus()
-      return
-    }
-
-    window.location.assign(authUrl)
+    await startKlaviyoOAuth({
+      onMissingClientId: () =>
+        setStatusMessage("Klaviyo client ID is not configured."),
+    })
   }
 
   useEffect(() => {
@@ -236,12 +153,11 @@ export function SettingsContent({ connected = false }: SettingsContentProps) {
         <p className="text-lg text-muted-foreground">Loading connections...</p>
       ) : hasConnections ? (
         <div className="overflow-x-auto">
-          <Table className="min-w-[44rem]">
+          <Table className="min-w-[38rem]">
             <TableHeader>
               <TableRow>
                 <TableHead>Platform</TableHead>
                 <TableHead>Connection Name</TableHead>
-                <TableHead>Workspace</TableHead>
                 <TableHead>Connected</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead className="w-40" />
@@ -254,7 +170,6 @@ export function SettingsContent({ connected = false }: SettingsContentProps) {
                   <TableCell>
                     {connection.connection_name || "Klaviyo"}
                   </TableCell>
-                  <TableCell>Current workspace</TableCell>
                   <TableCell>{connection.connection_date || "-"}</TableCell>
                   <TableCell>
                     <Badge variant="secondary">
@@ -288,10 +203,14 @@ export function SettingsContent({ connected = false }: SettingsContentProps) {
           <DialogContent className="sm:max-w-4xl" showCloseButton={false}>
             <DialogHeader>
               <DialogTitle>Add Connections</DialogTitle>
-              <DialogDescription>
-                Multiple connections coming soon.
-              </DialogDescription>
             </DialogHeader>
+
+            <Badge
+              variant="secondary"
+              className="h-auto w-full justify-start rounded-lg px-4 py-3 text-sm"
+            >
+              Multiple connections coming soon.
+            </Badge>
 
             <div className="grid gap-3">
               {providers.map((provider) => {
@@ -308,16 +227,16 @@ export function SettingsContent({ connected = false }: SettingsContentProps) {
                     </div>
                     {provider.available ? (
                       <DialogClose
-                          render={
-                            <Button
-                              type="button"
-                              className="w-full sm:w-36"
-                              onClick={addKlaviyoConnection}
-                            />
-                          }
-                        >
-                          {provider.status}
-                        </DialogClose>
+                        render={
+                          <Button
+                            type="button"
+                            className="w-full sm:w-36"
+                            onClick={addKlaviyoConnection}
+                          />
+                        }
+                      >
+                        {provider.status}
+                      </DialogClose>
                     ) : (
                       <Badge variant="secondary">{provider.status}</Badge>
                     )}
