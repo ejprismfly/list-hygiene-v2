@@ -127,14 +127,19 @@ function ComboboxItem({
 
 function ComboboxEmpty({
   className,
+  children,
   ...props
 }: ComboboxPrimitive.Empty.Props) {
   return (
     <ComboboxPrimitive.Empty
       data-slot="combobox-empty"
-      className={cn("px-2 py-3 text-sm text-muted-foreground", className)}
+      className={cn("contents", className)}
       {...props}
-    />
+    >
+      <div className="px-2 py-3 text-sm text-muted-foreground">
+        {children}
+      </div>
+    </ComboboxPrimitive.Empty>
   )
 }
 

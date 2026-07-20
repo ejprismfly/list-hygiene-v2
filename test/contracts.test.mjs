@@ -659,6 +659,7 @@ test("floating dialogs and selects stack above the mobile menu overlay", () => {
   const mobileShell = read("src/components/app/mobile-menu.tsx")
   const dialog = read("src/components/ui/dialog.tsx")
   const select = read("src/components/ui/select.tsx")
+  const combobox = read("src/components/ui/combobox.tsx")
   const workspaceSwitcher = read("src/components/app/workspace-switcher.tsx")
 
   assert.match(mobileShell, /z-\[60\]/)
@@ -666,4 +667,7 @@ test("floating dialogs and selects stack above the mobile menu overlay", () => {
   assert.match(workspaceSwitcher, /<DialogContent className="max-h-\[calc\(100svh-2rem\)\] overflow-y-auto sm:max-w-3xl">/)
   assert.match(dialog, /z-\[1000\]/)
   assert.match(select, /z-\[1100\]/)
+  assert.match(combobox, /z-\[1100\]/)
+  assert.match(combobox, /className=\{cn\("contents", className\)\}/)
+  assert.match(combobox, /<div className="px-2 py-3 text-sm text-muted-foreground">/)
 })
