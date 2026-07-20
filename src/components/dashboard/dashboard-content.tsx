@@ -893,22 +893,13 @@ export function DashboardContent() {
             setActiveBreakdownCategory(value as CategoryBreakdownKey)
           }
         >
-          <div className="overflow-x-auto pb-1">
-            <TabsList
-              variant="line"
-              className="h-14 min-w-max rounded-full border bg-background p-0"
-            >
-              {categoryBreakdownKeys.map((status) => (
-                <TabsTrigger
-                  key={status}
-                  value={status}
-                  className="h-full min-w-24 rounded-none px-5 text-base after:bg-[#346ce6] group-data-horizontal/tabs:after:bottom-[-1px] first:rounded-l-full last:rounded-r-full"
-                >
-                  {historicalChartConfig[status].label}
-                </TabsTrigger>
-              ))}
-            </TabsList>
-          </div>
+          <TabsList className="h-auto w-full flex-wrap justify-start sm:w-fit">
+            {categoryBreakdownKeys.map((status) => (
+              <TabsTrigger key={status} value={status}>
+                {historicalChartConfig[status].label}
+              </TabsTrigger>
+            ))}
+          </TabsList>
 
           <Card>
             <CardContent className="grid min-h-72 gap-5 pt-5 pb-6 sm:px-6">
