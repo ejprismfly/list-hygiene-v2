@@ -19,6 +19,16 @@ type KlaviyoSegmentsResponse = {
   message?: string
 }
 
+export class KlaviyoApiError extends Error {
+  status: number
+
+  constructor(message: string, status: number) {
+    super(message)
+    this.name = "KlaviyoApiError"
+    this.status = status
+  }
+}
+
 export function getSegmentName(segment?: KlaviyoSegment | null) {
   return (
     segment?.attributes?.name?.trim() ||
@@ -71,14 +81,19 @@ export async function fetchKlaviyoSegments(accessToken: string, limit = 300) {
     Revision: "2025-04-15",
   }
   const segments: KlaviyoSegment[] = []
-  let url = "https://a.klaviyo.com/api/segments?page[size]=100"
+  let url = "https://a.klaviyo.com/api/segments"
 
   while (url && segments.length < limit) {
     const response = await fetch(url, { headers })
-    const data = (await response.json().catch(() => ({}))) as KlaviyoSegmentsResponse
+    const data = (await response
+      .json()
+      .catch(() => ({}))) as KlaviyoSegmentsResponse
 
     if (!response.ok) {
-      throw new Error(klaviyoErrorMessage(response, data))
+      throw new KlaviyoApiError(
+        klaviyoErrorMessage(response, data),
+        response.status
+      )
     }
 
     if (Array.isArray(data.data)) {

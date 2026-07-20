@@ -7,6 +7,7 @@ import {
   type TenantContext,
 } from "@/lib/api/tenant"
 import {
+  KlaviyoApiError,
   fetchKlaviyoSegments,
   sortAndMapSegments,
   type KlaviyoSegment,
@@ -47,6 +48,55 @@ function applyAccountScope<T>(query: ScopedQuery<T>, context: TenantContext) {
   }
 
   return scoped
+}
+
+async function refreshKlaviyoAccessToken(refreshToken?: string) {
+  if (
+    !refreshToken ||
+    !process.env.NEXT_PUBLIC_KLAVIYO_CLIENT_ID ||
+    !process.env.KLAVIYO_CLIENT_SECRET
+  ) {
+    return null
+  }
+
+  const authKey = Buffer.from(
+    `${process.env.NEXT_PUBLIC_KLAVIYO_CLIENT_ID}:${process.env.KLAVIYO_CLIENT_SECRET}`
+  ).toString("base64")
+  const tokenResponse = await fetch("https://a.klaviyo.com/oauth/token", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded",
+      Authorization: `Basic ${authKey}`,
+    },
+    body: new URLSearchParams({
+      grant_type: "refresh_token",
+      refresh_token: refreshToken,
+    }),
+  })
+  const tokenJson = (await tokenResponse.json()) as KlaviyoToken
+
+  if (!tokenJson.access_token) {
+    throw new Error("Token exchange failed")
+  }
+
+  const tokenUpdates: Record<string, unknown> = {
+    access_token: tokenJson.access_token,
+  }
+
+  if (tokenJson.refresh_token) {
+    tokenUpdates.refresh_token = tokenJson.refresh_token
+  }
+
+  if (tokenJson.expires_in) {
+    tokenUpdates.token_expires_in = new Date(
+      Date.now() + Number(tokenJson.expires_in) * 1000
+    ).toISOString()
+  }
+
+  return {
+    accessToken: tokenJson.access_token,
+    tokenUpdates,
+  }
 }
 
 export async function GET(request: Request) {
@@ -120,47 +170,54 @@ export async function POST(request: Request) {
 
   if (
     expiresAt &&
-    Date.now() >= expiresAt &&
-    account.refresh_token &&
-    process.env.NEXT_PUBLIC_KLAVIYO_CLIENT_ID &&
-    process.env.KLAVIYO_CLIENT_SECRET
+    Date.now() >= expiresAt
   ) {
-    const authKey = Buffer.from(
-      `${process.env.NEXT_PUBLIC_KLAVIYO_CLIENT_ID}:${process.env.KLAVIYO_CLIENT_SECRET}`
-    ).toString("base64")
-    const tokenResponse = await fetch("https://a.klaviyo.com/oauth/token", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded",
-        Authorization: `Basic ${authKey}`,
-      },
-      body: new URLSearchParams({
-        grant_type: "refresh_token",
-        refresh_token: account.refresh_token,
-      }),
-    })
-    const tokenJson = (await tokenResponse.json()) as KlaviyoToken
-    if (!tokenJson.access_token) {
+    const refreshedToken = await refreshKlaviyoAccessToken(account.refresh_token)
+    if (!refreshedToken) {
       return errorJson("Token exchange failed", 400)
     }
-    accessToken = tokenJson.access_token
-    tokenUpdates.access_token = tokenJson.access_token
-    if (tokenJson.refresh_token) {
-      tokenUpdates.refresh_token = tokenJson.refresh_token
-    }
-    if (tokenJson.expires_in) {
-      tokenUpdates.token_expires_in = new Date(
-        Date.now() + Number(tokenJson.expires_in) * 1000
-      ).toISOString()
-    }
+    accessToken = refreshedToken.accessToken
+    Object.assign(tokenUpdates, refreshedToken.tokenUpdates)
   }
 
-  let segments: KlaviyoSegment[]
+  let segments: KlaviyoSegment[] | null = null
   try {
     segments = await fetchKlaviyoSegments(accessToken)
   } catch (error) {
+    if (
+      error instanceof KlaviyoApiError &&
+      (error.status === 401 || error.status === 403)
+    ) {
+      try {
+        const refreshedToken = await refreshKlaviyoAccessToken(
+          account.refresh_token
+        )
+        if (refreshedToken) {
+          accessToken = refreshedToken.accessToken
+          Object.assign(tokenUpdates, refreshedToken.tokenUpdates)
+          segments = await fetchKlaviyoSegments(accessToken)
+        } else {
+          throw error
+        }
+      } catch (retryError) {
+        return errorJson(
+          retryError instanceof Error
+            ? retryError.message
+            : "Unable to refresh segments.",
+          502
+        )
+      }
+    } else {
+      return errorJson(
+        error instanceof Error ? error.message : "Unable to refresh segments.",
+        502
+      )
+    }
+  }
+
+  if (!segments) {
     return errorJson(
-      error instanceof Error ? error.message : "Unable to refresh segments.",
+      "Unable to refresh segments.",
       502
     )
   }
