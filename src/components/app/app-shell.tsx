@@ -7,13 +7,17 @@ import {
 } from "lucide-react"
 
 import { BrandLogo } from "@/components/app/brand-logo"
-import { LogoutForm } from "@/components/app/logout-form"
 import { MobileMenu } from "@/components/app/mobile-menu"
 import { WorkspaceRequiredGate } from "@/components/app/workspace-required-gate"
 import { WorkspaceSwitcher } from "@/components/app/workspace-switcher"
-import { Badge } from "@/components/ui/badge"
 import { buttonVariants } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
 import { cn } from "@/lib/utils"
 
 type AppShellProps = {
@@ -36,12 +40,6 @@ const navItems = [
     icon: CreditCard,
   },
   {
-    key: "profile",
-    label: "Profile",
-    href: "/profile",
-    icon: CircleUserRound,
-  },
-  {
     key: "settings",
     label: "Settings",
     href: "/settings",
@@ -57,36 +55,61 @@ function WorkspaceControls({ showOrganization = false }: {
 
 function NavLinks({ active }: Pick<AppShellProps, "active">) {
   return (
-    <nav className="grid gap-1">
+    <nav className="grid gap-1" aria-label="Primary">
       {navItems.map((item) => {
         const Icon = item.icon
 
         return (
-          <Link
-            key={item.key}
-            href={item.href}
-            className={buttonVariants({
-              variant: active === item.key ? "secondary" : "ghost",
-              className: cn("h-10 w-full justify-start gap-2 text-base"),
-            })}
-          >
-            <Icon className="size-5" />
-            {item.label}
-          </Link>
+          <Tooltip key={item.key}>
+            <TooltipTrigger
+              render={
+                <Link
+                  href={item.href}
+                  className={buttonVariants({
+                    variant: active === item.key ? "secondary" : "ghost",
+                    className: cn("h-10 w-full justify-start gap-2 text-base"),
+                  })}
+                />
+              }
+            >
+              <Icon className="size-5" />
+              {item.label}
+            </TooltipTrigger>
+            <TooltipContent>{item.label}</TooltipContent>
+          </Tooltip>
         )
       })}
     </nav>
   )
 }
 
-function AccountActions({ userEmail }: Pick<AppShellProps, "userEmail">) {
+function ProfileNavLink({
+  active,
+  userEmail,
+}: Pick<AppShellProps, "active" | "userEmail">) {
   return (
-    <div className="grid gap-2">
-      <Badge variant="outline" className="w-fit max-w-full">
-        <span className="truncate">{userEmail}</span>
-      </Badge>
-      <LogoutForm showIcon />
-    </div>
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <Link
+            href="/profile"
+            className={buttonVariants({
+              variant: active === "profile" ? "secondary" : "ghost",
+              className: cn("group h-10 w-full justify-start gap-2 text-base"),
+            })}
+          />
+        }
+      >
+        <CircleUserRound className="size-5" />
+        <span className="min-w-0 flex-1 truncate group-hover:hidden">
+          {userEmail}
+        </span>
+        <span className="hidden min-w-0 flex-1 truncate group-hover:block">
+          Open Profile
+        </span>
+      </TooltipTrigger>
+      <TooltipContent>Open Profile</TooltipContent>
+    </Tooltip>
   )
 }
 
@@ -95,25 +118,27 @@ export function AppShell({ active, userEmail, children }: AppShellProps) {
     <div className="min-h-svh bg-background md:flex">
       <WorkspaceRequiredGate />
 
-      <aside className="sticky top-0 hidden h-svh max-h-svh w-60 shrink-0 flex-col overflow-hidden border-r bg-background p-3 md:flex">
-        <div className="shrink-0 px-2 py-3">
-          <BrandLogo />
-        </div>
-
-        <Separator className="my-2 shrink-0" />
-
-        <div className="min-h-0 flex-1 overflow-y-auto pr-1">
-          <WorkspaceControls />
-
-          <div className="mt-4">
-            <NavLinks active={active} />
+      <TooltipProvider delay={300}>
+        <aside className="sticky top-0 hidden h-svh max-h-svh w-60 shrink-0 flex-col overflow-hidden border-r bg-background p-3 md:flex">
+          <div className="shrink-0 px-2 py-3">
+            <BrandLogo />
           </div>
-        </div>
 
-        <div className="shrink-0 px-2 pt-3 pb-1">
-          <AccountActions userEmail={userEmail} />
-        </div>
-      </aside>
+          <Separator className="my-2 shrink-0" />
+
+          <div className="min-h-0 flex-1 overflow-y-auto pr-1">
+            <WorkspaceControls />
+
+            <div className="mt-4">
+              <NavLinks active={active} />
+            </div>
+          </div>
+
+          <div className="shrink-0 px-2 pt-3 pb-1">
+            <ProfileNavLink active={active} userEmail={userEmail} />
+          </div>
+        </aside>
+      </TooltipProvider>
 
       <MobileMenu active={active} userEmail={userEmail} />
 

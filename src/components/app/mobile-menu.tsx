@@ -12,11 +12,15 @@ import {
 } from "lucide-react"
 
 import { BrandLogo } from "@/components/app/brand-logo"
-import { LogoutForm } from "@/components/app/logout-form"
 import { WorkspaceSwitcher } from "@/components/app/workspace-switcher"
-import { Badge } from "@/components/ui/badge"
 import { Button, buttonVariants } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
 import { cn } from "@/lib/utils"
 
 type MobileMenuProps = {
@@ -36,12 +40,6 @@ const navItems = [
     label: "Billing",
     href: "/billing",
     icon: CreditCard,
-  },
-  {
-    key: "profile",
-    label: "Profile",
-    href: "/profile",
-    icon: CircleUserRound,
   },
   {
     key: "settings",
@@ -96,59 +94,86 @@ export function MobileMenu({ active, userEmail }: MobileMenuProps) {
       </header>
 
       {open && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-label="Menu"
-          className="fixed inset-0 z-[60] grid h-dvh grid-rows-[auto_minmax(0,1fr)_auto] bg-background p-4 md:hidden"
-        >
-          <div className="flex items-center justify-between gap-3 border-b pb-4">
-            <h2 className="text-base font-semibold">Menu</h2>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              aria-label="Close menu"
-              onClick={() => setOpen(false)}
-            >
-              <X className="size-4" />
-            </Button>
+        <TooltipProvider delay={300}>
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="Menu"
+            className="fixed inset-0 z-[60] grid h-dvh grid-rows-[auto_minmax(0,1fr)_auto] bg-background p-4 md:hidden"
+          >
+            <div className="flex items-center justify-between gap-3 border-b pb-4">
+              <h2 className="text-base font-semibold">Menu</h2>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                aria-label="Close menu"
+                onClick={() => setOpen(false)}
+              >
+                <X className="size-4" />
+              </Button>
+            </div>
+
+            <div className="grid min-h-0 content-start gap-4 overflow-y-auto py-4">
+              <WorkspaceSwitcher showOrganization={false} />
+
+              <Separator />
+
+              <nav className="grid gap-1" aria-label="Primary">
+                {navItems.map((item) => {
+                  const Icon = item.icon
+
+                  return (
+                    <Tooltip key={item.key}>
+                      <TooltipTrigger
+                        render={
+                          <Link
+                            href={item.href}
+                            onClick={() => setOpen(false)}
+                            className={buttonVariants({
+                              variant: active === item.key ? "secondary" : "ghost",
+                              className: cn("h-10 w-full justify-start gap-2 text-base"),
+                            })}
+                          />
+                        }
+                      >
+                        <Icon className="size-5" />
+                        {item.label}
+                      </TooltipTrigger>
+                      <TooltipContent>{item.label}</TooltipContent>
+                    </Tooltip>
+                  )
+                })}
+              </nav>
+            </div>
+
+            <div className="grid gap-3 bg-background pt-4">
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <Link
+                      href="/profile"
+                      onClick={() => setOpen(false)}
+                      className={buttonVariants({
+                        variant: active === "profile" ? "secondary" : "ghost",
+                        className: cn("group h-10 w-full justify-start gap-2 text-base"),
+                      })}
+                    />
+                  }
+                >
+                  <CircleUserRound className="size-5" />
+                  <span className="min-w-0 flex-1 truncate group-hover:hidden">
+                    {userEmail}
+                  </span>
+                  <span className="hidden min-w-0 flex-1 truncate group-hover:block">
+                    Open Profile
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent>Open Profile</TooltipContent>
+              </Tooltip>
+            </div>
           </div>
-
-          <div className="grid min-h-0 content-start gap-4 overflow-y-auto py-4">
-            <WorkspaceSwitcher showOrganization={false} />
-
-            <Separator />
-
-            <nav className="grid gap-1">
-              {navItems.map((item) => {
-                const Icon = item.icon
-
-                return (
-                  <Link
-                    key={item.key}
-                    href={item.href}
-                    onClick={() => setOpen(false)}
-                    className={buttonVariants({
-                      variant: active === item.key ? "secondary" : "ghost",
-                      className: cn("h-10 w-full justify-start gap-2 text-base"),
-                    })}
-                  >
-                    <Icon className="size-5" />
-                    {item.label}
-                  </Link>
-                )
-              })}
-            </nav>
-          </div>
-
-          <div className="grid gap-3 bg-background pt-4">
-            <Badge variant="outline" className="w-fit max-w-full">
-              <span className="truncate">{userEmail}</span>
-            </Badge>
-            <LogoutForm fullWidth showIcon />
-          </div>
-        </div>
+        </TooltipProvider>
       )}
     </>
   )
