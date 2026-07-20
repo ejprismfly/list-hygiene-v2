@@ -535,6 +535,24 @@ test("dashboard non-demo mode is wired to workspace-scoped live API data", () =>
   assert.match(report, /nextMilestoneRemaining/)
 })
 
+test("dashboard category breakdown matches tabbed stacked design", () => {
+  const component = read("src/components/dashboard/dashboard-content.tsx")
+
+  assert.match(component, /const categoryBreakdownKeys = \[/)
+  assert.match(component, /"valid",\s+"invalid",\s+"risky",\s+"restricted"/)
+  assert.match(component, /categoryBreakdownSeries/)
+  assert.match(component, /Valid/)
+  assert.match(component, /No mail accepted/)
+  assert.match(component, /Possible spam trap/)
+  assert.match(component, /Globally suppressed/)
+  assert.match(component, /<Tabs[\s\S]*value=\{activeBreakdownCategory\}/)
+  assert.match(component, /<TabsList[\s\S]*variant="line"/)
+  assert.match(component, /activeBreakdownSegments\.map/)
+  assert.match(component, /stackId=\{activeBreakdownCategory\}/)
+  assert.doesNotMatch(component, /<Bar[\s\S]*dataKey="valid"/)
+  assert.doesNotMatch(component, /<Bar[\s\S]*dataKey="restricted"/)
+})
+
 test("UI code stays on shadcn/local primitives and avoids extra UI kits", () => {
   const files = walk("src").filter((file) => /\.(ts|tsx)$/.test(file))
   const bannedImports = [
