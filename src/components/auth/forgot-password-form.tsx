@@ -46,6 +46,8 @@ export function ForgotPasswordForm() {
     <AuthFormShell
       title="Reset Password"
       description="Enter your email and we will send you instructions to reset your password"
+      loading={pending}
+      loadingLabel="Sending reset link"
       message={<AuthMessage state={state} />}
       footer={
         <Link

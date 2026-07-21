@@ -20,6 +20,8 @@ export function ResetPasswordForm() {
   return (
     <AuthFormShell
       title="Change Password"
+      loading={pending}
+      loadingLabel="Updating password"
       message={<AuthMessage state={state} />}
       footer={
         <Link

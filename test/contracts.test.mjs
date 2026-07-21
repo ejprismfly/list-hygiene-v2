@@ -480,6 +480,7 @@ test("critical UI controls are wired to their own actions", () => {
   const signupForm = read("src/components/auth/signup-form.tsx")
   const forgotPasswordForm = read("src/components/auth/forgot-password-form.tsx")
   const resetPasswordForm = read("src/components/auth/reset-password-form.tsx")
+  const authFormShell = read("src/components/auth/auth-form-shell.tsx")
   const mobileMenu = read("src/components/app/mobile-menu.tsx")
   const logoutForm = read("src/components/app/logout-form.tsx")
 
@@ -556,10 +557,22 @@ test("critical UI controls are wired to their own actions", () => {
   assert.match(workspaceSwitcher, /onClick=\{inviteMember\}/)
   assert.match(workspaceSwitcher, /onClick=\{createWorkspace\}/)
   assert.match(loginForm, /action=\{formAction\}/)
+  assert.match(loginForm, /loading=\{pending\}/)
+  assert.match(loginForm, /loadingLabel="Logging in"/)
   assert.doesNotMatch(loginForm, /magicFormAction/)
   assert.match(signupForm, /action=\{formAction\}/)
+  assert.match(signupForm, /loading=\{pending\}/)
+  assert.match(signupForm, /loadingLabel="Creating account"/)
+  assert.match(signupForm, /className="grid gap-1 text-xs leading-5/)
   assert.match(forgotPasswordForm, /action=\{formAction\}/)
+  assert.match(forgotPasswordForm, /loading=\{pending\}/)
+  assert.match(forgotPasswordForm, /loadingLabel="Sending reset link"/)
   assert.match(resetPasswordForm, /action=\{formAction\}/)
+  assert.match(resetPasswordForm, /loading=\{pending\}/)
+  assert.match(resetPasswordForm, /loadingLabel="Updating password"/)
+  assert.match(authFormShell, /aria-busy=\{loading\}/)
+  assert.match(authFormShell, /backdrop-blur-sm/)
+  assert.match(authFormShell, /<Loader2 className="size-8 animate-spin text-primary" \/>/)
   assert.equal(
     existsSync(join(root, "src/components/auth/social-auth-buttons.tsx")),
     false

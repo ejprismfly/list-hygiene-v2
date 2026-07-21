@@ -46,6 +46,8 @@ export function SignupForm({ nextPath = "/dashboard" }: { nextPath?: string }) {
     <AuthFormShell
       title="Sign Up"
       description="Create an account and get started"
+      loading={pending}
+      loadingLabel="Creating account"
       message={<AuthMessage state={state} />}
       footer={
         <>
@@ -81,7 +83,7 @@ export function SignupForm({ nextPath = "/dashboard" }: { nextPath?: string }) {
             required
           />
         </div>
-        <div className="grid grid-cols-[auto_1fr] items-start gap-2.5">
+        <div className="flex items-start gap-2.5">
           <Checkbox id="terms" name="terms" className="mt-0.5 size-4" />
           <Label
             htmlFor="terms"

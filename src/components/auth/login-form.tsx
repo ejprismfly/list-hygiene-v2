@@ -25,6 +25,8 @@ export function LoginForm({ nextPath = "/dashboard" }: { nextPath?: string }) {
   return (
     <AuthFormShell
       title="Login"
+      loading={pending}
+      loadingLabel="Logging in"
       message={<AuthMessage state={state} />}
       footer={
         <>
