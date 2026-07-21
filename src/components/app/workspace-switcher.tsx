@@ -7,12 +7,13 @@ import {
   Loader2,
   Plus,
   Settings,
+  Trash2,
   UserMinus,
   UserPlus,
 } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
+import { Button, buttonVariants } from "@/components/ui/button"
 import {
   Dialog,
   DialogContent,
@@ -171,7 +172,11 @@ export function WorkspaceSwitcher({
   const [lastInviteLink, setLastInviteLink] = useState("")
   const [createDialogOpen, setCreateDialogOpen] = useState(false)
   const [managerOpen, setManagerOpen] = useState(false)
+  const [archiveDialogOpen, setArchiveDialogOpen] = useState(false)
+  const [archiveBlockedDialogOpen, setArchiveBlockedDialogOpen] = useState(false)
+  const [archiveConfirmation, setArchiveConfirmation] = useState("")
   const [creatingWorkspace, setCreatingWorkspace] = useState(false)
+  const [archivingWorkspace, setArchivingWorkspace] = useState(false)
   const [message, setMessage] = useState("")
   const [switchingWorkspaceName, setSwitchingWorkspaceName] = useState("")
   const [isPending, startTransition] = useTransition()
@@ -188,6 +193,19 @@ export function WorkspaceSwitcher({
     invitation.workspace_ids.includes(selectedId || "")
   )
   const managerEnabled = canManage(selectedOrganization?.role)
+  const workspaceArchiveBlocked =
+    Boolean(selectedWorkspace?.has_connected_account) ||
+    Boolean(selectedWorkspace?.has_active_billing)
+  const workspaceArchiveBlockedReason = !managerEnabled
+    ? "Only owners and admins can delete workspaces."
+    : selectedWorkspace?.has_active_billing
+      ? "Cancel active billing before deleting this workspace."
+      : selectedWorkspace?.has_connected_account
+        ? "Disconnect or move connected Klaviyo accounts before deleting this workspace."
+        : ""
+  const archiveConfirmationMatches =
+    Boolean(selectedWorkspace?.name) &&
+    archiveConfirmation.trim() === selectedWorkspace?.name
 
   useEffect(() => {
     let cancelled = false
@@ -378,6 +396,65 @@ export function WorkspaceSwitcher({
       )
     )
     setMessage(`${workspaceLabel(data.name)} updated.`)
+  }
+
+  function openArchiveWorkspaceDialog() {
+    if (workspaceArchiveBlockedReason) {
+      setArchiveBlockedDialogOpen(true)
+      return
+    }
+
+    setArchiveDialogOpen(true)
+  }
+
+  async function archiveWorkspace() {
+    if (
+      !organizationId ||
+      !selectedWorkspace ||
+      !archiveConfirmationMatches ||
+      !managerEnabled ||
+      workspaceArchiveBlocked
+    ) {
+      return
+    }
+
+    setArchivingWorkspace(true)
+    try {
+      const response = await fetch("/api/workspaces", {
+        method: "DELETE",
+        cache: "no-store",
+        credentials: "same-origin",
+        headers: headersFor(organizationId, selectedWorkspace.id),
+        body: JSON.stringify({ id: selectedWorkspace.id }),
+      })
+      const data = await response.json()
+      if (!response.ok) {
+        setMessage(data.error || "Unable to archive workspace.")
+        return
+      }
+
+      const nextWorkspace =
+        workspaces.find((workspace) => workspace.id !== selectedWorkspace.id) ||
+        null
+
+      setArchiveDialogOpen(false)
+      setArchiveConfirmation("")
+      setManagerOpen(false)
+      setWorkspaces((current) =>
+        current.filter((workspace) => workspace.id !== selectedWorkspace.id)
+      )
+      setSelectedId(nextWorkspace?.id || null)
+      invalidateWorkspaceClientData(organizationId)
+      persistSelection(organizationId, nextWorkspace?.id || null)
+      setSwitchingWorkspaceName(
+        nextWorkspace ? workspaceLabel(nextWorkspace.name) : "Workspace"
+      )
+      window.setTimeout(() => {
+        window.location.reload()
+      }, 450)
+    } finally {
+      setArchivingWorkspace(false)
+    }
   }
 
   async function inviteMember() {
@@ -851,6 +928,149 @@ export function WorkspaceSwitcher({
                     </DialogContent>
                   </Dialog>
                 </div>
+
+                <section className="grid gap-4 rounded-lg border border-destructive/40 p-4">
+                  <div className="grid gap-1">
+                    <h2 className="text-lg font-semibold">Danger Zone</h2>
+                    <p className="text-sm text-muted-foreground">
+                      Delete the selected workspace after integrations and
+                      billing are cleared. Historical data is retained.
+                    </p>
+                  </div>
+
+                  {selectedWorkspace ? (
+                    <div className="grid gap-3 sm:flex sm:items-center sm:justify-between">
+                      <div className="grid gap-1">
+                        <p className="font-medium">{selectedWorkspace.name}</p>
+                        <p className="text-sm text-muted-foreground">
+                          {selectedWorkspace.has_active_billing
+                            ? "Cancel active billing before deleting this workspace."
+                            : selectedWorkspace.has_connected_account
+                              ? "Disconnect or move connected Klaviyo accounts before deleting this workspace."
+                              : workspaces.length <= 1
+                                ? "Deleting your last workspace will require creating a new one before continuing."
+                                : "Deleting hides this workspace from the switcher and keeps historical data intact."}
+                        </p>
+                      </div>
+                      <div className="grid gap-2 sm:flex sm:justify-end">
+                        {selectedWorkspace.has_active_billing && (
+                          <a
+                            href="/api/billing/portal"
+                            className={buttonVariants({
+                              variant: "outline",
+                              className: "w-full sm:w-fit",
+                            })}
+                          >
+                            Manage Billing
+                          </a>
+                        )}
+                        <Button
+                          type="button"
+                          variant="destructive"
+                          className="w-full sm:w-fit"
+                          disabled={archivingWorkspace}
+                          onClick={openArchiveWorkspaceDialog}
+                        >
+                          <Trash2 className="size-4" />
+                          Delete workspace
+                        </Button>
+                        <Dialog
+                          open={archiveBlockedDialogOpen}
+                          onOpenChange={setArchiveBlockedDialogOpen}
+                        >
+                          <DialogContent className="sm:max-w-md">
+                            <DialogHeader>
+                              <DialogTitle>Workspace cannot be deleted</DialogTitle>
+                              <DialogDescription>
+                                {workspaceArchiveBlockedReason ||
+                                  "This workspace cannot be deleted right now."}
+                              </DialogDescription>
+                            </DialogHeader>
+                            <div className="grid gap-2 sm:flex sm:justify-end">
+                              {selectedWorkspace.has_active_billing && (
+                                <a
+                                  href="/api/billing/portal"
+                                  className={buttonVariants({
+                                    variant: "outline",
+                                    className: "w-full sm:w-fit",
+                                  })}
+                                >
+                                  Manage Billing
+                                </a>
+                              )}
+                              <Button
+                                type="button"
+                                onClick={() => setArchiveBlockedDialogOpen(false)}
+                              >
+                                Close
+                              </Button>
+                            </div>
+                          </DialogContent>
+                        </Dialog>
+                        <Dialog
+                          open={archiveDialogOpen}
+                          onOpenChange={(open) => {
+                            setArchiveDialogOpen(open)
+                            if (!open) {
+                              setArchiveConfirmation("")
+                            }
+                          }}
+                        >
+                          <DialogContent className="sm:max-w-md">
+                            <DialogHeader>
+                              <DialogTitle>Delete workspace</DialogTitle>
+                              <DialogDescription>
+                                Type {selectedWorkspace.name} to confirm deleting
+                                this workspace.
+                              </DialogDescription>
+                            </DialogHeader>
+                            <div className="grid gap-2">
+                              <Label htmlFor="delete-workspace-confirmation">
+                                Workspace name
+                              </Label>
+                              <Input
+                                id="delete-workspace-confirmation"
+                                value={archiveConfirmation}
+                                onChange={(event) =>
+                                  setArchiveConfirmation(event.target.value)
+                                }
+                                placeholder={selectedWorkspace.name}
+                              />
+                            </div>
+                            <div className="grid gap-2 sm:flex sm:justify-end">
+                              <Button
+                                type="button"
+                                variant="outline"
+                                disabled={archivingWorkspace}
+                                onClick={() => setArchiveDialogOpen(false)}
+                              >
+                                Cancel
+                              </Button>
+                              <Button
+                                type="button"
+                                variant="destructive"
+                                disabled={
+                                  !archiveConfirmationMatches ||
+                                  archivingWorkspace
+                                }
+                                onClick={archiveWorkspace}
+                              >
+                                {archivingWorkspace && (
+                                  <Loader2 className="size-4 animate-spin" />
+                                )}
+                                Delete workspace
+                              </Button>
+                            </div>
+                          </DialogContent>
+                        </Dialog>
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="text-sm text-muted-foreground">
+                      Create a workspace before using destructive actions.
+                    </p>
+                  )}
+                </section>
               </div>
             </DialogContent>
           </Dialog>

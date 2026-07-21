@@ -548,8 +548,8 @@ test("critical UI controls are wired to their own actions", () => {
   assert.doesNotMatch(settingsContent, /No Integration connected yet\./)
   assert.match(settingsContent, /No connections/)
   assert.doesNotMatch(settingsContent, />\s*Configure\s*</)
-  assert.match(settingsContent, /Danger Zone/)
-  assert.match(settingsContent, /Cancel active billing before archiving this workspace\./)
+  assert.match(workspaceSwitcher, /Danger Zone/)
+  assert.match(workspaceSwitcher, /Cancel active billing before deleting this workspace\./)
   assert.match(settingsKlaviyoPage, /<AppShell active="settings" userEmail=\{user\.email\}>/)
   assert.doesNotMatch(configureConnection, /<main className="min-h-svh/)
   assert.match(configureConnection, /unit === "month" && option === "12"/)
@@ -830,25 +830,33 @@ test("desktop and mobile shells share the same workspace management component", 
   assert.doesNotMatch(mobileShell, /demoWorkspaceContext|organizationName=|workspaces=/)
 })
 
-test("workspace archive action lives in Settings Danger Zone", () => {
+test("workspace delete action lives in workspace modal danger zone", () => {
   const settings = read("src/components/settings/settings-content.tsx")
   const switcher = read("src/components/app/workspace-switcher.tsx")
   const route = read("src/app/api/workspaces/route.ts")
 
-  assert.match(settings, /Danger Zone/)
-  assert.match(settings, /archiveDialogOpen/)
-  assert.match(settings, /archiveConfirmation/)
-  assert.match(settings, /<DialogTitle>Archive workspace<\/DialogTitle>/)
-  assert.match(settings, /currentWorkspace\.has_connected_account/)
-  assert.match(settings, /currentWorkspace\.has_active_billing/)
+  assert.doesNotMatch(settings, /Danger Zone/)
+  assert.match(switcher, /Danger Zone/)
+  assert.match(switcher, /archiveDialogOpen/)
+  assert.match(switcher, /archiveBlockedDialogOpen/)
+  assert.match(switcher, /archiveConfirmation/)
+  assert.match(switcher, /<DialogTitle>Delete workspace<\/DialogTitle>/)
+  assert.match(switcher, /Workspace cannot be deleted/)
+  assert.match(switcher, /selectedWorkspace\.has_connected_account/)
+  assert.match(switcher, /selectedWorkspace\.has_active_billing/)
+  assert.match(switcher, /openArchiveWorkspaceDialog/)
+  assert.match(switcher, /Delete workspace/)
+  assert.match(
+    switcher,
+    /variant="destructive"[\s\S]*disabled=\{archivingWorkspace\}[\s\S]*onClick=\{openArchiveWorkspaceDialog\}/
+  )
   assert.match(route, /Cancel active billing before archiving this workspace\./)
-  assert.doesNotMatch(switcher, /Delete workspace/)
-  assert.doesNotMatch(switcher, /Archive workspace/)
+  assert.doesNotMatch(settings, /Archive workspace/)
 })
 
 test("workspace delete can leave the user in required-workspace flow", () => {
   const route = read("src/app/api/workspaces/route.ts")
-  const settings = read("src/components/settings/settings-content.tsx")
+  const switcher = read("src/components/app/workspace-switcher.tsx")
   const gate = read("src/components/app/workspace-required-gate.tsx")
 
   assert.doesNotMatch(route, /Default workspace cannot be archived\./)
@@ -858,7 +866,7 @@ test("workspace delete can leave the user in required-workspace flow", () => {
     /Disconnect or move connected Klaviyo accounts before archiving this workspace\./
   )
   assert.match(
-    settings,
+    switcher,
     /persistSelection\(organizationId, nextWorkspace\?\.id \|\| null\)/
   )
   assert.match(gate, /A workspace is required before continuing\./)

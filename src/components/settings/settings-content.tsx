@@ -3,7 +3,6 @@
 import { useEffect, useState } from "react"
 import Link from "next/link"
 import {
-  Archive,
   Info,
   Loader2,
   Mail,
@@ -13,7 +12,7 @@ import {
 } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
-import { Button, buttonVariants } from "@/components/ui/button"
+import { Button } from "@/components/ui/button"
 import {
   Dialog,
   DialogClose,
@@ -43,20 +42,7 @@ import {
 } from "@/components/ui/table"
 import { Skeleton } from "@/components/ui/skeleton"
 import { startKlaviyoOAuth } from "@/lib/klaviyo-oauth"
-import {
-  ClientApiError,
-  invalidateWorkspaceClientData,
-  loadOrganizations,
-  loadWorkspaces,
-  type WorkspaceOption,
-} from "@/lib/workspace-client-data"
-import {
-  readWorkspaceSelection,
-  serializeClientCookie,
-  writeWorkspaceSelection,
-  WORKSPACE_ID_COOKIE,
-  WORKSPACE_ORGANIZATION_COOKIE,
-} from "@/lib/workspace-utils"
+import { invalidateWorkspaceClientData } from "@/lib/workspace-client-data"
 
 type SettingsContentProps = {
   connected?: boolean
@@ -99,47 +85,6 @@ const providers = [
 
 function connectionDisplayName(connection: KlaviyoConnection) {
   return connection.connection_name?.trim() || "Klaviyo"
-}
-
-function workspaceLabel(name: string) {
-  return /\bworkspace\b/i.test(name) ? name : `${name} Workspace`
-}
-
-function headersFor(organizationId: string | null, workspaceId?: string | null) {
-  const headers = new Headers({ "Content-Type": "application/json" })
-  if (organizationId) {
-    headers.set("x-organization-id", organizationId)
-  }
-  if (workspaceId) {
-    headers.set("x-workspace-id", workspaceId)
-  }
-  return headers
-}
-
-function persistSelection(organizationId: string | null, workspaceId: string | null) {
-  if (typeof window === "undefined") {
-    return
-  }
-
-  writeWorkspaceSelection({ organizationId, workspaceId }, window.localStorage)
-  document.cookie = serializeClientCookie(
-    WORKSPACE_ORGANIZATION_COOKIE,
-    organizationId
-  )
-  document.cookie = serializeClientCookie(WORKSPACE_ID_COOKIE, workspaceId)
-}
-
-function handleLoadError(error: unknown, fallback: string) {
-  if (error instanceof ClientApiError) {
-    if (error.status === 401) {
-      window.location.assign("/login")
-      return ""
-    }
-
-    return `${fallback}: ${error.message}`
-  }
-
-  return fallback
 }
 
 function ConnectionsTableSkeleton() {
@@ -185,15 +130,6 @@ export function SettingsContent({ connected = false }: SettingsContentProps) {
   const [connections, setConnections] = useState<KlaviyoConnection[]>([])
   const [loadingConnections, setLoadingConnections] = useState(true)
   const [statusMessage, setStatusMessage] = useState("")
-  const [workspaces, setWorkspaces] = useState<WorkspaceOption[]>([])
-  const [organizationId, setOrganizationId] = useState<string | null>(null)
-  const [currentWorkspace, setCurrentWorkspace] =
-    useState<WorkspaceOption | null>(null)
-  const [workspaceLoading, setWorkspaceLoading] = useState(true)
-  const [workspaceStatusMessage, setWorkspaceStatusMessage] = useState("")
-  const [archiveDialogOpen, setArchiveDialogOpen] = useState(false)
-  const [archiveConfirmation, setArchiveConfirmation] = useState("")
-  const [archiving, setArchiving] = useState(false)
   const [connectionToDelete, setConnectionToDelete] =
     useState<KlaviyoConnection | null>(null)
   const [deleteConnectionDialogOpen, setDeleteConnectionDialogOpen] =
@@ -202,75 +138,12 @@ export function SettingsContent({ connected = false }: SettingsContentProps) {
     useState("")
   const [deletingConnection, setDeletingConnection] = useState(false)
   const hasConnections = connections.length > 0
-  const workspaceArchiveBlocked =
-    Boolean(currentWorkspace?.has_connected_account) ||
-    Boolean(currentWorkspace?.has_active_billing)
-  const archiveConfirmationMatches =
-    Boolean(currentWorkspace?.name) &&
-    archiveConfirmation.trim() === currentWorkspace?.name
   const deleteConnectionName = connectionToDelete
     ? connectionDisplayName(connectionToDelete)
     : ""
   const deleteConnectionConfirmationMatches =
     Boolean(deleteConnectionName) &&
     deleteConnectionConfirmation.trim() === deleteConnectionName
-
-  useEffect(() => {
-    let cancelled = false
-
-    async function loadWorkspaceContext() {
-      setWorkspaceLoading(true)
-      setWorkspaceStatusMessage("")
-
-      try {
-        const organizations = await loadOrganizations()
-        const selection =
-          typeof window === "undefined"
-            ? { organizationId: null, workspaceId: null }
-            : readWorkspaceSelection(window.localStorage)
-        const organization =
-          organizations.find((item) => item.id === selection.organizationId) ||
-          organizations[0]
-
-        if (!organization) {
-          if (!cancelled) {
-            setOrganizationId(null)
-            setCurrentWorkspace(null)
-            setWorkspaces([])
-          }
-          return
-        }
-
-        const loadedWorkspaces = await loadWorkspaces(organization.id)
-        const selectedWorkspace =
-          loadedWorkspaces.find((workspace) => workspace.id === selection.workspaceId) ||
-          loadedWorkspaces.find((workspace) => workspace.is_default) ||
-          loadedWorkspaces[0] ||
-          null
-
-        if (!cancelled) {
-          setOrganizationId(organization.id)
-          setWorkspaces(loadedWorkspaces)
-          setCurrentWorkspace(selectedWorkspace)
-        }
-      } catch (error) {
-        if (!cancelled) {
-          setWorkspaceStatusMessage(
-            handleLoadError(error, "Unable to load workspace settings.")
-          )
-        }
-      } finally {
-        if (!cancelled) {
-          setWorkspaceLoading(false)
-        }
-      }
-    }
-
-    loadWorkspaceContext()
-    return () => {
-      cancelled = true
-    }
-  }, [])
 
   useEffect(() => {
     let cancelled = false
@@ -290,11 +163,6 @@ export function SettingsContent({ connected = false }: SettingsContentProps) {
         const data = (await response.json()) as KlaviyoConnection[]
         if (!cancelled) {
           setConnections(data)
-          setCurrentWorkspace((workspace) =>
-            workspace
-              ? { ...workspace, has_connected_account: data.length > 0 }
-              : workspace
-          )
         }
       } catch {
         if (!cancelled && connected) {
@@ -348,64 +216,13 @@ export function SettingsContent({ connected = false }: SettingsContentProps) {
         (connection) => connection.id !== connectionToDelete.id
       )
       setConnections(remainingConnections)
-      setCurrentWorkspace((workspace) =>
-        workspace
-          ? {
-              ...workspace,
-              has_connected_account: remainingConnections.length > 0,
-            }
-          : workspace
-      )
       setStatusMessage(`${connectionDisplayName(connectionToDelete)} deleted.`)
       setDeleteConnectionDialogOpen(false)
       setConnectionToDelete(null)
       setDeleteConnectionConfirmation("")
-      if (organizationId) {
-        invalidateWorkspaceClientData(organizationId)
-      }
+      invalidateWorkspaceClientData()
     } finally {
       setDeletingConnection(false)
-    }
-  }
-
-  async function archiveWorkspace() {
-    if (
-      !organizationId ||
-      !currentWorkspace ||
-      !archiveConfirmationMatches ||
-      workspaceArchiveBlocked
-    ) {
-      return
-    }
-
-    setArchiving(true)
-    try {
-      const response = await fetch("/api/workspaces", {
-        method: "DELETE",
-        headers: headersFor(organizationId, currentWorkspace.id),
-        body: JSON.stringify({ id: currentWorkspace.id }),
-      })
-      const data = await response.json()
-      if (!response.ok) {
-        setWorkspaceStatusMessage(data.error || "Unable to archive workspace.")
-        return
-      }
-
-      const nextWorkspace =
-        workspaces.find((workspace) => workspace.id !== currentWorkspace.id) ||
-        null
-      persistSelection(organizationId, nextWorkspace?.id || null)
-      invalidateWorkspaceClientData(organizationId)
-      setWorkspaceStatusMessage(
-        `${workspaceLabel(currentWorkspace.name)} archived.`
-      )
-      setArchiveDialogOpen(false)
-      setArchiveConfirmation("")
-      window.setTimeout(() => {
-        window.location.reload()
-      }, 450)
-    } finally {
-      setArchiving(false)
     }
   }
 
@@ -424,11 +241,6 @@ export function SettingsContent({ connected = false }: SettingsContentProps) {
           })
           .then((data) => {
             setConnections(data)
-            setCurrentWorkspace((workspace) =>
-              workspace
-                ? { ...workspace, has_connected_account: data.length > 0 }
-                : workspace
-            )
           })
           .catch(() => setStatusMessage("Unable to load Klaviyo connections."))
           .finally(() => setLoadingConnections(false))
@@ -588,123 +400,6 @@ export function SettingsContent({ connected = false }: SettingsContentProps) {
           </DialogContent>
         </Dialog>
       </div>
-
-      <section className="grid gap-4 rounded-lg border border-destructive/40 p-4">
-        <div className="grid gap-1">
-          <h2 className="text-lg font-semibold">Danger Zone</h2>
-          <p className="text-sm text-muted-foreground">
-            Archive the selected workspace after integrations and billing are
-            cleared.
-          </p>
-        </div>
-
-        {workspaceStatusMessage && (
-          <p className="text-sm text-muted-foreground">
-            {workspaceStatusMessage}
-          </p>
-        )}
-
-        {workspaceLoading ? (
-          <div className="grid gap-2">
-            <Skeleton className="h-5 w-48" />
-            <Skeleton className="h-8 w-full max-w-md" />
-          </div>
-        ) : currentWorkspace ? (
-          <div className="grid gap-3 sm:flex sm:items-center sm:justify-between">
-            <div className="grid gap-1">
-              <p className="font-medium">{currentWorkspace.name}</p>
-              <p className="text-sm text-muted-foreground">
-                {currentWorkspace.has_active_billing
-                  ? "Cancel active billing before archiving this workspace."
-                  : currentWorkspace.has_connected_account
-                    ? "Disconnect or move connected Klaviyo accounts before archiving this workspace."
-                    : "Archiving hides this workspace and leaves historical data intact."}
-              </p>
-            </div>
-            <div className="grid gap-2 sm:flex sm:justify-end">
-              {currentWorkspace.has_active_billing && (
-                <Link
-                  href="/api/billing/portal"
-                  className={buttonVariants({
-                    variant: "outline",
-                    className: "w-full sm:w-fit",
-                  })}
-                >
-                  Manage Billing
-                </Link>
-              )}
-              <Dialog
-                open={archiveDialogOpen}
-                onOpenChange={(open) => {
-                  setArchiveDialogOpen(open)
-                  if (!open) {
-                    setArchiveConfirmation("")
-                  }
-                }}
-              >
-                <DialogTrigger
-                  render={
-                    <Button
-                      type="button"
-                      variant="destructive"
-                      className="w-full sm:w-fit"
-                      disabled={workspaceArchiveBlocked || archiving}
-                    />
-                  }
-                >
-                  <Archive className="size-4" />
-                  Archive workspace
-                </DialogTrigger>
-                <DialogContent className="sm:max-w-md">
-                  <DialogHeader>
-                    <DialogTitle>Archive workspace</DialogTitle>
-                    <DialogDescription>
-                      Type {currentWorkspace.name} to confirm archiving this
-                      workspace.
-                    </DialogDescription>
-                  </DialogHeader>
-                  <div className="grid gap-2">
-                    <Label htmlFor="archive-workspace-confirmation">
-                      Workspace name
-                    </Label>
-                    <Input
-                      id="archive-workspace-confirmation"
-                      value={archiveConfirmation}
-                      onChange={(event) =>
-                        setArchiveConfirmation(event.target.value)
-                      }
-                      placeholder={currentWorkspace.name}
-                    />
-                  </div>
-                  <div className="grid gap-2 sm:flex sm:justify-end">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      disabled={archiving}
-                      onClick={() => setArchiveDialogOpen(false)}
-                    >
-                      Cancel
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="destructive"
-                      disabled={!archiveConfirmationMatches || archiving}
-                      onClick={archiveWorkspace}
-                    >
-                      {archiving && <Loader2 className="size-4 animate-spin" />}
-                      Archive workspace
-                    </Button>
-                  </div>
-                </DialogContent>
-              </Dialog>
-            </div>
-          </div>
-        ) : (
-          <p className="text-sm text-muted-foreground">
-            No workspace is selected.
-          </p>
-        )}
-      </section>
 
       <Dialog
         open={deleteConnectionDialogOpen}
