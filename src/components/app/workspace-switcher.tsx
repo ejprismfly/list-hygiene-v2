@@ -177,8 +177,16 @@ export function WorkspaceSwitcher({
   const [archiveDialogOpen, setArchiveDialogOpen] = useState(false)
   const [archiveBlockedDialogOpen, setArchiveBlockedDialogOpen] = useState(false)
   const [archiveConfirmation, setArchiveConfirmation] = useState("")
+  const [memberRemovalDialogOpen, setMemberRemovalDialogOpen] = useState(false)
+  const [memberToRemove, setMemberToRemove] =
+    useState<WorkspaceMember | null>(null)
+  const [invitationCancelDialogOpen, setInvitationCancelDialogOpen] =
+    useState(false)
+  const [invitationToCancel, setInvitationToCancel] =
+    useState<WorkspaceInvitation | null>(null)
   const [creatingWorkspace, setCreatingWorkspace] = useState(false)
   const [archivingWorkspace, setArchivingWorkspace] = useState(false)
+  const [teamActionSubmitting, setTeamActionSubmitting] = useState(false)
   const [message, setMessage] = useState("")
   const [switchingWorkspaceName, setSwitchingWorkspaceName] = useState("")
   const [isPending, startTransition] = useTransition()
@@ -208,6 +216,9 @@ export function WorkspaceSwitcher({
   const archiveConfirmationMatches =
     Boolean(selectedWorkspace?.name) &&
     archiveConfirmation.trim() === selectedWorkspace?.name
+  const memberRemovalName =
+    memberToRemove?.email || memberToRemove?.name || "this member"
+  const invitationCancelName = invitationToCancel?.email || "this invitation"
 
   useEffect(() => {
     let cancelled = false
@@ -583,50 +594,70 @@ export function WorkspaceSwitcher({
     )
   }
 
-  async function removeMember(member: WorkspaceMember) {
-    if (!organizationId) {
+  function openRemoveMemberDialog(member: WorkspaceMember) {
+    setMemberToRemove(member)
+    setMemberRemovalDialogOpen(true)
+  }
+
+  async function removeMember() {
+    if (!organizationId || !memberToRemove) {
       return
     }
 
+    setTeamActionSubmitting(true)
     const response = await fetch("/api/organizations/members", {
       method: "DELETE",
       headers: headersFor(organizationId, selectedId),
-      body: JSON.stringify({ user_id: member.user_id }),
+      body: JSON.stringify({ user_id: memberToRemove.user_id }),
     })
 
     if (!response.ok) {
       const data = await response.json()
       setMessage(data.error || "Unable to remove member.")
+      setTeamActionSubmitting(false)
       return
     }
 
     setMembers((current) =>
-      current.filter((item) => item.user_id !== member.user_id)
+      current.filter((item) => item.user_id !== memberToRemove.user_id)
     )
+    setMemberRemovalDialogOpen(false)
+    setMemberToRemove(null)
+    setTeamActionSubmitting(false)
   }
 
-  async function cancelInvitation(invitation: WorkspaceInvitation) {
-    if (!organizationId) {
+  function openCancelInvitationDialog(invitation: WorkspaceInvitation) {
+    setInvitationToCancel(invitation)
+    setInvitationCancelDialogOpen(true)
+  }
+
+  async function cancelInvitation() {
+    if (!organizationId || !invitationToCancel) {
       return
     }
 
+    setTeamActionSubmitting(true)
     const response = await fetch("/api/organizations/invitations", {
       method: "PATCH",
       headers: headersFor(organizationId, selectedId),
-      body: JSON.stringify({ id: invitation.id, status: "revoked" }),
+      body: JSON.stringify({ id: invitationToCancel.id, status: "revoked" }),
     })
 
     if (!response.ok) {
       const data = await response.json()
       setMessage(data.error || "Unable to cancel invitation.")
+      setTeamActionSubmitting(false)
       return
     }
 
     setInvitations((current) =>
       current.map((item) =>
-        item.id === invitation.id ? { ...item, status: "revoked" } : item
+        item.id === invitationToCancel.id ? { ...item, status: "revoked" } : item
       )
     )
+    setInvitationCancelDialogOpen(false)
+    setInvitationToCancel(null)
+    setTeamActionSubmitting(false)
   }
 
   const activeRows = useMemo(() => [...selectedMembers, ...selectedInvitations], [
@@ -897,8 +928,8 @@ export function WorkspaceSwitcher({
                                     }
                                     onClick={() =>
                                       isInvitation
-                                        ? cancelInvitation(row)
-                                        : removeMember(row)
+                                        ? openCancelInvitationDialog(row)
+                                        : openRemoveMemberDialog(row)
                                     }
                                   >
                                     <UserMinus className="size-4" />
@@ -911,6 +942,88 @@ export function WorkspaceSwitcher({
                       </TableBody>
                     </Table>
                   </div>
+
+                  <Dialog
+                    open={memberRemovalDialogOpen}
+                    onOpenChange={(open) => {
+                      setMemberRemovalDialogOpen(open)
+                      if (!open) {
+                        setMemberToRemove(null)
+                      }
+                    }}
+                  >
+                    <DialogContent className="sm:max-w-md">
+                      <DialogHeader>
+                        <DialogTitle>Remove member</DialogTitle>
+                        <DialogDescription>
+                          Remove {memberRemovalName} from this workspace? They
+                          will lose access to this workspace.
+                        </DialogDescription>
+                      </DialogHeader>
+                      <div className="grid gap-2 sm:flex sm:justify-end">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          disabled={teamActionSubmitting}
+                          onClick={() => setMemberRemovalDialogOpen(false)}
+                        >
+                          Keep member
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="destructive"
+                          disabled={teamActionSubmitting}
+                          onClick={removeMember}
+                        >
+                          {teamActionSubmitting && (
+                            <Loader2 className="size-4 animate-spin" />
+                          )}
+                          Remove member
+                        </Button>
+                      </div>
+                    </DialogContent>
+                  </Dialog>
+
+                  <Dialog
+                    open={invitationCancelDialogOpen}
+                    onOpenChange={(open) => {
+                      setInvitationCancelDialogOpen(open)
+                      if (!open) {
+                        setInvitationToCancel(null)
+                      }
+                    }}
+                  >
+                    <DialogContent className="sm:max-w-md">
+                      <DialogHeader>
+                        <DialogTitle>Cancel invite</DialogTitle>
+                        <DialogDescription>
+                          Cancel the pending invitation for {invitationCancelName}?
+                          The invite link will no longer work.
+                        </DialogDescription>
+                      </DialogHeader>
+                      <div className="grid gap-2 sm:flex sm:justify-end">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          disabled={teamActionSubmitting}
+                          onClick={() => setInvitationCancelDialogOpen(false)}
+                        >
+                          Keep invite
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="destructive"
+                          disabled={teamActionSubmitting}
+                          onClick={cancelInvitation}
+                        >
+                          {teamActionSubmitting && (
+                            <Loader2 className="size-4 animate-spin" />
+                          )}
+                          Cancel invite
+                        </Button>
+                      </div>
+                    </DialogContent>
+                  </Dialog>
                 </section>
 
                 <div className="grid gap-2 border-t pt-4 sm:flex sm:justify-end">
