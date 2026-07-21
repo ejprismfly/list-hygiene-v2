@@ -70,8 +70,11 @@ shape during side-by-side testing.
 
 - Deploy v2 on a separate hostname from v1.
 - Set `NEXT_PUBLIC_APP_HOST` to the v2 hostname.
-- Add the v2 auth callback URL in Supabase Auth settings.
+- Add the v2 auth callback and invite URLs in Supabase Auth settings.
 - Supabase Auth password login/signup and password reset should be configured before testing auth.
+- Configure the Supabase Auth Invite user email template from
+  `docs/deployment/supabase-invite-template.html` so team invites verify through
+  `/auth/callback` with `token_hash` before applying workspace membership.
 - Add the v2 Klaviyo callback URL in the Klaviyo app.
 - Stripe webhook endpoint: v2 exposes `/api/billing/webhook`, but keep live Stripe webhooks pointed at v1 until the v2 endpoint has been tested with signed events and its own `STRIPE_WEBHOOK_SECRET`.
 - Use a small internal tester list first because v2 will create default organization/workspace rows for users who do not have them yet.
@@ -81,7 +84,8 @@ shape during side-by-side testing.
 1. Login/logout on v2.
 2. Existing user gets a default organization/workspace if missing.
 3. Workspace create, switch, rename, archive/delete.
-4. Klaviyo OAuth creates an active connection with `organization_id` and `workspace_id`.
-5. Dashboard API changes when `workspace_id` changes.
-6. Billing page loads and returns workspace billing context.
-7. V1 remains usable on the current live hostname after the same user tests v2.
+4. Workspace invite sends a Supabase Auth email; the invitee accepts into the selected workspace as admin/member.
+5. Klaviyo OAuth creates an active connection with `organization_id` and `workspace_id`.
+6. Dashboard API changes when `workspace_id` changes.
+7. Billing page loads and returns workspace billing context.
+8. V1 remains usable on the current live hostname after the same user tests v2.

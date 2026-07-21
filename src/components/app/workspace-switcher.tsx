@@ -30,6 +30,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { Skeleton } from "@/components/ui/skeleton"
 import {
   Table,
   TableBody,
@@ -158,6 +159,7 @@ export function WorkspaceSwitcher({
   const [workspaces, setWorkspaces] = useState<WorkspaceOption[]>([])
   const [organizationsLoading, setOrganizationsLoading] = useState(true)
   const [workspacesLoading, setWorkspacesLoading] = useState(true)
+  const [teamLoading, setTeamLoading] = useState(false)
   const [members, setMembers] = useState<WorkspaceMember[]>([])
   const [invitations, setInvitations] = useState<WorkspaceInvitation[]>([])
   const [organizationId, setOrganizationId] = useState<string | null>(null)
@@ -266,12 +268,19 @@ export function WorkspaceSwitcher({
       return
     }
 
+    let cancelled = false
+
     async function loadTeam() {
+      setTeamLoading(true)
       const headers = headersFor(organizationId, selectedId)
       const [membersResponse, invitationsResponse] = await Promise.all([
         fetch("/api/organizations/members", { headers }),
         fetch("/api/organizations/invitations", { headers }),
       ])
+
+      if (cancelled) {
+        return
+      }
 
       if (membersResponse.ok) {
         setMembers((await membersResponse.json()) as WorkspaceMember[])
@@ -282,6 +291,20 @@ export function WorkspaceSwitcher({
     }
 
     loadTeam()
+      .catch(() => {
+        if (!cancelled) {
+          setMessage("Unable to load team members.")
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setTeamLoading(false)
+        }
+      })
+
+    return () => {
+      cancelled = true
+    }
   }, [organizationId, selectedId, managerOpen])
 
   function switchWorkspace(workspaceId: string) {
@@ -692,71 +715,91 @@ export function WorkspaceSwitcher({
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {activeRows.map((row) => {
-                          const isInvitation = "email" in row && !("user_id" in row)
-                          const key = isInvitation
-                            ? `invite:${row.id}`
-                            : `member:${row.user_id}`
-                          const email = row.email || "No email"
-                          const status = row.status
-                          const role = row.role
-
-                          return (
-                            <TableRow key={key}>
-                              <TableCell>{email}</TableCell>
+                        {teamLoading ? (
+                          Array.from({ length: 3 }).map((_, index) => (
+                            <TableRow key={index}>
                               <TableCell>
-                                <Badge variant="secondary">{status}</Badge>
+                                <Skeleton className="h-4 w-44" />
                               </TableCell>
                               <TableCell>
-                                {isInvitation ? (
-                                  role
-                                ) : row.role === "owner" ? (
-                                  <Badge variant="secondary">owner</Badge>
-                                ) : (
-                                  <Select
-                                    value={role}
-                                    disabled={!managerEnabled}
-                                    onValueChange={(value) =>
-                                      updateMemberRole(
-                                        row,
-                                        value === "admin" ? "admin" : "member"
-                                      )
-                                    }
-                                  >
-                                    <SelectTrigger className="w-28">
-                                      <SelectValue>{role}</SelectValue>
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                      <SelectItem value="member">member</SelectItem>
-                                      <SelectItem value="admin">admin</SelectItem>
-                                    </SelectContent>
-                                  </Select>
-                                )}
+                                <Skeleton className="h-5 w-20 rounded-full" />
                               </TableCell>
                               <TableCell>
-                                <Button
-                                  type="button"
-                                  variant="ghost"
-                                  size="icon"
-                                  disabled={!managerEnabled || (!isInvitation && row.role === "owner")}
-                                  aria-label={
-                                    isInvitation ? "Cancel invite" : "Remove member"
-                                  }
-                                  title={
-                                    isInvitation ? "Cancel invite" : "Remove member"
-                                  }
-                                  onClick={() =>
-                                    isInvitation
-                                      ? cancelInvitation(row)
-                                      : removeMember(row)
-                                  }
-                                >
-                                  <UserMinus className="size-4" />
-                                </Button>
+                                <Skeleton className="h-8 w-28" />
+                              </TableCell>
+                              <TableCell>
+                                <Skeleton className="h-8 w-8" />
                               </TableCell>
                             </TableRow>
-                          )
-                        })}
+                          ))
+                        ) : (
+                          activeRows.map((row) => {
+                            const isInvitation =
+                              "email" in row && !("user_id" in row)
+                            const key = isInvitation
+                              ? `invite:${row.id}`
+                              : `member:${row.user_id}`
+                            const email = row.email || "No email"
+                            const status = row.status
+                            const role = row.role
+
+                            return (
+                              <TableRow key={key}>
+                                <TableCell>{email}</TableCell>
+                                <TableCell>
+                                  <Badge variant="secondary">{status}</Badge>
+                                </TableCell>
+                                <TableCell>
+                                  {isInvitation ? (
+                                    role
+                                  ) : row.role === "owner" ? (
+                                    <Badge variant="secondary">owner</Badge>
+                                  ) : (
+                                    <Select
+                                      value={role}
+                                      disabled={!managerEnabled}
+                                      onValueChange={(value) =>
+                                        updateMemberRole(
+                                          row,
+                                          value === "admin" ? "admin" : "member"
+                                        )
+                                      }
+                                    >
+                                      <SelectTrigger className="w-28">
+                                        <SelectValue>{role}</SelectValue>
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        <SelectItem value="member">member</SelectItem>
+                                        <SelectItem value="admin">admin</SelectItem>
+                                      </SelectContent>
+                                    </Select>
+                                  )}
+                                </TableCell>
+                                <TableCell>
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="icon"
+                                    disabled={!managerEnabled || (!isInvitation && row.role === "owner")}
+                                    aria-label={
+                                      isInvitation ? "Cancel invite" : "Remove member"
+                                    }
+                                    title={
+                                      isInvitation ? "Cancel invite" : "Remove member"
+                                    }
+                                    onClick={() =>
+                                      isInvitation
+                                        ? cancelInvitation(row)
+                                        : removeMember(row)
+                                    }
+                                  >
+                                    <UserMinus className="size-4" />
+                                  </Button>
+                                </TableCell>
+                              </TableRow>
+                            )
+                          })
+                        )}
                       </TableBody>
                     </Table>
                   </div>

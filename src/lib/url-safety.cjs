@@ -47,7 +47,30 @@ function buildInviteUrl({
   return url.toString()
 }
 
+function buildInviteAuthRedirectUrl({
+  requestUrl,
+  token,
+  configuredHost,
+  originHeader,
+}) {
+  const origin = getOrigin(configuredHost, originHeader, requestUrl)
+  const inviteUrl = new URL("/invite", origin)
+  inviteUrl.searchParams.set("token", token)
+
+  const passwordUrl = new URL("/reset-password", origin)
+  passwordUrl.searchParams.set("next", `${inviteUrl.pathname}${inviteUrl.search}`)
+
+  const callbackUrl = new URL("/auth/callback", origin)
+  callbackUrl.searchParams.set(
+    "next",
+    `${passwordUrl.pathname}${passwordUrl.search}`
+  )
+
+  return callbackUrl.toString()
+}
+
 module.exports = {
+  buildInviteAuthRedirectUrl,
   buildInviteUrl,
   getOrigin,
   safeNextPath,

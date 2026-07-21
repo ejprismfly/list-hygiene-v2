@@ -15,3 +15,10 @@ export function buildInviteUrl(options: {
   configuredHost?: string | null
   originHeader?: string | null
 }): string
+
+export function buildInviteAuthRedirectUrl(options: {
+  requestUrl: string
+  token: string
+  configuredHost?: string | null
+  originHeader?: string | null
+}): string

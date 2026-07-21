@@ -3,7 +3,8 @@ import test from "node:test"
 
 import urlSafety from "../src/lib/url-safety.cjs"
 
-const { buildInviteUrl, getOrigin, safeNextPath } = urlSafety
+const { buildInviteAuthRedirectUrl, buildInviteUrl, getOrigin, safeNextPath } =
+  urlSafety
 
 test("safeNextPath keeps relative app paths", () => {
   assert.equal(safeNextPath("/invite?token=abc"), "/invite?token=abc")
@@ -32,5 +33,16 @@ test("buildInviteUrl uses the active origin and encodes the token", () => {
       token: "abc 123",
     }),
     "https://beta.listhygiene.com/invite?token=abc+123"
+  )
+})
+
+test("buildInviteAuthRedirectUrl sends Supabase invite email through callback", () => {
+  assert.equal(
+    buildInviteAuthRedirectUrl({
+      requestUrl: "https://fallback.test/api/organizations/invitations",
+      originHeader: "https://beta.listhygiene.com",
+      token: "abc 123",
+    }),
+    "https://beta.listhygiene.com/auth/callback?next=%2Freset-password%3Fnext%3D%252Finvite%253Ftoken%253Dabc%252B123"
   )
 })

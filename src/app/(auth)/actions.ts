@@ -267,6 +267,7 @@ export async function resetPasswordAction(
 ): Promise<AuthFormState> {
   const password = getFormString(formData, "password")
   const confirmPassword = getFormString(formData, "confirmPassword")
+  const nextPath = getNextPath(formData)
 
   if (!password || !confirmPassword) {
     return { status: "error", message: "Both password fields are required." }
@@ -299,7 +300,7 @@ export async function resetPasswordAction(
     }
   }
 
-  redirect("/dashboard")
+  redirect(nextPath)
 }
 
 export async function signOutAction() {

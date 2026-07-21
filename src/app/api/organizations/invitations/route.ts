@@ -7,7 +7,8 @@ import {
   readJsonBody,
   resolveTenantContext,
 } from "@/lib/api/tenant"
-import { buildInviteUrl } from "@/lib/url-safety.cjs"
+import { createAdminClient } from "@/lib/supabase/admin"
+import { buildInviteAuthRedirectUrl, buildInviteUrl } from "@/lib/url-safety.cjs"
 
 const invitationSelect =
   "id, organization_id, email, role, workspace_ids, status, expires_at, created_at"
@@ -35,6 +36,43 @@ const buildInvitationResponse = (request: Request, invitation: object, token: st
       token,
     }),
   }
+}
+
+const buildInviteRedirectTo = (request: Request, token: string) => {
+  return buildInviteAuthRedirectUrl({
+    requestUrl: request.url,
+    originHeader: request.headers.get("origin"),
+    configuredHost: process.env.NEXT_PUBLIC_APP_HOST,
+    token,
+  })
+}
+
+const sendSupabaseInviteEmail = async ({
+  adminSupabase,
+  email,
+  organizationId,
+  role,
+  request,
+  token,
+  workspaceIds,
+}: {
+  adminSupabase: ReturnType<typeof createAdminClient>
+  email: string
+  organizationId: string
+  role: "admin" | "member"
+  request: Request
+  token: string
+  workspaceIds: string[]
+}) => {
+  return adminSupabase.auth.admin.inviteUserByEmail(email, {
+    redirectTo: buildInviteRedirectTo(request, token),
+    data: {
+      invited_via: "list_hygiene_workspace",
+      organization_id: organizationId,
+      role,
+      workspace_ids: workspaceIds,
+    },
+  })
 }
 
 export async function GET(request: Request) {
@@ -94,6 +132,16 @@ export async function POST(request: Request) {
     return errorJson("role must be admin or member.", 400)
   }
 
+  let adminSupabase: ReturnType<typeof createAdminClient>
+  try {
+    adminSupabase = createAdminClient()
+  } catch {
+    return errorJson(
+      "SUPABASE_SERVICE_ROLE_KEY is required to send invitation emails.",
+      500
+    )
+  }
+
   if (workspaceIds.length) {
     const { count, error } = await supabase
       .from("workspaces")
@@ -151,7 +199,36 @@ export async function POST(request: Request) {
       return errorJson(error?.message || "Unable to refresh invitation")
     }
 
-    return json(buildInvitationResponse(request, data, token))
+    let authResponse: Awaited<ReturnType<typeof sendSupabaseInviteEmail>>
+    try {
+      authResponse = await sendSupabaseInviteEmail({
+        adminSupabase,
+        email,
+        organizationId: context.organizationId,
+        role,
+        request,
+        token,
+        workspaceIds: mergedWorkspaceIds,
+      })
+    } catch (error) {
+      return errorJson(
+        error instanceof Error
+          ? error.message
+          : "Unable to send invitation email."
+      )
+    }
+
+    const { data: authData, error: authError } = authResponse
+
+    if (authError) {
+      return errorJson(authError.message)
+    }
+
+    return json({
+      ...buildInvitationResponse(request, data, token),
+      auth_user_id: authData.user?.id || null,
+      email_delivery: "supabase_auth",
+    })
   }
 
   const { data, error } = await supabase
@@ -171,7 +248,47 @@ export async function POST(request: Request) {
     return errorJson(error?.message || "Unable to create invitation")
   }
 
-  return json(buildInvitationResponse(request, data, token), { status: 201 })
+  let authResponse: Awaited<ReturnType<typeof sendSupabaseInviteEmail>>
+  try {
+    authResponse = await sendSupabaseInviteEmail({
+      adminSupabase,
+      email,
+      organizationId: context.organizationId,
+      role,
+      request,
+      token,
+      workspaceIds,
+    })
+  } catch (error) {
+    await supabase
+      .from("organization_invitations")
+      .update({ status: "revoked" })
+      .eq("id", data.id)
+
+    return errorJson(
+      error instanceof Error ? error.message : "Unable to send invitation email."
+    )
+  }
+
+  const { data: authData, error: authError } = authResponse
+
+  if (authError) {
+    await supabase
+      .from("organization_invitations")
+      .update({ status: "revoked" })
+      .eq("id", data.id)
+
+    return errorJson(authError.message)
+  }
+
+  return json(
+    {
+      ...buildInvitationResponse(request, data, token),
+      auth_user_id: authData.user?.id || null,
+      email_delivery: "supabase_auth",
+    },
+    { status: 201 }
+  )
 }
 
 export async function PATCH(request: Request) {

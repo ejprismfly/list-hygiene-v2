@@ -11,15 +11,27 @@ import { Label } from "@/components/ui/label"
 import { PasswordInput } from "@/components/auth/password-input"
 import { AUTH_FORM_INITIAL_STATE } from "@/lib/auth-form"
 
-export function ResetPasswordForm() {
+type ResetPasswordFormProps = {
+  nextPath?: string
+}
+
+export function ResetPasswordForm({
+  nextPath = "/dashboard",
+}: ResetPasswordFormProps) {
   const [state, formAction, pending] = useActionState(
     resetPasswordAction,
     AUTH_FORM_INITIAL_STATE
   )
+  const inviteSetup = nextPath.startsWith("/invite")
 
   return (
     <AuthFormShell
-      title="Change Password"
+      title={inviteSetup ? "Set Password" : "Change Password"}
+      description={
+        inviteSetup
+          ? "Create a password before joining the workspace."
+          : undefined
+      }
       loading={pending}
       loadingLabel="Updating password"
       message={<AuthMessage state={state} />}
@@ -33,6 +45,7 @@ export function ResetPasswordForm() {
       }
     >
       <form action={formAction} className="grid gap-4">
+        <input type="hidden" name="next" value={nextPath} />
         <div className="grid gap-2">
           <Label htmlFor="password">New Password</Label>
           <PasswordInput
@@ -54,7 +67,7 @@ export function ResetPasswordForm() {
           />
         </div>
         <Button type="submit" className="w-full" disabled={pending}>
-          {pending ? "Updating" : "Update Password"}
+          {pending ? "Updating" : inviteSetup ? "Set Password" : "Update Password"}
         </Button>
       </form>
     </AuthFormShell>

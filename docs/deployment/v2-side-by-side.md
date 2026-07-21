@@ -4,7 +4,7 @@ Use this checklist when running the native v2 app beside the current Plasmic v1 
 
 ## Required Shape
 
-- Deploy v2 on a separate hostname, for example `https://v2.listhygiene.com`.
+- Deploy v2 on a separate hostname, for example `https://beta.listhygiene.com`.
 - Keep v1 on the current production hostname, for example `https://app.listhygiene.com`.
 - Do not serve v1 and v2 from different paths on the same hostname. Auth cookies, workspace cookies, local storage, OAuth callbacks, and billing returns are host-scoped assumptions.
 - Point v2 at the same Supabase project only after the workspace-era production migrations from `list-hygiene-core/sql` have been applied.
@@ -25,7 +25,7 @@ SUPABASE_SERVICE_ROLE_KEY=
 Set v2-specific host values:
 
 ```bash
-NEXT_PUBLIC_APP_HOST=https://v2.listhygiene.com
+NEXT_PUBLIC_APP_HOST=https://beta.listhygiene.com
 NEXT_PUBLIC_ORG_WORKSPACES_ENABLED=true
 ORG_WORKSPACES_ENABLED=true
 ```
@@ -50,7 +50,7 @@ KLAVIYO_CLIENT_SECRET=
 The Klaviyo app must allow:
 
 ```text
-https://v2.listhygiene.com/api/oauth/klaviyo/callback
+https://beta.listhygiene.com/api/oauth/klaviyo/callback
 ```
 
 Stripe:
@@ -66,30 +66,34 @@ During side-by-side testing, keep Stripe webhook delivery on the current v1/live
 Add these URLs to Supabase Auth redirect allowlist before testing v2 login, signup, and password reset:
 
 ```text
-https://v2.listhygiene.com/auth/callback
-https://v2.listhygiene.com
+https://beta.listhygiene.com/auth/callback
+https://beta.listhygiene.com/invite
+https://beta.listhygiene.com
 ```
 
 Users will need to log in separately on v2 because v1 and v2 are on different hostnames. They still authenticate against the same Supabase Auth users table.
 
-Enable and configure these OAuth providers in Supabase before testing the social buttons:
+Workspace team invites use Supabase Auth's Invite User email plus the app's
+`organization_invitations` table. Set `SUPABASE_SERVICE_ROLE_KEY`, then update
+the Supabase Auth Invite user email template to use the server-verification
+link in [supabase-invite-template.html](./supabase-invite-template.html):
 
-```text
-Google
-GitHub
+```html
+<a href="{{ .RedirectTo }}&token_hash={{ .TokenHash }}&type=invite">
+  Accept invitation
+</a>
 ```
 
-In the Google/GitHub provider dashboards, use the provider callback URL shown by Supabase for this project, usually:
+The app passes `https://beta.listhygiene.com/auth/callback?next=/reset-password?...`
+as `.RedirectTo`. The template appends Supabase's `token_hash` and
+`type=invite`, so `/auth/callback` can verify the Supabase invite, set the
+session cookie, send new invitees through password setup, and then continue to
+`/invite` to apply the app-level organization/workspace role.
 
-```text
-https://<supabase-project-ref>.supabase.co/auth/v1/callback
-```
-
-Supabase will then redirect back to the v2 app callback URL:
-
-```text
-https://v2.listhygiene.com/auth/callback
-```
+Invite roles are intentionally limited to `admin` and `member`. Owners and
+admins can manage workspace members and pending invitations; members can use the
+workspace data they are granted but cannot manage team access. The `owner` role
+is reserved for organization ownership and cannot be selected in the invite UI.
 
 ## Database Safety
 
