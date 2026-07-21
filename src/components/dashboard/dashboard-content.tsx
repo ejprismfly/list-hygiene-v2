@@ -12,7 +12,6 @@ import {
   Bar,
   BarChart,
   CartesianGrid,
-  Cell,
   Label,
   Pie,
   PieChart,
@@ -40,6 +39,7 @@ import {
   type ChartConfig,
 } from "@/components/ui/chart"
 import { Switch } from "@/components/ui/switch"
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { dashboardDemoData } from "@/lib/demo-data"
 import {
   DASHBOARD_CATEGORY_BREAKDOWN_CONFIG,
@@ -48,6 +48,7 @@ import {
 import {
   DASHBOARD_CATEGORY_KEYS,
   getLastTwelveMonthBuckets,
+  type DashboardCategory,
   type DashboardCategoryBreakdownPoint,
   type DashboardHistoricalPoint,
 } from "@/lib/dashboard/report"
@@ -219,11 +220,6 @@ const emptyKpis = [
     icon: Sparkles,
   },
   {
-    label: "Emails Removed",
-    value: "0",
-    icon: Sparkles,
-  },
-  {
     label: "Typos Fixed",
     value: "0",
     icon: WandSparkles,
@@ -280,19 +276,6 @@ const removedChartConfig: ChartConfig = {
   },
 }
 
-const categoryChartConfig: ChartConfig = {
-  value: {
-    label: "Emails",
-    color: chartColors[0],
-  },
-}
-
-type HorizontalCategoryPoint = {
-  category: string
-  value: number
-  fill: string
-}
-
 type EmailStatusChartItem = {
   status: string
   label: string
@@ -327,6 +310,30 @@ function getKpiDisplayLabel(label: string) {
   }
 
   return label
+}
+
+function isRemovedKpiLabel(label: string) {
+  const normalized = label.toLowerCase()
+
+  return normalized === "emails removed" || normalized === "emails suppressed"
+}
+
+function getKpiIcon(label: string) {
+  const normalized = label.toLowerCase()
+
+  if (normalized === "emails checked") {
+    return ShieldCheck
+  }
+
+  if (normalized === "suppressed percentage") {
+    return Sparkles
+  }
+
+  if (normalized === "typo fixes" || normalized === "typos fixed") {
+    return WandSparkles
+  }
+
+  return ShieldCheck
 }
 
 function renderEmailStatusSector(
@@ -425,56 +432,47 @@ function getKpiNumber(
   return parseDisplayNumber(item.value).value
 }
 
-function buildHorizontalCategoryRows(
+type CategoryBreakdownChartPoint = {
+  month: string
+  [key: string]: string | number
+}
+
+function buildCategoryBreakdownRows(
   breakdownRows: DashboardCategoryBreakdownPoint[],
-  distribution: { label: string; value: number }[]
+  category: DashboardCategory
 ) {
-  const latestBreakdownRow = [...breakdownRows]
-    .reverse()
-    .find((row) =>
-      DASHBOARD_CATEGORY_KEYS.some((category) =>
-        Object.values(row.categories[category] || {}).some((value) => value > 0)
-      )
-    )
-  const rows: HorizontalCategoryPoint[] = []
+  const segments = DASHBOARD_CATEGORY_BREAKDOWN_CONFIG[category].segments
 
-  if (latestBreakdownRow) {
-    DASHBOARD_CATEGORY_KEYS.forEach((category) => {
-      DASHBOARD_CATEGORY_BREAKDOWN_CONFIG[category].segments.forEach(
-        (segment) => {
-          const value = Number(
-            latestBreakdownRow.categories[category]?.[segment.key] || 0
-          )
+  return breakdownRows.map((row) => {
+    const point: CategoryBreakdownChartPoint = { month: row.month }
 
-          if (value > 0) {
-            rows.push({
-              category: segment.label,
-              value,
-              fill: segment.color,
-            })
-          }
-        }
-      )
+    segments.forEach((segment) => {
+      point[segment.key] = Number(row.categories[category]?.[segment.key] || 0)
     })
-  }
 
-  const sourceRows = rows.length
-    ? rows.sort((left, right) => right.value - left.value).slice(0, 10)
-    : distribution.map((item) => ({
-        category: item.label,
-        value: item.value,
-        fill: chartColors[0],
-      }))
+    return point
+  })
+}
 
-  return sourceRows.map((row, index) => ({
-    ...row,
-    fill: row.fill || chartColors[index % chartColors.length],
-  }))
+function buildCategoryBreakdownChartConfig(category: DashboardCategory) {
+  return DASHBOARD_CATEGORY_BREAKDOWN_CONFIG[category].segments.reduce<ChartConfig>(
+    (config, segment) => {
+      config[segment.key] = {
+        label: segment.label,
+        color: segment.color,
+      }
+
+      return config
+    },
+    {}
+  )
 }
 
 export function DashboardContent() {
   const [showDummyData, setShowDummyData] = useState(false)
   const [activeStatus, setActiveStatus] = useState("valid")
+  const [activeBreakdownCategory, setActiveBreakdownCategory] =
+    useState<DashboardCategory>("valid")
   const [liveData, setLiveData] = useState<DashboardViewData | null>(null)
   const [liveLoading, setLiveLoading] = useState(false)
   const [liveError, setLiveError] = useState("")
@@ -484,6 +482,7 @@ export function DashboardContent() {
   const kpis = activeDashboardData.kpis.length
     ? activeDashboardData.kpis
     : emptyKpis.map(({ label, value }) => ({ label, value }))
+  const visibleKpis = kpis.filter((item) => !isRemovedKpiLabel(item.label))
   const distribution = activeDashboardData.distribution.length
     ? activeDashboardData.distribution
     : DASHBOARD_CATEGORY_KEYS.map((key) => ({
@@ -538,9 +537,14 @@ export function DashboardContent() {
       !hasHistoricalValues(visibleHistorical))
       ? reportCategoryBreakdown
       : buildDerivedDashboardCategoryBreakdownRows(visibleHistorical)
-  const horizontalCategoryData = buildHorizontalCategoryRows(
+  const activeBreakdownSegments =
+    DASHBOARD_CATEGORY_BREAKDOWN_CONFIG[activeBreakdownCategory].segments
+  const categoryBreakdownData = buildCategoryBreakdownRows(
     categoryBreakdownSource,
-    distribution
+    activeBreakdownCategory
+  )
+  const categoryBreakdownChartConfig = buildCategoryBreakdownChartConfig(
+    activeBreakdownCategory
   )
   const emailsChecked = getKpiNumber(kpis, ["Emails Checked"])
   const emailsRemoved = getKpiNumber(kpis, [
@@ -562,10 +566,6 @@ export function DashboardContent() {
       ),
     },
   ]
-  const horizontalCategoryMax = Math.max(
-    ...horizontalCategoryData.map((item) => item.value),
-    0
-  )
   const totalSuppressed = activeDashboardData.totalSuppressed
   const milestoneProgressPercent = getMilestoneProgressPercent(totalSuppressed)
 
@@ -693,9 +693,9 @@ export function DashboardContent() {
         <h1 className="text-2xl font-semibold tracking-normal sm:text-3xl">
           {activeDashboardData.monthLabel}
         </h1>
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          {kpis.map((item, index) => {
-            const Icon = emptyKpis[index]?.icon || ShieldCheck
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+          {visibleKpis.map((item) => {
+            const Icon = getKpiIcon(item.label)
 
             return (
               <Card key={item.label}>
@@ -954,54 +954,81 @@ export function DashboardContent() {
         <h2 className="text-2xl font-semibold tracking-normal sm:text-3xl">
           Category Breakdown
         </h2>
-        <Card>
-          <CardContent className="grid min-h-72 gap-5 pt-5 pb-6 sm:px-6">
-            <ChartContainer
-              config={categoryChartConfig}
-              className="aspect-auto h-[360px] w-full"
-            >
-              <BarChart
-                accessibilityLayer
-                data={horizontalCategoryData}
-                layout="vertical"
-                margin={{
-                  top: 8,
-                  right: 24,
-                  left: 8,
-                  bottom: 0,
-                }}
+        <Tabs
+          value={activeBreakdownCategory}
+          onValueChange={(value) =>
+            setActiveBreakdownCategory(value as DashboardCategory)
+          }
+        >
+          <TabsList className="h-auto w-full flex-wrap justify-start sm:w-fit">
+            {DASHBOARD_CATEGORY_KEYS.map((status) => (
+              <TabsTrigger key={status} value={status}>
+                {statusChartConfig[status].label}
+              </TabsTrigger>
+            ))}
+          </TabsList>
+
+          <Card>
+            <CardContent className="grid min-h-72 gap-5 pt-5 pb-6 sm:px-6">
+              <ChartContainer
+                config={categoryBreakdownChartConfig}
+                className="aspect-auto h-[360px] w-full"
               >
-                <CartesianGrid horizontal={false} />
-                <YAxis
-                  dataKey="category"
-                  type="category"
-                  tickLine={false}
-                  tickMargin={8}
-                  axisLine={false}
-                  width={132}
-                />
-                <XAxis
-                  dataKey="value"
-                  type="number"
-                  domain={[0, horizontalCategoryMax || 1]}
-                  tickLine={false}
-                  axisLine={false}
-                  tickMargin={8}
-                  tickFormatter={(value) => numberFormatter.format(value)}
-                />
-                <ChartTooltip
-                  cursor={false}
-                  content={<ChartTooltipContent />}
-                />
-                <Bar dataKey="value" radius={4}>
-                  {horizontalCategoryData.map((item) => (
-                    <Cell key={item.category} fill={item.fill} />
+                <BarChart
+                  accessibilityLayer
+                  data={categoryBreakdownData}
+                  margin={{
+                    top: 10,
+                    right: 16,
+                    left: 4,
+                    bottom: 0,
+                  }}
+                >
+                  <CartesianGrid vertical={false} />
+                  <XAxis
+                    dataKey="month"
+                    tickLine={false}
+                    tickMargin={8}
+                    axisLine={false}
+                  />
+                  <YAxis
+                    width={56}
+                    tickLine={false}
+                    axisLine={false}
+                    tickMargin={8}
+                    tickFormatter={(value) => numberFormatter.format(value)}
+                  />
+                  <ChartTooltip
+                    cursor={false}
+                    content={<ChartTooltipContent />}
+                  />
+                  {activeBreakdownSegments.map((segment, index) => (
+                    <Bar
+                      key={segment.key}
+                      dataKey={segment.key}
+                      name={segment.key}
+                      stackId={activeBreakdownCategory}
+                      fill={segment.color}
+                      maxBarSize={64}
+                      radius={
+                        index === 0
+                          ? [0, 0, 4, 4]
+                          : index === activeBreakdownSegments.length - 1
+                            ? [4, 4, 0, 0]
+                            : [0, 0, 0, 0]
+                      }
+                    />
                   ))}
-                </Bar>
-              </BarChart>
-            </ChartContainer>
-          </CardContent>
-        </Card>
+                  <ChartLegend
+                    content={
+                      <ChartLegendContent className="flex-wrap gap-x-5 gap-y-3" />
+                    }
+                  />
+                </BarChart>
+              </ChartContainer>
+            </CardContent>
+          </Card>
+        </Tabs>
       </section>
     </div>
   )
