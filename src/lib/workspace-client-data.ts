@@ -12,6 +12,7 @@ export type WorkspaceOption = {
   name: string
   is_default?: boolean | null
   has_connected_account?: boolean
+  has_active_billing?: boolean
   member_count?: number
 }
 

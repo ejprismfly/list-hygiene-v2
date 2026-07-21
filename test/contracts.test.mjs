@@ -55,6 +55,7 @@ test("Supabase CLI migration includes workspace-era v1 compatibility tables and 
     "trial_remaining integer",
     "trial_used integer",
     "trial_redeemed_with uuid",
+    "add column if not exists active boolean not null default true",
     "payment_id text",
     "change integer",
     "remaining integer",
@@ -463,7 +464,7 @@ test("page metadata titles align with visible page headings", () => {
   )
   assert.match(
     read("src/app/(app)/settings/klaviyo/page.tsx"),
-    /title: "Configure Your Connection \| List Hygiene"/
+    /title: "Edit Connection \| List Hygiene"/
   )
 })
 
@@ -495,6 +496,9 @@ test("critical UI controls are wired to their own actions", () => {
   assert.match(klaviyoOAuth, /popup\.focus\(\)/)
   assert.match(klaviyoOAuth, /window\.location\.assign\(authUrl\)/)
   assert.match(settingsContent, /href=\{`\/settings\/klaviyo\?id=\$\{connection\.id\}`\}/)
+  assert.match(settingsContent, /<MoreHorizontal className="size-4" \/>/)
+  assert.match(settingsContent, /<DropdownMenuItem/)
+  assert.match(settingsContent, /Delete connection/)
   assert.match(settingsContent, /loadingConnections/)
   assert.match(settingsContent, /ConnectionsTableSkeleton/)
   assert.match(settingsContent, /<Skeleton className="h-4 w-20" \/>/)
@@ -503,6 +507,11 @@ test("critical UI controls are wired to their own actions", () => {
   assert.doesNotMatch(settingsContent, /<TableHead>Workspace<\/TableHead>/)
   assert.doesNotMatch(settingsContent, /Multiple connections coming soon\./)
   assert.doesNotMatch(settingsContent, /Multiple connections will be available soon\./)
+  assert.doesNotMatch(settingsContent, /No Integration connected yet\./)
+  assert.match(settingsContent, /No connections/)
+  assert.doesNotMatch(settingsContent, />\s*Configure\s*</)
+  assert.match(settingsContent, /Danger Zone/)
+  assert.match(settingsContent, /Cancel active billing before archiving this workspace\./)
   assert.match(settingsKlaviyoPage, /<AppShell active="settings" userEmail=\{user\.email\}>/)
   assert.doesNotMatch(configureConnection, /<main className="min-h-svh/)
   assert.match(configureConnection, /unit === "month" && option === "12"/)
@@ -523,13 +532,18 @@ test("critical UI controls are wired to their own actions", () => {
   assert.match(configureConnection, /removing && <Loader2 className="size-4 animate-spin" \/>/)
   assert.match(configureConnection, /<Breadcrumb>/)
   assert.match(configureConnection, /<BreadcrumbLink href="\/settings">Settings<\/BreadcrumbLink>/)
-  assert.match(configureConnection, /<BreadcrumbPage>Configure Your Connection<\/BreadcrumbPage>/)
+  assert.match(configureConnection, /<BreadcrumbPage>Edit Connection<\/BreadcrumbPage>/)
   assert.match(configureConnection, /Combobox/)
   assert.match(configureConnection, /segment_search/)
   assert.match(configureConnection, /segment_limit: "30"/)
   assert.match(configureConnection, /itemToStringLabel=\{\(segment: SegmentOption\) => segment\.name\}/)
-  assert.match(configureConnection, /Selected segment/)
+  assert.match(configureConnection, /Choose a Klaviyo Segment/)
+  assert.match(
+    configureConnection,
+    /This segment will be monitored for new email addresses to check\.[\s\S]*Lists are not shown\./
+  )
   assert.match(configureConnection, /Search segments/)
+  assert.match(configureConnection, /sticky bottom-0/)
   assert.match(onboardingContent, /"use client"/)
   assert.match(onboardingContent, /onClick=\{connectKlaviyo\}/)
   assert.match(onboardingContent, /startKlaviyoOAuth/)
@@ -540,7 +554,6 @@ test("critical UI controls are wired to their own actions", () => {
   assert.match(workspaceSwitcher, /onValueChange=\{\(value\) => \{[\s\S]*switchWorkspace\(value\)/)
   assert.match(workspaceSwitcher, /onClick=\{saveWorkspaceName\}/)
   assert.match(workspaceSwitcher, /onClick=\{inviteMember\}/)
-  assert.match(workspaceSwitcher, /setDeleteDialogOpen\(true\)/)
   assert.match(workspaceSwitcher, /onClick=\{createWorkspace\}/)
   assert.match(loginForm, /action=\{formAction\}/)
   assert.doesNotMatch(loginForm, /magicFormAction/)
@@ -583,6 +596,8 @@ test("Klaviyo OAuth routes are workspace-scoped and maintain token lifecycle", (
   assert.match(callback, /fetchKlaviyoSegments\(tokenJson\.access_token\)/)
   assert.match(accounts, /applyAccountScope/)
   assert.match(accounts, /Only owners and admins can manage integrations/)
+  assert.match(accounts, /const \{ error: updateError \} = await applyAccountScope\(updateQuery, context\)/)
+  assert.match(accounts, /return errorJson\(updateError\.message\)/)
   assert.match(segments, /grant_type: "refresh_token"/)
   assert.match(segments, /access_token: tokenJson\.access_token/)
   assert.match(segments, /Object\.assign\(tokenUpdates, refreshedToken\.tokenUpdates\)/)
@@ -717,19 +732,25 @@ test("desktop and mobile shells share the same workspace management component", 
   assert.doesNotMatch(mobileShell, /demoWorkspaceContext|organizationName=|workspaces=/)
 })
 
-test("workspace delete action requires a confirmation dialog", () => {
+test("workspace archive action lives in Settings Danger Zone", () => {
+  const settings = read("src/components/settings/settings-content.tsx")
   const switcher = read("src/components/app/workspace-switcher.tsx")
+  const route = read("src/app/api/workspaces/route.ts")
 
-  assert.match(switcher, /deleteDialogOpen/)
-  assert.match(switcher, /setDeleteDialogOpen\(true\)/)
-  assert.match(switcher, /<DialogTitle>Delete workspace<\/DialogTitle>/)
-  assert.match(switcher, /Delete workspace/)
-  assert.match(switcher, /selectedWorkspace\.has_connected_account/)
+  assert.match(settings, /Danger Zone/)
+  assert.match(settings, /archiveDialogOpen/)
+  assert.match(settings, /archiveConfirmation/)
+  assert.match(settings, /<DialogTitle>Archive workspace<\/DialogTitle>/)
+  assert.match(settings, /currentWorkspace\.has_connected_account/)
+  assert.match(settings, /currentWorkspace\.has_active_billing/)
+  assert.match(route, /Cancel active billing before archiving this workspace\./)
+  assert.doesNotMatch(switcher, /Delete workspace/)
+  assert.doesNotMatch(switcher, /Archive workspace/)
 })
 
 test("workspace delete can leave the user in required-workspace flow", () => {
   const route = read("src/app/api/workspaces/route.ts")
-  const switcher = read("src/components/app/workspace-switcher.tsx")
+  const settings = read("src/components/settings/settings-content.tsx")
   const gate = read("src/components/app/workspace-required-gate.tsx")
 
   assert.doesNotMatch(route, /Default workspace cannot be archived\./)
@@ -738,7 +759,10 @@ test("workspace delete can leave the user in required-workspace flow", () => {
     route,
     /Disconnect or move connected Klaviyo accounts before archiving this workspace\./
   )
-  assert.match(switcher, /persistSelection\(organizationId, null\)/)
+  assert.match(
+    settings,
+    /persistSelection\(organizationId, nextWorkspace\?\.id \|\| null\)/
+  )
   assert.match(gate, /A workspace is required before continuing\./)
 })
 

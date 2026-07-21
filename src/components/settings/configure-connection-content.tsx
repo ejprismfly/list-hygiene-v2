@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react"
 import { useSearchParams } from "next/navigation"
-import { CheckCircle2, Info, Loader2 } from "lucide-react"
+import { CheckCircle2, Info, Loader2, Trash2 } from "lucide-react"
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import {
@@ -25,6 +25,13 @@ import {
   ComboboxTrigger,
   ComboboxValue,
 } from "@/components/ui/combobox"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import {
@@ -132,6 +139,8 @@ export function ConfigureConnectionContent() {
   const [saving, setSaving] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
   const [removing, setRemoving] = useState(false)
+  const [removeDialogOpen, setRemoveDialogOpen] = useState(false)
+  const [removeConfirmation, setRemoveConfirmation] = useState("")
   const [removed, setRemoved] = useState(false)
 
   useEffect(() => {
@@ -266,7 +275,7 @@ export function ConfigureConnectionContent() {
     }
 
     if (!accountId) {
-      setStatusMessage("Select a Klaviyo connection to configure.")
+      setStatusMessage("Select a Klaviyo connection to edit.")
       return
     }
 
@@ -338,8 +347,12 @@ export function ConfigureConnectionContent() {
     }
   }
 
+  const removeConfirmationName = connectionName.trim() || "Klaviyo"
+  const removeConfirmationMatches =
+    removeConfirmation.trim() === removeConfirmationName
+
   async function removeConnection() {
-    if (!accountId || removed) {
+    if (!accountId || removed || !removeConfirmationMatches) {
       return
     }
 
@@ -358,6 +371,8 @@ export function ConfigureConnectionContent() {
       }
 
       setRemoved(true)
+      setRemoveDialogOpen(false)
+      setRemoveConfirmation("")
       setStatusMessage("Klaviyo connection removed from this workspace.")
     } finally {
       setRemoving(false)
@@ -428,12 +443,12 @@ export function ConfigureConnectionContent() {
             </BreadcrumbItem>
             <BreadcrumbSeparator />
             <BreadcrumbItem>
-              <BreadcrumbPage>Configure Your Connection</BreadcrumbPage>
+              <BreadcrumbPage>Edit Connection</BreadcrumbPage>
             </BreadcrumbItem>
           </BreadcrumbList>
         </Breadcrumb>
         <h1 className="text-2xl font-semibold tracking-normal sm:text-3xl">
-          Configure Your Connection
+          Edit Connection
         </h1>
       </div>
 
@@ -461,19 +476,19 @@ export function ConfigureConnectionContent() {
           <CheckCircle2 className="size-4" />
           <AlertTitle>Connection updated</AlertTitle>
           <AlertDescription>
-            {statusMessage || "Select a Klaviyo connection to configure."}
+            {statusMessage || "Select a Klaviyo connection to edit."}
           </AlertDescription>
         </Alert>
       )}
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-xl">Manage Klaviyo Segments*</CardTitle>
+          <CardTitle className="text-xl">Choose a Klaviyo Segment</CardTitle>
         </CardHeader>
         <CardContent className="grid gap-3">
           <p className="text-sm text-muted-foreground">
-            Select a Klaviyo segment to monitor for new email addresses to
-            check.
+            This segment will be monitored for new email addresses to check.
+            Lists are not shown.
           </p>
           {accountLoading ? (
             <Skeleton className="h-4 w-64" />
@@ -609,7 +624,7 @@ export function ConfigureConnectionContent() {
         </CardContent>
       </Card>
 
-      <div className="mt-2 grid gap-3 sm:flex sm:items-center sm:justify-between">
+      <div className="sticky bottom-0 z-10 -mx-4 mt-2 grid gap-3 border-t bg-background/95 p-4 sm:mx-0 sm:flex sm:items-center sm:justify-between sm:rounded-lg sm:border">
         <Button
           type="button"
           disabled={accountLoading || saving || removed}
@@ -622,12 +637,66 @@ export function ConfigureConnectionContent() {
           type="button"
           variant="destructive"
           disabled={accountLoading || removing || removed}
-          onClick={removeConnection}
+          onClick={() => {
+            setRemoveConfirmation("")
+            setRemoveDialogOpen(true)
+          }}
         >
-          {removing && <Loader2 className="size-4 animate-spin" />}
-          Remove Connection
+          <Trash2 className="size-4" />
+          Delete connection
         </Button>
       </div>
+
+      <Dialog
+        open={removeDialogOpen}
+        onOpenChange={(open) => {
+          setRemoveDialogOpen(open)
+          if (!open) {
+            setRemoveConfirmation("")
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Delete connection</DialogTitle>
+            <DialogDescription>
+              Type {removeConfirmationName} to confirm deleting this Klaviyo
+              connection.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-2">
+            <Label htmlFor="remove-connection-confirmation">
+              Connection name
+            </Label>
+            <Input
+              id="remove-connection-confirmation"
+              value={removeConfirmation}
+              onChange={(event) => setRemoveConfirmation(event.target.value)}
+              placeholder={removeConfirmationName}
+            />
+          </div>
+          <div className="grid gap-2 sm:flex sm:justify-end">
+            <Button
+              type="button"
+              variant="outline"
+              disabled={removing}
+              onClick={() => setRemoveDialogOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              disabled={!removeConfirmationMatches || removing}
+              onClick={removeConnection}
+            >
+              {removing && <Loader2 className="size-4 animate-spin" />}
+              <Trash2 className="size-4" />
+              Delete connection
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <p className="text-sm text-muted-foreground">
         Having any issues? Contact{" "}

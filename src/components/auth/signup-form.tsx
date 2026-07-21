@@ -81,30 +81,34 @@ export function SignupForm({ nextPath = "/dashboard" }: { nextPath?: string }) {
             required
           />
         </div>
-        <div className="flex items-start gap-2.5">
+        <div className="grid grid-cols-[auto_1fr] items-start gap-2.5">
           <Checkbox id="terms" name="terms" className="mt-0.5 size-4" />
           <Label
             htmlFor="terms"
-            className="text-xs leading-6 font-normal text-muted-foreground"
+            className="grid gap-1 text-xs leading-5 font-normal text-muted-foreground"
           >
-            I have read and accept the{" "}
-            <a
-              href="https://listhygiene.com/policy/terms"
-              target="_blank"
-              rel="noreferrer"
-              className="font-medium text-foreground underline-offset-4 hover:underline"
-            >
-              Terms of Use
-            </a>{" "}
-            and{" "}
-            <a
-              href="https://listhygiene.com/policy/privacy"
-              target="_blank"
-              rel="noreferrer"
-              className="font-medium text-foreground underline-offset-4 hover:underline"
-            >
-              Privacy Policy
-            </a>
+            <span>
+              I have read and accept the{" "}
+              <a
+                href="https://listhygiene.com/policy/terms"
+                target="_blank"
+                rel="noreferrer"
+                className="font-medium text-foreground underline-offset-4 hover:underline"
+              >
+                Terms of Use
+              </a>
+            </span>
+            <span>
+              and{" "}
+              <a
+                href="https://listhygiene.com/policy/privacy"
+                target="_blank"
+                rel="noreferrer"
+                className="font-medium text-foreground underline-offset-4 hover:underline"
+              >
+                Privacy Policy
+              </a>
+            </span>
           </Label>
         </div>
         <Button type="submit" className="w-full" disabled={pending}>

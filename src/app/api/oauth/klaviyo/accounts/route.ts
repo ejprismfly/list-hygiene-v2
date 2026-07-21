@@ -235,7 +235,11 @@ export async function POST(request: Request) {
       connection_name: connectionName,
     })
     .eq("id", id) as unknown as ScopedQuery<AccountSegments>
-  await applyAccountScope(updateQuery, context)
+  const { error: updateError } = await applyAccountScope(updateQuery, context)
+
+  if (updateError) {
+    return errorJson(updateError.message)
+  }
 
   return GET(request)
 }

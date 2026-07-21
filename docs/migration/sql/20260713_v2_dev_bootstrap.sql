@@ -401,7 +401,8 @@ alter table if exists public.stripe_accounts
   add column if not exists trial_plan integer not null default 0,
   add column if not exists trial_remaining integer not null default 0,
   add column if not exists trial_used integer not null default 0,
-  add column if not exists trial_redeemed_with uuid references public.klaviyo_accounts(id) on delete set null;
+  add column if not exists trial_redeemed_with uuid references public.klaviyo_accounts(id) on delete set null,
+  add column if not exists active boolean not null default true;
 
 alter table if exists public.stripe_payment_methods
   add column if not exists payment_id text;

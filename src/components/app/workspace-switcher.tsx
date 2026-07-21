@@ -3,12 +3,10 @@
 import { useEffect, useMemo, useState, useTransition } from "react"
 import { createPortal } from "react-dom"
 import {
-  Archive,
   Copy,
   Loader2,
   Plus,
   Settings,
-  Trash2,
   UserMinus,
   UserPlus,
 } from "lucide-react"
@@ -32,7 +30,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { Separator } from "@/components/ui/separator"
 import {
   Table,
   TableBody,
@@ -171,7 +168,6 @@ export function WorkspaceSwitcher({
   const [inviteRole, setInviteRole] = useState<"admin" | "member">("member")
   const [lastInviteLink, setLastInviteLink] = useState("")
   const [createDialogOpen, setCreateDialogOpen] = useState(false)
-  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [managerOpen, setManagerOpen] = useState(false)
   const [creatingWorkspace, setCreatingWorkspace] = useState(false)
   const [message, setMessage] = useState("")
@@ -359,49 +355,6 @@ export function WorkspaceSwitcher({
       )
     )
     setMessage(`${workspaceLabel(data.name)} updated.`)
-  }
-
-  async function archiveSelectedWorkspace() {
-    if (!organizationId || !selectedWorkspace) {
-      return
-    }
-
-    const response = await fetch("/api/workspaces", {
-      method: "DELETE",
-      headers: headersFor(organizationId, selectedId),
-      body: JSON.stringify({ id: selectedWorkspace.id }),
-    })
-    const data = await response.json()
-    if (!response.ok) {
-      setMessage(data.error || "Unable to archive workspace.")
-      return
-    }
-
-    const nextWorkspace = workspaces.find(
-      (workspace) => workspace.id !== selectedWorkspace.id
-    )
-    setDeleteDialogOpen(false)
-    invalidateWorkspaceClientData(organizationId)
-    setWorkspaces((current) =>
-      current.filter((workspace) => workspace.id !== selectedWorkspace.id)
-    )
-    setMessage(`${workspaceLabel(selectedWorkspace.name)} archived.`)
-    if (nextWorkspace) {
-      setSwitchingWorkspaceName(workspaceLabel(nextWorkspace.name))
-      persistSelection(organizationId, nextWorkspace.id)
-      window.setTimeout(() => {
-        window.location.reload()
-      }, 450)
-      return
-    }
-
-    setSelectedId(null)
-    setEditName("")
-    setManagerOpen(false)
-    persistSelection(organizationId, null)
-    window.setTimeout(() => {
-      window.location.reload()
-    }, 450)
   }
 
   async function inviteMember() {
@@ -809,38 +762,6 @@ export function WorkspaceSwitcher({
                   </div>
                 </section>
 
-                <section className="grid gap-3 rounded-lg border p-3">
-                  <Separator />
-                  <div className="grid gap-2 sm:flex">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      disabled={
-                        !managerEnabled ||
-                        !selectedWorkspace ||
-                        selectedWorkspace.has_connected_account
-                      }
-                      onClick={archiveSelectedWorkspace}
-                    >
-                      <Archive className="size-4" />
-                      Archive
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="destructive"
-                      disabled={
-                        !managerEnabled ||
-                        !selectedWorkspace ||
-                        selectedWorkspace.has_connected_account
-                      }
-                      onClick={() => setDeleteDialogOpen(true)}
-                    >
-                      <Trash2 className="size-4" />
-                      Delete
-                    </Button>
-                  </div>
-                </section>
-
                 <div className="grid gap-2 border-t pt-4 sm:flex sm:justify-end">
                   <Dialog
                     open={createDialogOpen}
@@ -892,43 +813,6 @@ export function WorkspaceSwitcher({
           </Dialog>
         </div>
       </div>
-
-      <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Delete workspace</DialogTitle>
-            <DialogDescription>
-              This will archive{" "}
-              {selectedWorkspace
-                ? workspaceLabel(selectedWorkspace.name)
-                : "this workspace"}{" "}
-              and hide it from the workspace list.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="grid gap-2 sm:flex sm:justify-end">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => setDeleteDialogOpen(false)}
-            >
-              Cancel
-            </Button>
-            <Button
-              type="button"
-              variant="destructive"
-              disabled={
-                !managerEnabled ||
-                !selectedWorkspace ||
-                selectedWorkspace.has_connected_account
-              }
-              onClick={archiveSelectedWorkspace}
-            >
-              <Trash2 className="size-4" />
-              Delete workspace
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
 
       {message && <p className="text-xs text-muted-foreground">{message}</p>}
     </div>

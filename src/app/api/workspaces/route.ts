@@ -27,6 +27,7 @@ type WorkspaceRow = {
   archived_at: string | null
   created_at: string
   has_connected_account: boolean
+  has_active_billing: boolean
   member_count: number
 }
 
@@ -162,6 +163,18 @@ async function listDirectWorkspaces(context: DirectWorkspaceContext) {
             and ka.workspace_id = w.id
             and ka.active = true
         ) as has_connected_account,
+        exists (
+          select 1
+          from public.stripe_accounts sa
+          where sa.organization_id = w.organization_id
+            and sa.workspace_id = w.id
+            and sa.active = true
+            and (
+              nullif(sa.subscription_id, '') is not null
+              or coalesce(sa.credits_plan, 0) > 0
+              or coalesce(sa.overage_plan, 0) > 0
+            )
+        ) as has_active_billing,
         (
           select count(*)::int
           from public.workspace_members wm
@@ -240,6 +253,7 @@ async function directPOST(request: Request) {
         archived_at::text,
         created_at::text,
         false as has_connected_account,
+        false as has_active_billing,
         1 as member_count
     `,
     [
@@ -351,6 +365,18 @@ async function directPATCH(request: Request) {
             and ka.workspace_id = workspaces.id
             and ka.active = true
         ) as has_connected_account,
+        exists (
+          select 1
+          from public.stripe_accounts sa
+          where sa.organization_id = workspaces.organization_id
+            and sa.workspace_id = workspaces.id
+            and sa.active = true
+            and (
+              nullif(sa.subscription_id, '') is not null
+              or coalesce(sa.credits_plan, 0) > 0
+              or coalesce(sa.overage_plan, 0) > 0
+            )
+        ) as has_active_billing,
         (
           select count(*)::int
           from public.workspace_members wm
@@ -419,6 +445,28 @@ async function directDELETE(request: Request) {
     )
   }
 
+  const activeBilling = await queryOne<{ count: number }>(
+    `
+      select count(*)::int
+      from public.stripe_accounts
+      where organization_id = $1::uuid
+        and workspace_id = $2::uuid
+        and active = true
+        and (
+          nullif(subscription_id, '') is not null
+          or coalesce(credits_plan, 0) > 0
+          or coalesce(overage_plan, 0) > 0
+        )
+    `,
+    [context.organizationId, id]
+  )
+  if (Number(activeBilling?.count || 0) > 0) {
+    return errorJson(
+      "Cancel active billing before archiving this workspace.",
+      400
+    )
+  }
+
   const archived = await queryOne<WorkspaceRow>(
     `
       update public.workspaces
@@ -437,6 +485,7 @@ async function directDELETE(request: Request) {
         archived_at::text,
         created_at::text,
         false as has_connected_account,
+        false as has_active_billing,
         (
           select count(*)::int
           from public.workspace_members wm
@@ -512,6 +561,7 @@ export async function GET(request: Request) {
 
   const workspaceIds = (data || []).map((workspace) => String(workspace.id))
   const connectedCounts = new Map<string, boolean>()
+  const activeBillingCounts = new Map<string, boolean>()
   const memberCounts = new Map<string, number>()
 
   if (workspaceIds.length) {
@@ -525,6 +575,27 @@ export async function GET(request: Request) {
     ;(connectedAccounts || []).forEach((row) => {
       if (row.workspace_id) {
         connectedCounts.set(String(row.workspace_id), true)
+      }
+    })
+
+    const { data: billingAccounts } = await supabase
+      .from("stripe_accounts")
+      .select("workspace_id, subscription_id, credits_plan, overage_plan")
+      .eq("organization_id", context.organizationId)
+      .in("workspace_id", workspaceIds)
+      .eq("active", true)
+
+    ;(billingAccounts || []).forEach((row) => {
+      const workspaceId = row.workspace_id ? String(row.workspace_id) : ""
+      if (!workspaceId) {
+        return
+      }
+      const hasActiveBilling =
+        Boolean(row.subscription_id) ||
+        Number(row.credits_plan || 0) > 0 ||
+        Number(row.overage_plan || 0) > 0
+      if (hasActiveBilling) {
+        activeBillingCounts.set(workspaceId, true)
       }
     })
 
@@ -547,6 +618,8 @@ export async function GET(request: Request) {
     (data || []).map((workspace) => ({
       ...workspace,
       has_connected_account: connectedCounts.get(String(workspace.id)) || false,
+      has_active_billing:
+        activeBillingCounts.get(String(workspace.id)) || false,
       member_count: memberCounts.get(String(workspace.id)) || 0,
     }))
   )
@@ -609,6 +682,7 @@ export async function POST(request: Request) {
     {
       ...workspace,
       has_connected_account: false,
+      has_active_billing: false,
       member_count: 1,
     },
     { status: 201 }
@@ -740,6 +814,30 @@ export async function DELETE(request: Request) {
   if ((connectedAccounts || 0) > 0) {
     return errorJson(
       "Disconnect or move connected Klaviyo accounts before archiving this workspace.",
+      400
+    )
+  }
+
+  const { data: billingAccounts, error: billingAccountsError } = await supabase
+    .from("stripe_accounts")
+    .select("subscription_id, credits_plan, overage_plan")
+    .eq("organization_id", context.organizationId)
+    .eq("workspace_id", id)
+    .eq("active", true)
+
+  if (billingAccountsError) {
+    return errorJson(billingAccountsError.message)
+  }
+
+  const hasActiveBilling = (billingAccounts || []).some(
+    (account) =>
+      Boolean(account.subscription_id) ||
+      Number(account.credits_plan || 0) > 0 ||
+      Number(account.overage_plan || 0) > 0
+  )
+  if (hasActiveBilling) {
+    return errorJson(
+      "Cancel active billing before archiving this workspace.",
       400
     )
   }
