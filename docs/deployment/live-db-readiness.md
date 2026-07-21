@@ -83,6 +83,9 @@ shape during side-by-side testing.
 - Set `NEXT_PUBLIC_APP_HOST` to the v2 hostname.
 - Add the v2 auth callback and invite URLs in Supabase Auth settings.
 - Supabase Auth password login/signup and password reset should be configured before testing auth.
+- Configure the Supabase Auth Confirm signup email template from
+  `docs/deployment/supabase-signup-confirmation-template.html` so signup links
+  verify through `/auth/callback` with `token_hash`.
 - Configure the Supabase Auth Invite user email template from
   `docs/deployment/supabase-invite-template.html` so team invites verify through
   `/auth/callback` with `token_hash` before applying workspace membership.

@@ -138,6 +138,9 @@ test("side-by-side deployment docs capture live database constraints", () => {
   const readiness = read("docs/deployment/live-db-readiness.md")
   const demoSeed = read("docs/migration/sql/20260714_v2_efren_demo_seed.sql")
   const inviteTemplate = read("docs/deployment/supabase-invite-template.html")
+  const signupTemplate = read(
+    "docs/deployment/supabase-signup-confirmation-template.html"
+  )
 
   for (const key of [
     "NEXT_PUBLIC_APP_HOST",
@@ -158,6 +161,8 @@ test("side-by-side deployment docs capture live database constraints", () => {
   assert.match(guide, /same live Supabase database/)
   assert.match(guide, /Do not run `supabase\/migrations\/20260713000000_v2_dev_bootstrap.sql` against live production/)
   assert.match(guide, /configure Stripe webhook delivery to the v2 endpoint/)
+  assert.match(guide, /supabase-signup-confirmation-template\.html/)
+  assert.match(guide, /\{\{ \.RedirectTo \}\}&token_hash=\{\{ \.TokenHash \}\}&type=signup/)
   assert.match(guide, /supabase-invite-template\.html/)
   assert.match(guide, /\{\{ \.RedirectTo \}\}&token_hash=\{\{ \.TokenHash \}\}&type=invite/)
   assert.match(guide, /Invite roles are intentionally limited to `admin` and `member`/)
@@ -169,10 +174,12 @@ test("side-by-side deployment docs capture live database constraints", () => {
   assert.match(readiness, /20260709_workspace_report_tables\.sql/)
   assert.match(readiness, /trial_credit_redemptions\.user_id/)
   assert.match(readiness, /Do not run the v2 greenfield bootstrap migration on live/)
+  assert.match(readiness, /Supabase Auth Confirm signup email template/)
   assert.match(readiness, /Supabase Auth Invite user email template/)
   assert.match(readiness, /Stripe webhook endpoint/)
   assert.match(demoSeed, /Dev\/test seed only/)
   assert.match(demoSeed, /Do not run this against the current v1\/live database/)
+  assert.match(signupTemplate, /\{\{ \.RedirectTo \}\}&token_hash=\{\{ \.TokenHash \}\}&type=signup/)
   assert.match(inviteTemplate, /\{\{ \.RedirectTo \}\}&token_hash=\{\{ \.TokenHash \}\}&type=invite/)
 })
 
@@ -199,11 +206,15 @@ test("auth UI is password-only", () => {
 
   assert.match(authActions, /signInWithPassword/)
   assert.match(authActions, /signUp/)
+  assert.match(authActions, /resendSignupConfirmationAction/)
+  assert.match(authActions, /auth\.resend\(\{[\s\S]*type: "signup"/)
+  assert.match(authActions, /emailRedirectTo: buildAuthCallbackUrl\(origin, nextPath, "signup"\)/)
   assert.doesNotMatch(loginForm, /magicLinkAction|Send magic link|Magic link/)
   assert.doesNotMatch(loginForm, /SocialAuthButtons|Continue with Google|Continue with GitHub/)
   assert.doesNotMatch(signupForm, /SocialAuthButtons|Continue with Google|Continue with GitHub/)
   assert.doesNotMatch(guide, /magic link|social login|Google\/GitHub login/)
   assert.match(guide, /password login, signup confirmation, forgot password, and logout/)
+  assert.match(guide, /supabase-signup-confirmation-template\.html/)
   assert.match(guide, /supabase-invite-template\.html/)
   assert.match(pkg, /"impersonate": "node scripts\/impersonate\.mjs"/)
   assert.match(impersonate, /auth\.admin\.generateLink/)
@@ -314,6 +325,8 @@ test("auth pages follow the shadcn login-02 two-column composition", () => {
   assert.match(signupForm, /title="Sign Up"/)
   assert.match(signupForm, /Create an account and get started/)
   assert.match(signupForm, /Check Your Inbox!/)
+  assert.match(signupForm, /Resend confirmation email/)
+  assert.match(signupForm, /resendSignupConfirmationAction/)
   assert.match(signupForm, /Terms of Use/)
   assert.match(signupForm, /className="w-full"/)
   assert.match(forgotPasswordForm, /title="Reset Password"/)

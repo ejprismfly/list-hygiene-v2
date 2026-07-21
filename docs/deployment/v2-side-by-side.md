@@ -73,6 +73,21 @@ https://beta.listhygiene.com
 
 Users will need to log in separately on v2 because v1 and v2 are on different hostnames. They still authenticate against the same Supabase Auth users table.
 
+Password signup uses Supabase Auth's Confirm signup email. Update the Supabase
+Auth Confirm signup email template to use the server-verification link in
+[supabase-signup-confirmation-template.html](./supabase-signup-confirmation-template.html):
+
+```html
+<a href="{{ .RedirectTo }}&token_hash={{ .TokenHash }}&type=signup">
+  Confirm account
+</a>
+```
+
+The app passes `https://beta.listhygiene.com/auth/callback?type=signup` as
+`.RedirectTo`, plus `next` when needed. The template appends Supabase's
+`token_hash`, so `/auth/callback` can verify the signup and create the app
+session.
+
 Workspace team invites use Supabase Auth's Invite User email plus the app's
 `organization_invitations` table. Set `SUPABASE_SERVICE_ROLE_KEY`, then update
 the Supabase Auth Invite user email template to use the server-verification

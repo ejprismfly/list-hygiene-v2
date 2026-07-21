@@ -2,9 +2,12 @@
 
 import { useActionState } from "react"
 import Link from "next/link"
-import { Mail } from "lucide-react"
+import { Loader2, Mail } from "lucide-react"
 
-import { signupAction } from "@/app/(auth)/actions"
+import {
+  resendSignupConfirmationAction,
+  signupAction,
+} from "@/app/(auth)/actions"
 import { AuthFormShell, AuthSuccessState } from "@/components/auth/auth-form-shell"
 import { AuthMessage } from "@/components/auth/auth-message"
 import { Button, buttonVariants } from "@/components/ui/button"
@@ -19,10 +22,16 @@ export function SignupForm({ nextPath = "/dashboard" }: { nextPath?: string }) {
     signupAction,
     AUTH_FORM_INITIAL_STATE
   )
+  const [resendState, resendFormAction, resendPending] = useActionState(
+    resendSignupConfirmationAction,
+    AUTH_FORM_INITIAL_STATE
+  )
   const authQuery =
     nextPath === "/dashboard"
       ? ""
       : `?${new URLSearchParams({ next: nextPath }).toString()}`
+  const confirmationEmail = state.email || ""
+  const confirmationNextPath = state.nextPath || nextPath
 
   if (state.status === "success") {
     return (
@@ -36,7 +45,33 @@ export function SignupForm({ nextPath = "/dashboard" }: { nextPath?: string }) {
               Please click the link in the email to complete your signup process.
             </p>
             <p>If you don&apos;t see it, be sure to check your spam or junk folder.</p>
+            <AuthMessage state={resendState} />
           </>
+        }
+        footer={
+          <form action={resendFormAction} className="grid w-full gap-2">
+            <input type="hidden" name="email" value={confirmationEmail} />
+            <input type="hidden" name="next" value={confirmationNextPath} />
+            <Button
+              type="submit"
+              variant="outline"
+              className="w-full"
+              disabled={!confirmationEmail || resendPending}
+            >
+              {resendPending && <Loader2 className="size-4 animate-spin" />}
+              Resend confirmation email
+            </Button>
+            <Link
+              href={`/login${authQuery}`}
+              className={buttonVariants({
+                variant: "link",
+                size: "sm",
+                className: "w-full",
+              })}
+            >
+              Back to Login
+            </Link>
+          </form>
         }
       />
     )

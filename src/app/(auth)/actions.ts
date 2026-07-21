@@ -196,19 +196,22 @@ export async function signupAction(
 
   const origin = await getRequestOrigin()
   const supabase = await createClient()
+  let shouldRedirect = false
 
   try {
-    const { error } = await supabase.auth.signUp({
+    const { data, error } = await supabase.auth.signUp({
       email,
       password,
       options: {
-        emailRedirectTo: buildAuthCallbackUrl(origin, nextPath),
+        emailRedirectTo: buildAuthCallbackUrl(origin, nextPath, "signup"),
       },
     })
 
     if (error) {
       return { status: "error", message: error.message }
     }
+
+    shouldRedirect = Boolean(data.session)
   } catch {
     return {
       status: "error",
@@ -216,9 +219,62 @@ export async function signupAction(
     }
   }
 
+  if (shouldRedirect) {
+    redirect(nextPath)
+  }
+
   return {
     status: "success",
     message: "Account created. Check your email to finish signing in.",
+    email,
+    nextPath,
+  }
+}
+
+export async function resendSignupConfirmationAction(
+  _previousState: AuthFormState,
+  formData: FormData
+): Promise<AuthFormState> {
+  const email = getFormString(formData, "email")
+  const nextPath = getNextPath(formData)
+
+  if (!email) {
+    return { status: "error", message: "Email is required." }
+  }
+
+  if (!getSupabaseConfig()) {
+    return missingConfigState
+  }
+
+  const origin = await getRequestOrigin()
+  const supabase = await createClient()
+
+  try {
+    const { error } = await supabase.auth.resend({
+      type: "signup",
+      email,
+      options: {
+        emailRedirectTo: buildAuthCallbackUrl(origin, nextPath, "signup"),
+      },
+    })
+
+    if (error) {
+      return { status: "error", message: error.message, email, nextPath }
+    }
+  } catch {
+    return {
+      status: "error",
+      message: "Unable to resend the confirmation email right now.",
+      email,
+      nextPath,
+    }
+  }
+
+  return {
+    status: "success",
+    message: "Confirmation email resent. Check your inbox and spam folder.",
+    email,
+    nextPath,
   }
 }
 

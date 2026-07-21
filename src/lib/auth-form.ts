@@ -1,6 +1,8 @@
 export type AuthFormState = {
   status: "idle" | "success" | "error"
   message: string
+  email?: string
+  nextPath?: string
 }
 
 export const AUTH_FORM_INITIAL_STATE: AuthFormState = {
