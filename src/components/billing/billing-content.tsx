@@ -188,18 +188,27 @@ function PlanTableSkeleton() {
   return (
     <>
       {Array.from({ length: 3 }).map((_, index) => (
-        <TableRow key={index}>
-          <TableCell>
-            <Skeleton className="h-4 w-16" />
+        <TableRow key={index} className="grid gap-3 p-4 md:table-row md:p-0">
+          <TableCell className="flex items-center justify-between gap-4 p-0 md:table-cell md:p-2">
+            <span className="text-sm text-muted-foreground md:hidden">
+              Credits
+            </span>
+            <Skeleton className="h-4 w-20" />
           </TableCell>
-          <TableCell>
+          <TableCell className="flex items-center justify-between gap-4 p-0 md:table-cell md:p-2">
+            <span className="text-sm text-muted-foreground md:hidden">
+              Price
+            </span>
             <Skeleton className="h-4 w-12" />
           </TableCell>
-          <TableCell>
+          <TableCell className="flex items-center justify-between gap-4 p-0 md:table-cell md:p-2">
+            <span className="text-sm text-muted-foreground md:hidden">
+              Per Unit
+            </span>
             <Skeleton className="h-4 w-14" />
           </TableCell>
-          <TableCell>
-            <Skeleton className="h-8 w-32" />
+          <TableCell className="p-0 md:table-cell md:p-2">
+            <Skeleton className="h-8 w-full md:w-32" />
           </TableCell>
         </TableRow>
       ))}
@@ -445,9 +454,9 @@ export function BillingContent({ email }: BillingContentProps) {
         </Tabs>
 
         <Card>
-          <CardContent className="overflow-x-auto">
-            <Table className="min-w-[34rem]">
-              <TableHeader>
+          <CardContent className="px-0 md:px-(--card-spacing)">
+            <Table className="min-w-0 md:min-w-[34rem]">
+              <TableHeader className="hidden md:table-header-group">
                 <TableRow>
                   <TableHead>Credits</TableHead>
                   <TableHead>Price</TableHead>
@@ -460,14 +469,34 @@ export function BillingContent({ email }: BillingContentProps) {
                   <PlanTableSkeleton />
                 ) : hasPlanRows ? (
                   planRows.map((plan) => (
-                    <TableRow key={plan.id}>
-                      <TableCell>{plan.display_credits || "-"}</TableCell>
-                      <TableCell>{plan.display_price || "-"}</TableCell>
-                      <TableCell>{plan.display_per_unit || "-"}</TableCell>
-                      <TableCell>
+                    <TableRow
+                      key={plan.id}
+                      className="grid gap-3 p-4 md:table-row md:p-0"
+                    >
+                      <TableCell className="flex items-center justify-between gap-4 p-0 md:table-cell md:p-2">
+                        <span className="text-sm text-muted-foreground md:hidden">
+                          Credits
+                        </span>
+                        <span className="font-medium md:font-normal">
+                          {plan.display_credits || "-"}
+                        </span>
+                      </TableCell>
+                      <TableCell className="flex items-center justify-between gap-4 p-0 md:table-cell md:p-2">
+                        <span className="text-sm text-muted-foreground md:hidden">
+                          Price
+                        </span>
+                        <span>{plan.display_price || "-"}</span>
+                      </TableCell>
+                      <TableCell className="flex items-center justify-between gap-4 p-0 md:table-cell md:p-2">
+                        <span className="text-sm text-muted-foreground md:hidden">
+                          Per Unit
+                        </span>
+                        <span>{plan.display_per_unit || "-"}</span>
+                      </TableCell>
+                      <TableCell className="p-0 md:table-cell md:p-2">
                         <Button
                           type="button"
-                          className="w-32"
+                          className="w-full md:w-32"
                           disabled={plan.selected}
                           onClick={() => selectPlan(plan)}
                         >
@@ -478,12 +507,14 @@ export function BillingContent({ email }: BillingContentProps) {
                   ))
                 ) : isEnterprisePlanRange ? (
                   <TableRow>
-                    <TableCell colSpan={4}>
-                      <div className="grid gap-3 py-4 sm:flex sm:items-center sm:justify-between">
+                    <TableCell colSpan={4} className="p-4 md:p-2">
+                      <div className="grid gap-3 py-2 sm:flex sm:items-center sm:justify-between md:py-4">
                         <span>Need more than 1m credits?</span>
                         <a
                           href="mailto:support@listhygiene.com?subject=Enterprise%20billing"
-                          className={buttonVariants({ className: "w-fit" })}
+                          className={buttonVariants({
+                            className: "w-full sm:w-fit",
+                          })}
                         >
                           Contact support
                         </a>
@@ -492,7 +523,7 @@ export function BillingContent({ email }: BillingContentProps) {
                   </TableRow>
                 ) : (
                   <TableRow>
-                    <TableCell colSpan={4}>
+                    <TableCell colSpan={4} className="p-4 md:p-2">
                       No billing plans are configured.
                     </TableCell>
                   </TableRow>
