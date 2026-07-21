@@ -14,12 +14,16 @@ import {
   CartesianGrid,
   Cell,
   Label,
+  Pie,
+  PieChart,
   PolarRadiusAxis,
   RadialBar,
   RadialBarChart,
+  Sector,
   XAxis,
   YAxis,
 } from "recharts"
+import type { PieSectorShapeProps } from "recharts"
 
 import {
   Card,
@@ -166,6 +170,23 @@ function AnimatedNumber({
   )
 }
 
+function AnimatedDisplayNumber({ value }: { value: string }) {
+  const parsedValue = parseDisplayNumber(value)
+  const displayValue = useAnimatedNumber(parsedValue.value)
+
+  if (!parsedValue.isNumeric) {
+    return <span>{value}</span>
+  }
+
+  return (
+    <span>
+      {parsedValue.prefix}
+      {formatNumber(displayValue, parsedValue.decimals)}
+      {parsedValue.suffix}
+    </span>
+  )
+}
+
 function getMilestoneProgressPercent(value: number) {
   if (value < milestoneValues[0]) {
     return 0
@@ -270,6 +291,59 @@ type HorizontalCategoryPoint = {
   category: string
   value: number
   fill: string
+}
+
+type EmailStatusChartItem = {
+  status: string
+  label: string
+  emails: number
+  fill: string
+}
+
+function toStatusKey(label: string) {
+  return label.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "")
+}
+
+function getEmailStatusColor(status: string, index: number) {
+  return (
+    statusChartConfig[status]?.color ||
+    chartColors[index % chartColors.length]
+  )
+}
+
+function getKpiDisplayLabel(label: string) {
+  const normalized = label.toLowerCase()
+
+  if (normalized === "suppressed percentage") {
+    return "Removal Rate"
+  }
+
+  if (normalized === "emails suppressed") {
+    return "Emails Removed"
+  }
+
+  if (normalized === "typo fixes") {
+    return "Typos Fixed"
+  }
+
+  return label
+}
+
+function renderEmailStatusSector(
+  props: PieSectorShapeProps,
+  activeStatus: string
+) {
+  const outerRadius = typeof props.outerRadius === "number" ? props.outerRadius : 90
+  const payload = props.payload as EmailStatusChartItem | undefined
+
+  return (
+    <Sector
+      {...props}
+      outerRadius={
+        payload?.status === activeStatus ? outerRadius + 8 : outerRadius
+      }
+    />
+  )
 }
 
 function getLastTwelveEmptyHistoricalPoints() {
@@ -400,6 +474,7 @@ function buildHorizontalCategoryRows(
 
 export function DashboardContent() {
   const [showDummyData, setShowDummyData] = useState(false)
+  const [activeStatus, setActiveStatus] = useState("valid")
   const [liveData, setLiveData] = useState<DashboardViewData | null>(null)
   const [liveLoading, setLiveLoading] = useState(false)
   const [liveError, setLiveError] = useState("")
@@ -415,6 +490,38 @@ export function DashboardContent() {
         label: String(statusChartConfig[key].label),
         value: 0,
       }))
+  const distributionTotal = distribution.reduce(
+    (total, item) => total + item.value,
+    0
+  )
+  const emailStatusChartData = distributionTotal
+    ? distribution.map((item, index) => {
+        const status = toStatusKey(item.label)
+
+        return {
+          status,
+          label: item.label,
+          emails: item.value,
+          fill: getEmailStatusColor(status, index),
+        }
+      })
+    : [
+        {
+          status: "no-data",
+          label: "No Data",
+          emails: 1,
+          fill: "var(--muted)",
+        },
+      ]
+  const activeChartItem =
+    emailStatusChartData.find((item) => item.status === activeStatus) ??
+    emailStatusChartData[0]
+  const activeStatusKey = activeChartItem?.status || ""
+  const activeStatusPercent =
+    activeChartItem && distributionTotal
+      ? Math.round((activeChartItem.emails / distributionTotal) * 100)
+      : 0
+  const animatedActiveStatusPercent = useAnimatedNumber(activeStatusPercent, 350)
   const historical = normalizeLastTwelveHistoricalPoints(
     activeDashboardData.historical.length
       ? activeDashboardData.historical
@@ -440,7 +547,6 @@ export function DashboardContent() {
     "Emails Removed",
     "Emails Suppressed",
   ])
-  const typosFixed = getKpiNumber(kpis, ["Typos Fixed", "Typo Fixes"])
   const removedChartTotal = Math.max(emailsChecked, emailsRemoved)
   const removedPercent = removedChartTotal
     ? Math.min((emailsRemoved / removedChartTotal) * 100, 100)
@@ -454,18 +560,6 @@ export function DashboardContent() {
         removedChartTotal - emailsRemoved,
         removedChartTotal ? 0 : 1
       ),
-    },
-  ]
-  const currentMonthStats = [
-    {
-      label: "Emails Checked",
-      value: emailsChecked,
-      icon: ShieldCheck,
-    },
-    {
-      label: "Typos Fixed",
-      value: typosFixed,
-      icon: WandSparkles,
     },
   ]
   const horizontalCategoryMax = Math.max(
@@ -599,9 +693,9 @@ export function DashboardContent() {
         <h1 className="text-2xl font-semibold tracking-normal sm:text-3xl">
           {activeDashboardData.monthLabel}
         </h1>
-        <div className="grid gap-4 md:grid-cols-3">
-          {currentMonthStats.slice(0, 1).map((item) => {
-            const Icon = item.icon
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          {kpis.map((item, index) => {
+            const Icon = emptyKpis[index]?.icon || ShieldCheck
 
             return (
               <Card key={item.label}>
@@ -610,29 +704,112 @@ export function DashboardContent() {
                     <Icon className="size-6 text-primary" />
                   </div>
                   <div className="mt-auto grid gap-1">
-                    <p className="text-sm text-muted-foreground">{item.label}</p>
-                    <p className="text-4xl font-semibold tabular-nums">
-                      <AnimatedNumber value={item.value} />
+                    <p className="text-sm text-muted-foreground">
+                      {getKpiDisplayLabel(item.label)}
+                    </p>
+                    <p className="text-3xl font-semibold tabular-nums sm:text-4xl">
+                      <AnimatedDisplayNumber value={item.value} />
                     </p>
                   </div>
                 </CardContent>
               </Card>
             )
           })}
+        </div>
+
+        <div className="grid gap-4 lg:grid-cols-2">
           <Card>
-            <CardContent className="grid min-h-36 gap-3">
-              <div className="flex items-start justify-between gap-3">
-                <div className="grid gap-1">
-                  <p className="text-sm text-muted-foreground">Emails Removed</p>
-                  <p className="text-3xl font-semibold tabular-nums">
-                    {formatNumber(animatedEmailsRemoved)}
-                  </p>
-                </div>
-                <Sparkles className="size-5 text-muted-foreground" />
+            <CardContent className="flex min-h-80 flex-col justify-center gap-4">
+              <ChartContainer
+                config={statusChartConfig}
+                className="mx-auto aspect-square h-[320px] w-full max-w-[360px]"
+              >
+                <PieChart>
+                  <ChartTooltip
+                    cursor={false}
+                    content={<ChartTooltipContent hideLabel nameKey="label" />}
+                  />
+                  <Pie
+                    data={emailStatusChartData}
+                    dataKey="emails"
+                    nameKey="label"
+                    innerRadius={74}
+                    outerRadius={126}
+                    strokeWidth={5}
+                    shape={(props: PieSectorShapeProps) =>
+                      renderEmailStatusSector(props, activeStatusKey)
+                    }
+                    onMouseEnter={(item) => {
+                      const payload =
+                        item.payload as EmailStatusChartItem | undefined
+
+                      if (payload?.status) {
+                        setActiveStatus(payload.status)
+                      }
+                    }}
+                    onClick={(item) => {
+                      const payload =
+                        item.payload as EmailStatusChartItem | undefined
+
+                      if (payload?.status) {
+                        setActiveStatus(payload.status)
+                      }
+                    }}
+                  >
+                    <Label
+                      content={({ viewBox }) => {
+                        if (
+                          !viewBox ||
+                          !("cx" in viewBox) ||
+                          !("cy" in viewBox) ||
+                          typeof viewBox.cx !== "number" ||
+                          typeof viewBox.cy !== "number"
+                        ) {
+                          return null
+                        }
+
+                        return (
+                          <text
+                            x={viewBox.cx}
+                            y={viewBox.cy}
+                            textAnchor="middle"
+                            dominantBaseline="middle"
+                          >
+                            <tspan
+                              x={viewBox.cx}
+                              y={viewBox.cy - 8}
+                              className="fill-foreground text-2xl font-semibold"
+                            >
+                              {formatNumber(animatedActiveStatusPercent)}%
+                            </tspan>
+                            <tspan
+                              x={viewBox.cx}
+                              y={viewBox.cy + 16}
+                              className="fill-muted-foreground text-xs"
+                            >
+                              {activeChartItem?.label}
+                            </tspan>
+                          </text>
+                        )
+                      }}
+                    />
+                  </Pie>
+                </PieChart>
+              </ChartContainer>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardContent className="flex min-h-80 flex-col justify-center gap-4">
+              <div className="grid gap-1">
+                <p className="text-sm text-muted-foreground">Emails Removed</p>
+                <p className="text-3xl font-semibold tabular-nums">
+                  {formatNumber(animatedEmailsRemoved)}
+                </p>
               </div>
               <ChartContainer
                 config={removedChartConfig}
-                className="mx-auto aspect-square h-32 w-full max-w-36"
+                className="mx-auto aspect-square h-[240px] w-full max-w-[280px]"
               >
                 <RadialBarChart
                   data={removedChartData}
@@ -672,7 +849,7 @@ export function DashboardContent() {
                             <tspan
                               x={viewBox.cx}
                               y={viewBox.cy}
-                              className="fill-foreground text-xl font-semibold"
+                              className="fill-foreground text-2xl font-semibold"
                             >
                               {formatNumber(animatedRemovedPercent)}%
                             </tspan>
@@ -702,25 +879,6 @@ export function DashboardContent() {
               </p>
             </CardContent>
           </Card>
-          {currentMonthStats.slice(1).map((item) => {
-            const Icon = item.icon
-
-            return (
-              <Card key={item.label}>
-                <CardContent className="grid min-h-36 gap-4">
-                  <div className="flex size-12 items-center justify-center rounded-full bg-muted">
-                    <Icon className="size-6 text-primary" />
-                  </div>
-                  <div className="mt-auto grid gap-1">
-                    <p className="text-sm text-muted-foreground">{item.label}</p>
-                    <p className="text-4xl font-semibold tabular-nums">
-                      <AnimatedNumber value={item.value} />
-                    </p>
-                  </div>
-                </CardContent>
-              </Card>
-            )
-          })}
         </div>
       </section>
 
