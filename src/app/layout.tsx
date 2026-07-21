@@ -2,7 +2,6 @@ import type { Metadata } from "next";
 import Script from "next/script";
 
 import { GoogleTagManager } from "@/components/app/google-tag-manager";
-import { ThemeToggle } from "@/components/app/theme-toggle";
 
 import "./globals.css";
 
@@ -43,9 +42,6 @@ export default function RootLayout({
           dangerouslySetInnerHTML={{ __html: themeScript }}
         />
         <GoogleTagManager />
-        <div className="fixed right-4 bottom-4 z-50">
-          <ThemeToggle />
-        </div>
         {children}
       </body>
     </html>

@@ -735,6 +735,24 @@ test("custom CSS is limited to the shadcn global stylesheet", () => {
   assert.deepEqual(cssFiles, ["src/app/globals.css"])
 })
 
+test("theme mode switcher lives in profile as a button group", () => {
+  const layout = read("src/app/layout.tsx")
+  const profileContent = read("src/components/profile/profile-content.tsx")
+  const themeToggle = read("src/components/app/theme-toggle.tsx")
+  const buttonGroup = read("src/components/ui/button-group.tsx")
+
+  assert.match(layout, /list-hygiene-theme/)
+  assert.doesNotMatch(layout, /ThemeToggle|ThemeModeButtonGroup/)
+  assert.doesNotMatch(layout, /fixed right-4 bottom-4/)
+  assert.match(profileContent, /Appearance/)
+  assert.match(profileContent, /<ThemeModeButtonGroup \/>/)
+  assert.match(themeToggle, /export function ThemeModeButtonGroup/)
+  assert.match(themeToggle, /localStorage\.setItem\(storageKey, nextTheme\)/)
+  assert.match(themeToggle, /aria-pressed=\{theme === "dark"\}/)
+  assert.match(buttonGroup, /data-slot="button-group"/)
+  assert.match(buttonGroup, /role="group"/)
+})
+
 test("desktop and mobile shells share the same workspace management component", () => {
   const desktopShell = read("src/components/app/app-shell.tsx")
   const mobileShell = read("src/components/app/mobile-menu.tsx")

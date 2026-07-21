@@ -1,6 +1,7 @@
 import { Mail, MessageCircle } from "lucide-react"
 
 import { LogoutForm } from "@/components/app/logout-form"
+import { ThemeModeButtonGroup } from "@/components/app/theme-toggle"
 import { Badge } from "@/components/ui/badge"
 import { buttonVariants } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
@@ -35,6 +36,25 @@ export function ProfileContent({ email }: { email: string }) {
             Reset Password
           </a>
         </div>
+      </section>
+
+      <Separator />
+
+      <section className="grid gap-6">
+        <h2 className="text-2xl font-semibold tracking-normal sm:text-3xl">
+          Appearance
+        </h2>
+        <Card>
+          <CardContent className="grid gap-3 sm:flex sm:items-center sm:justify-between">
+            <div className="grid gap-1">
+              <p className="text-lg">Color Mode</p>
+              <p className="text-sm text-muted-foreground">
+                Choose how List Hygiene appears on this device.
+              </p>
+            </div>
+            <ThemeModeButtonGroup />
+          </CardContent>
+        </Card>
       </section>
 
       <Separator />
