@@ -170,6 +170,8 @@ export function WorkspaceSwitcher({
   const [inviteEmail, setInviteEmail] = useState("")
   const [inviteRole, setInviteRole] = useState<"admin" | "member">("member")
   const [lastInviteLink, setLastInviteLink] = useState("")
+  const [inviteStatusMessage, setInviteStatusMessage] = useState("")
+  const [inviteStatusIsError, setInviteStatusIsError] = useState(false)
   const [createDialogOpen, setCreateDialogOpen] = useState(false)
   const [managerOpen, setManagerOpen] = useState(false)
   const [archiveDialogOpen, setArchiveDialogOpen] = useState(false)
@@ -459,8 +461,12 @@ export function WorkspaceSwitcher({
 
   async function inviteMember() {
     const email = inviteEmail.trim()
+    setInviteStatusMessage("")
+    setInviteStatusIsError(false)
+
     if (!organizationId || !selectedWorkspace || !email) {
-      setMessage("Member email is required.")
+      setInviteStatusMessage("Member email is required.")
+      setInviteStatusIsError(true)
       return
     }
 
@@ -493,12 +499,15 @@ export function WorkspaceSwitcher({
           index === existingIndex ? nextMember : member
         )
       })
-      setMessage(`${email} added to ${workspaceLabel(selectedWorkspace.name)}.`)
+      setInviteStatusMessage(
+        `${email} added to ${workspaceLabel(selectedWorkspace.name)}.`
+      )
       return
     }
 
     if (memberResponse.status !== 404) {
-      setMessage(memberData.error || "Unable to add member.")
+      setInviteStatusMessage(memberData.error || "Unable to add member.")
+      setInviteStatusIsError(true)
       return
     }
 
@@ -509,7 +518,8 @@ export function WorkspaceSwitcher({
     })
     const data = await response.json()
     if (!response.ok) {
-      setMessage(data.error || "Unable to invite member.")
+      setInviteStatusMessage(data.error || "Unable to invite member.")
+      setInviteStatusIsError(true)
       return
     }
 
@@ -527,7 +537,9 @@ export function WorkspaceSwitcher({
         index === existingIndex ? invitation : item
       )
     })
-    setMessage(`${email} invited to ${workspaceLabel(selectedWorkspace.name)}.`)
+    setInviteStatusMessage(
+      `${email} invited to ${workspaceLabel(selectedWorkspace.name)}.`
+    )
   }
 
   async function copyInviteLink() {
@@ -728,7 +740,14 @@ export function WorkspaceSwitcher({
                         type="email"
                         value={inviteEmail}
                         disabled={!managerEnabled}
-                        onChange={(event) => setInviteEmail(event.target.value)}
+                        aria-describedby={
+                          inviteStatusMessage ? "member-email-feedback" : undefined
+                        }
+                        onChange={(event) => {
+                          setInviteEmail(event.target.value)
+                          setInviteStatusMessage("")
+                          setInviteStatusIsError(false)
+                        }}
                         placeholder="member@example.com"
                       />
                     </div>
@@ -759,6 +778,18 @@ export function WorkspaceSwitcher({
                       Invite
                     </Button>
                   </div>
+                  {inviteStatusMessage && (
+                    <p
+                      id="member-email-feedback"
+                      className={
+                        inviteStatusIsError
+                          ? "text-sm text-destructive"
+                          : "text-sm text-muted-foreground"
+                      }
+                    >
+                      {inviteStatusMessage}
+                    </p>
+                  )}
 
                   {lastInviteLink ? (
                     <div className="grid gap-2">
