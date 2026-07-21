@@ -1,6 +1,7 @@
 import Link from "next/link"
 import type { Metadata } from "next"
 
+import { BillingReturnTracker } from "@/components/billing/billing-return-tracker"
 import { buttonVariants } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { getAppUserOrRedirect } from "@/lib/app-session"
@@ -71,6 +72,7 @@ export default async function BillingFailedPage({
 
   return (
     <main className="min-h-svh bg-background p-4 sm:p-6 md:p-20">
+      <BillingReturnTracker status="failed" />
       <div className="mx-auto grid max-w-lg gap-6">
         <div className="grid gap-4">
           <h1 className="text-2xl font-semibold tracking-normal sm:text-3xl">

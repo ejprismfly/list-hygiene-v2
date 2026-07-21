@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react"
 import { Info } from "lucide-react"
 
+import { BillingReturnTracker } from "@/components/billing/billing-return-tracker"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Button, buttonVariants } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -18,6 +19,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { trackPlanChangeStarted } from "@/lib/billing-tracking"
 
 type BillingContentProps = {
   email: string
@@ -77,7 +79,10 @@ type BillingResponse = {
   portal: string
   billing_context?: {
     customer_id?: string | null
+    organization_id?: string | null
+    workspace_id?: string | null
     account_source?: string
+    billing_scope?: string | null
   }
 }
 
@@ -296,6 +301,10 @@ export function BillingContent({ email }: BillingContentProps) {
 
   function selectPlan(plan: BillingPlanRow) {
     if (plan.checkout_url) {
+      trackPlanChangeStarted({
+        context: billing.billing_context || null,
+        plan,
+      })
       openBillingRoute(plan.checkout_url, "/api/billing/checkout")
       return
     }
@@ -312,8 +321,14 @@ export function BillingContent({ email }: BillingContentProps) {
   const paymentMethod = billing.payments[0]
 
   return (
-    <div className="grid gap-8 md:gap-12">
-      <section className="grid gap-8">
+    <>
+      <BillingReturnTracker
+        context={billing.billing_context || null}
+        disabled={loading}
+        status="success"
+      />
+      <div className="grid gap-8 md:gap-12">
+        <section className="grid gap-8">
         <h1 className="text-2xl font-semibold tracking-normal sm:text-3xl">
           Your Plan
         </h1>
@@ -525,6 +540,7 @@ export function BillingContent({ email }: BillingContentProps) {
         </Card>
         <Separator />
       </section>
-    </div>
+      </div>
+    </>
   )
 }

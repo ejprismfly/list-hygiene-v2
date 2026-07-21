@@ -132,6 +132,7 @@ test("side-by-side deployment docs capture live database constraints", () => {
     "ORG_WORKSPACES_ENABLED",
     "SUPABASE_SERVICE_ROLE_KEY",
     "DATABASE_URL",
+    "NEXT_PUBLIC_GTM_ID",
     "NEXT_PUBLIC_KLAVIYO_CLIENT_ID",
     "KLAVIYO_CLIENT_SECRET",
     "STRIPE_SECRET_KEY",
@@ -333,6 +334,42 @@ test("billing manage opens Stripe portal and plan actions open checkout", () => 
   assert.match(billingCustomer, /getOrCreateStripeCustomerByEmail/)
   assert.match(billingFailed, /href="\/billing"[\s\S]*Retry Payment/)
   assert.doesNotMatch(billingFailed, /<Button>Retry Payment<\/Button>/)
+})
+
+test("browser billing GTM tracking uses dataLayer without PII", () => {
+  const env = read(".env.example")
+  const layout = read("src/app/layout.tsx")
+  const gtm = read("src/components/app/google-tag-manager.tsx")
+  const analytics = read("src/lib/analytics.ts")
+  const billingTracking = read("src/lib/billing-tracking.ts")
+  const billingContent = read("src/components/billing/billing-content.tsx")
+  const returnTracker = read("src/components/billing/billing-return-tracker.tsx")
+  const billingFailed = read("src/app/(app)/billing/failed/page.tsx")
+
+  assert.match(env, /^NEXT_PUBLIC_GTM_ID=/m)
+  assert.match(layout, /import \{ GoogleTagManager \}/)
+  assert.match(layout, /<GoogleTagManager \/>/)
+  assert.match(gtm, /NEXT_PUBLIC_GTM_ID/)
+  assert.match(gtm, /googletagmanager\.com\/gtm\.js/)
+  assert.match(gtm, /dataLayer/)
+  assert.match(analytics, /pushDataLayerEvent/)
+  assert.match(analytics, /pushDedupedDataLayerEvent/)
+  assert.match(analytics, /"email"/)
+  assert.match(analytics, /"user_id"/)
+  assert.match(billingTracking, /lh_plan_change_started/)
+  assert.match(billingTracking, /lh_payment_success/)
+  assert.match(billingTracking, /lh_payment_failed/)
+  assert.match(billingTracking, /event_category: "billing"/)
+  assert.match(billingTracking, /billing_scope/)
+  assert.match(billingTracking, /stripe_checkout_session_id/)
+  assert.match(billingContent, /trackPlanChangeStarted/)
+  assert.match(billingContent, /<BillingReturnTracker[\s\S]*status="success"/)
+  assert.match(returnTracker, /\/api\/billing\/customer/)
+  assert.match(returnTracker, /session_id/)
+  assert.match(returnTracker, /params\.get\("cancel"\) === "true"/)
+  assert.match(billingFailed, /<BillingReturnTracker status="failed" \/>/)
+  assert.doesNotMatch(billingTracking, /email|user_id|userEmail|user_email/)
+  assert.doesNotMatch(returnTracker, /email|user_id|userEmail|user_email/)
 })
 
 test("billing plan card shows separate trial, plan, and overage usage states", () => {
