@@ -42,11 +42,11 @@ export const dashboardDemoData = {
       value: "13.2%",
     },
     {
-      label: "Emails Suppressed",
+      label: "Emails Removed",
       value: "1,640",
     },
     {
-      label: "Typo Fixes",
+      label: "Typos Fixed",
       value: "87",
     },
   ],

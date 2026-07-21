@@ -54,7 +54,7 @@ export function OnboardingContent() {
         </p>
         <div>
           <Badge variant="secondary" className="h-auto whitespace-normal px-4 py-2 text-center text-sm sm:text-base">
-            Unlock 300 trial credits when you connect your email platform. *
+            Eligible users unlock 300 trial credits when connecting an email platform. *
           </Badge>
         </div>
         <div className="pt-4">

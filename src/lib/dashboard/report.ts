@@ -27,6 +27,7 @@ const milestoneTargets = [
 
 export type DashboardHistoricalPoint = {
   month: string
+  monthStart?: string
   valid: number
   invalid: number
   risky: number
@@ -49,6 +50,28 @@ export function getCurrentMonthRange(now = new Date()) {
     start: start.toISOString(),
     end: now.toISOString(),
   }
+}
+
+export function getLastTwelveMonthBuckets(now = new Date()) {
+  const formatter = new Intl.DateTimeFormat("en-US", { month: "short" })
+
+  return Array.from({ length: 12 }, (_, index): DashboardHistoricalPoint => {
+    const date = new Date(now.getFullYear(), now.getMonth() - (11 - index), 1)
+    const monthStart = [
+      date.getFullYear(),
+      String(date.getMonth() + 1).padStart(2, "0"),
+      "01",
+    ].join("-")
+
+    return {
+      month: formatter.format(date),
+      monthStart,
+      valid: 0,
+      invalid: 0,
+      risky: 0,
+      restricted: 0,
+    }
+  })
 }
 
 export function buildMilestoneGoals(totalSuppressed: number) {
@@ -111,11 +134,11 @@ export function buildDashboardReport(
         value: `${suppressedPercentage}%`,
       },
       {
-        label: "Emails Suppressed",
+        label: "Emails Removed",
         value: counts.monthSuppressed.toLocaleString(),
       },
       {
-        label: "Typo Fixes",
+        label: "Typos Fixed",
         value: (counts.typoFixes || 0).toLocaleString(),
       },
     ],

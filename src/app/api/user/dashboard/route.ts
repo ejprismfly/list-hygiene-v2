@@ -13,6 +13,7 @@ import {
   DASHBOARD_CATEGORY_KEYS,
   buildDashboardReport,
   getCurrentMonthRange,
+  getLastTwelveMonthBuckets,
   type DashboardCategory,
   type DashboardCategoryBreakdownPoint,
   type DashboardHistoricalPoint,
@@ -161,40 +162,73 @@ export async function GET(request: Request) {
   }
 
   async function loadHistorical(): Promise<DashboardHistoricalPoint[]> {
+    const buckets = getLastTwelveMonthBuckets(now)
+    const bucketsByMonthStart = new Map(
+      buckets.map((bucket) => [bucket.monthStart, bucket])
+    )
+    const firstMonthStart = buckets[0]?.monthStart
     const query = scopedHistoricalQuery()
-      .order("start", { ascending: false })
-      .limit(12)
+      .order("start", { ascending: true })
 
-    const { data, error } = await query
+    const scopedQuery = firstMonthStart
+      ? query.gte("start", `${firstMonthStart}T00:00:00.000Z`)
+      : query
+
+    const { data, error } = await scopedQuery
     if (error) {
       console.warn("Dashboard historical lookup failed:", error.message)
-      return []
+      return buckets
     }
 
-    return (data || [])
-      .reverse()
-      .map((row) => ({
-        month: String(row.month || ""),
-        valid: Number(row.valid || 0),
-        invalid: Number(row.invalid || 0),
-        risky: Number(row.risky || 0),
-        restricted: Number(row.restricted || 0),
-      }))
+    for (const row of data || []) {
+      const start = row.start ? new Date(row.start) : null
+      if (!start || Number.isNaN(start.getTime())) {
+        continue
+      }
+
+      const monthStart = [
+        start.getFullYear(),
+        String(start.getMonth() + 1).padStart(2, "0"),
+        "01",
+      ].join("-")
+      const bucket = bucketsByMonthStart.get(monthStart)
+      if (!bucket) {
+        continue
+      }
+
+      bucket.valid = Number(row.valid || 0)
+      bucket.invalid = Number(row.invalid || 0)
+      bucket.risky = Number(row.risky || 0)
+      bucket.restricted = Number(row.restricted || 0)
+    }
+
+    return buckets
   }
 
   async function loadCategoryBreakdown(): Promise<DashboardCategoryBreakdownPoint[]> {
+    const buckets = getLastTwelveMonthBuckets(now).map((bucket) => ({
+      month: bucket.month,
+      monthStart: bucket.monthStart,
+      sortIdx: 0,
+      categories: createEmptyDashboardCategoryBreakdownCategories(),
+    }))
+    const bucketsByMonthStart = new Map(
+      buckets.map((bucket) => [bucket.monthStart, bucket])
+    )
+    const firstMonthStart = buckets[0]?.monthStart
     const query = scopedBreakdownQuery()
-      .order("month_start", { ascending: false })
+      .order("month_start", { ascending: true })
       .order("sort_idx", { ascending: true })
-      .limit(12 * 27)
 
-    const { data, error } = await query
+    const scopedQuery = firstMonthStart
+      ? query.gte("month_start", firstMonthStart)
+      : query
+
+    const { data, error } = await scopedQuery
     if (error) {
       console.warn("Dashboard category breakdown lookup failed:", error.message)
-      return []
+      return buckets
     }
-
-    const rowsByMonth = new Map<string, DashboardCategoryBreakdownPoint>()
 
     for (const row of data || []) {
       const monthStart = String(row.month_start || "")
@@ -207,23 +241,16 @@ export async function GET(request: Request) {
         continue
       }
 
-      const existing =
-        rowsByMonth.get(monthStart) ||
-        {
-          month: new Intl.DateTimeFormat("en-US", { month: "short" }).format(
-            new Date(`${monthStart}T00:00:00Z`)
-          ),
-          monthStart,
-          sortIdx: Number(row.sort_idx || 0),
-          categories: createEmptyDashboardCategoryBreakdownCategories(),
-        }
+      const existing = bucketsByMonthStart.get(monthStart)
+      if (!existing) {
+        continue
+      }
 
       existing.categories[category][String(row.key || "")] = Number(row.count || 0)
       existing.sortIdx = Math.min(existing.sortIdx ?? 0, Number(row.sort_idx || 0))
-      rowsByMonth.set(monthStart, existing)
     }
 
-    return Array.from(rowsByMonth.values()).reverse()
+    return buckets
   }
 
   async function loadCurrentMonthReport(): Promise<CurrentMonthReport | null> {

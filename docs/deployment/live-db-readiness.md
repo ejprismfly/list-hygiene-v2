@@ -17,6 +17,7 @@ For the current live database, use the additive production SQL from the v1/core 
 /root/list-hygiene/list-hygiene-core/sql/20260706_backfill_organizations_workspaces.sql
 /root/list-hygiene/list-hygiene-core/sql/20260707_workspace_archiving.sql
 /root/list-hygiene/list-hygiene-core/sql/20260709_workspace_billing.sql
+/root/list-hygiene/list-hygiene-v2/docs/migration/sql/20260721_trial_credit_redemptions.sql
 /root/list-hygiene/list-hygiene-core/sql/20260709_workspace_report_tables.sql
 ```
 
@@ -45,14 +46,24 @@ bulk_jobs.organization_id
 bulk_jobs.workspace_id
 bulk_emails.organization_id
 bulk_emails.workspace_id
+bulk_emails.merged
+bulk_emails.typo_fixed
+bulk_emails.attempts_record
+bulk_emails.klaviyo_profile_id
+bulk_emails.leading_period_email
 stripe_accounts.organization_id
 stripe_accounts.workspace_id
 stripe_payment_methods.organization_id
 stripe_payment_methods.workspace_id
 credit_history.organization_id
 credit_history.workspace_id
+credit_history.source
+credit_history.description
+trial_credit_redemptions.user_id
+trial_credit_redemptions.external_account_id
 email_report_tbl.organization_id
 email_report_tbl.workspace_id
+email_report_tbl.updated_at
 emails_historical_performance.organization_id
 emails_historical_performance.workspace_id
 email_usage_monthly.organization_id

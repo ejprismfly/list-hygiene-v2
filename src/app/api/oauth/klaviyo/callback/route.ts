@@ -12,6 +12,7 @@ import { fetchKlaviyoSegments } from "@/lib/klaviyo-segments"
 
 const scopes =
   "segments:read segments:write lists:read lists:write profiles:read profiles:write accounts:read subscriptions:write subscriptions:read"
+const TRIAL_CREDITS = 300
 
 type KlaviyoToken = {
   access_token?: string
@@ -19,6 +20,16 @@ type KlaviyoToken = {
   expires_in?: number
   scope?: string
 }
+
+type SupabaseWriteError = {
+  code?: string
+  message?: string
+  details?: string
+}
+
+type TrialReservation =
+  | { eligible: true; redemptionId: string }
+  | { eligible: false; reason: "platform_account_seen" | "user_redeemed" | "ledger_unavailable" }
 
 function htmlMessage(status: "connected" | "blocked" | "failed", id?: string) {
   return new Response(
@@ -52,6 +63,200 @@ async function getKlaviyoAccounts(accessToken: string) {
   })
   const json = await response.json()
   return Array.isArray(json.data) ? json.data : []
+}
+
+function isDuplicateError(error: SupabaseWriteError | null | undefined) {
+  return error?.code === "23505"
+}
+
+function isMissingLedgerError(error: SupabaseWriteError | null | undefined) {
+  return (
+    error?.code === "42P01" ||
+    error?.code === "42703" ||
+    /trial_credit_redemptions/i.test(error?.message || "")
+  )
+}
+
+async function hasUserRedeemedTrial({
+  supabase,
+  userId,
+}: {
+  supabase: Awaited<ReturnType<typeof getDataClient>>
+  userId: string
+}) {
+  const { data: trialPlan, error: trialPlanError } = await supabase
+    .from("stripe_accounts")
+    .select("id")
+    .eq("user_id", userId)
+    .gt("trial_plan", 0)
+    .limit(1)
+    .maybeSingle()
+
+  if (trialPlanError && !isMissingLedgerError(trialPlanError)) {
+    console.error("Trial plan eligibility lookup error:", trialPlanError)
+  }
+
+  if (trialPlan?.id) {
+    return true
+  }
+
+  const { data: trialRedemption, error: trialRedemptionError } = await supabase
+    .from("stripe_accounts")
+    .select("id")
+    .eq("user_id", userId)
+    .not("trial_redeemed_with", "is", null)
+    .limit(1)
+    .maybeSingle()
+
+  if (trialRedemptionError && !isMissingLedgerError(trialRedemptionError)) {
+    console.error(
+      "Trial redemption eligibility lookup error:",
+      trialRedemptionError
+    )
+  }
+
+  if (trialRedemption?.id) {
+    return true
+  }
+
+  const { data: trialHistory, error: trialHistoryError } = await supabase
+    .from("credit_history")
+    .select("id")
+    .eq("user_id", userId)
+    .or("source.eq.trial,reason.eq.trial,context.eq.trial")
+    .limit(1)
+    .maybeSingle()
+
+  if (trialHistoryError && !isMissingLedgerError(trialHistoryError)) {
+    console.error("Trial credit history eligibility lookup error:", trialHistoryError)
+  }
+
+  return Boolean(trialHistory?.id)
+}
+
+async function reserveTrialRedemption({
+  accountId,
+  klaviyoAccountId,
+  organizationId,
+  supabase,
+  userId,
+  workspaceId,
+}: {
+  accountId: string
+  klaviyoAccountId: string
+  organizationId: string | null
+  supabase: Awaited<ReturnType<typeof getDataClient>>
+  userId: string
+  workspaceId: string | null
+}): Promise<TrialReservation> {
+  const { error: directoryError } = await supabase
+    .from("klaviyo_accounts_directory")
+    .insert({
+      user_id: userId,
+      account_id: accountId,
+    })
+
+  if (directoryError) {
+    if (isDuplicateError(directoryError)) {
+      return { eligible: false, reason: "platform_account_seen" }
+    }
+
+    console.error("Klaviyo account directory insert error:", directoryError)
+    return { eligible: false, reason: "ledger_unavailable" }
+  }
+
+  if (await hasUserRedeemedTrial({ supabase, userId })) {
+    return { eligible: false, reason: "user_redeemed" }
+  }
+
+  const { data, error } = await supabase
+    .from("trial_credit_redemptions")
+    .insert({
+      user_id: userId,
+      organization_id: organizationId,
+      workspace_id: workspaceId,
+      platform: "klaviyo",
+      external_account_id: accountId,
+      klaviyo_account_id: klaviyoAccountId,
+      credits_granted: TRIAL_CREDITS,
+      status: "reserved",
+    })
+    .select("id")
+    .single()
+
+  if (error || !data?.id) {
+    if (isDuplicateError(error)) {
+      return { eligible: false, reason: "user_redeemed" }
+    }
+
+    if (isMissingLedgerError(error)) {
+      console.error("Trial redemption ledger is not available:", error)
+      return { eligible: false, reason: "ledger_unavailable" }
+    }
+
+    console.error("Trial redemption reservation error:", error)
+    return { eligible: false, reason: "ledger_unavailable" }
+  }
+
+  return { eligible: true, redemptionId: String(data.id) }
+}
+
+async function markTrialRedemption({
+  redemptionId,
+  status,
+  stripeAccountId,
+  supabase,
+}: {
+  redemptionId: string
+  status: "granted" | "failed"
+  stripeAccountId?: string | null
+  supabase: Awaited<ReturnType<typeof getDataClient>>
+}) {
+  const { error } = await supabase
+    .from("trial_credit_redemptions")
+    .update({
+      status,
+      stripe_account_id: stripeAccountId || null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", redemptionId)
+
+  if (error) {
+    console.error("Trial redemption status update error:", error)
+  }
+}
+
+async function recordTrialCreditHistory({
+  klaviyoAccountId,
+  organizationId,
+  supabase,
+  userId,
+  workspaceId,
+}: {
+  klaviyoAccountId: string
+  organizationId: string | null
+  supabase: Awaited<ReturnType<typeof getDataClient>>
+  userId: string
+  workspaceId: string | null
+}) {
+  const { error } = await supabase.from("credit_history").insert({
+    user_id: userId,
+    organization_id: organizationId,
+    workspace_id: workspaceId,
+    klaviyo_account_id: klaviyoAccountId,
+    credits_delta: TRIAL_CREDITS,
+    credits_remaining: TRIAL_CREDITS,
+    change: TRIAL_CREDITS,
+    remaining: TRIAL_CREDITS,
+    reason: "trial",
+    context: "klaviyo_oauth",
+    source: "trial",
+    description: "Trial credits granted",
+  })
+
+  if (error) {
+    console.error("Trial credit history insert error:", error)
+  }
 }
 
 export async function GET(request: Request) {
@@ -152,18 +357,16 @@ export async function GET(request: Request) {
     return htmlMessage("failed")
   }
 
-  const { data: knownAccount } = await supabase
-    .from("klaviyo_accounts_directory")
-    .select("user_id, account_id")
-    .eq("account_id", account.id)
-    .maybeSingle()
+  const trialReservation = await reserveTrialRedemption({
+    accountId: account.id,
+    klaviyoAccountId: newKlaviyoAccount.id,
+    organizationId: tenantContext?.organizationId || null,
+    supabase,
+    userId: user.id,
+    workspaceId: tenantContext?.workspaceId || null,
+  })
 
-  if (!knownAccount?.account_id) {
-    await supabase.from("klaviyo_accounts_directory").insert({
-      user_id: user.id,
-      account_id: account.id,
-    })
-
+  if (trialReservation.eligible) {
     const billingLookup = await getStripeAccountForBilling(
       supabase,
       user.id,
@@ -177,11 +380,45 @@ export async function GET(request: Request) {
 
     if (billingAccount?.id) {
       if (!billingAccount.trial_plan) {
-        await updateStripeAccountById(supabase, billingAccount, {
-          trial_plan: 300,
-          trial_remaining: 300,
-          trial_used: 0,
-          trial_redeemed_with: newKlaviyoAccount.id,
+        const { error: trialUpdateError } = await updateStripeAccountById(
+          supabase,
+          billingAccount,
+          {
+            trial_plan: TRIAL_CREDITS,
+            trial_remaining: TRIAL_CREDITS,
+            trial_used: 0,
+            trial_redeemed_with: newKlaviyoAccount.id,
+          }
+        )
+
+        if (trialUpdateError) {
+          console.error("Trial credit update error:", trialUpdateError)
+          await markTrialRedemption({
+            redemptionId: trialReservation.redemptionId,
+            status: "failed",
+            supabase,
+          })
+        } else {
+          await markTrialRedemption({
+            redemptionId: trialReservation.redemptionId,
+            status: "granted",
+            stripeAccountId: String(billingAccount.id),
+            supabase,
+          })
+          await recordTrialCreditHistory({
+            klaviyoAccountId: newKlaviyoAccount.id,
+            organizationId: tenantContext?.organizationId || null,
+            supabase,
+            userId: user.id,
+            workspaceId: tenantContext?.workspaceId || null,
+          })
+        }
+      } else {
+        await markTrialRedemption({
+          redemptionId: trialReservation.redemptionId,
+          status: "failed",
+          stripeAccountId: String(billingAccount.id),
+          supabase,
         })
       }
     } else if (process.env.STRIPE_SECRET_KEY) {
@@ -211,14 +448,50 @@ export async function GET(request: Request) {
           )
         : await getOrCreateStripeCustomerByEmail(user.email, metadata)
 
-      await supabase.from("stripe_accounts").insert({
-        user_id: user.id,
-        customer_id: customer.id,
-        ...getBillingTenantFields(billingScope),
-        trial_plan: 300,
-        trial_remaining: 300,
-        trial_used: 0,
-        trial_redeemed_with: newKlaviyoAccount.id,
+      const { data: createdBillingAccount, error: billingInsertError } =
+        await supabase
+          .from("stripe_accounts")
+          .insert({
+            user_id: user.id,
+            customer_id: customer.id,
+            ...getBillingTenantFields(billingScope),
+            trial_plan: TRIAL_CREDITS,
+            trial_remaining: TRIAL_CREDITS,
+            trial_used: 0,
+            trial_redeemed_with: newKlaviyoAccount.id,
+          })
+          .select("id")
+          .single()
+
+      if (billingInsertError) {
+        console.error("Trial billing account insert error:", billingInsertError)
+        await markTrialRedemption({
+          redemptionId: trialReservation.redemptionId,
+          status: "failed",
+          supabase,
+        })
+      } else {
+        await markTrialRedemption({
+          redemptionId: trialReservation.redemptionId,
+          status: "granted",
+          stripeAccountId: createdBillingAccount?.id
+            ? String(createdBillingAccount.id)
+            : null,
+          supabase,
+        })
+        await recordTrialCreditHistory({
+          klaviyoAccountId: newKlaviyoAccount.id,
+          organizationId: tenantContext?.organizationId || null,
+          supabase,
+          userId: user.id,
+          workspaceId: tenantContext?.workspaceId || null,
+        })
+      }
+    } else {
+      await markTrialRedemption({
+        redemptionId: trialReservation.redemptionId,
+        status: "failed",
+        supabase,
       })
     }
   }

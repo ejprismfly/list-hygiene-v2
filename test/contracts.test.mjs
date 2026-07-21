@@ -28,6 +28,7 @@ test("Supabase CLI migration includes workspace-era v1 compatibility tables and 
     "create table if not exists public.workspace_members",
     "create table if not exists public.organization_invitations",
     "create table if not exists public.klaviyo_accounts_directory",
+    "create table if not exists public.trial_credit_redemptions",
     "account_details jsonb",
     "segments jsonb",
     "selected_segment jsonb",
@@ -55,6 +56,8 @@ test("Supabase CLI migration includes workspace-era v1 compatibility tables and 
     "trial_remaining integer",
     "trial_used integer",
     "trial_redeemed_with uuid",
+    "trial_credit_redemptions_user_once_idx",
+    "trial_credit_redemptions_platform_account_once_idx",
     "add column if not exists active boolean not null default true",
     "payment_id text",
     "change integer",
@@ -66,6 +69,7 @@ test("Supabase CLI migration includes workspace-era v1 compatibility tables and 
     "email_usage_monthly_workspace_unique",
     "email_usage_breakdown_monthly_workspace_unique",
     "klaviyo_accounts_directory_select_own",
+    "trial_credit_redemptions_select_tenant",
   ]
 
   for (const snippet of requiredSnippets) {
@@ -77,6 +81,13 @@ test("documented bootstrap SQL matches the Supabase migration source", () => {
   assert.equal(
     read("docs/migration/sql/20260713_v2_dev_bootstrap.sql"),
     read("supabase/migrations/20260713000000_v2_dev_bootstrap.sql")
+  )
+})
+
+test("documented trial redemption SQL matches the Supabase migration source", () => {
+  assert.equal(
+    read("docs/migration/sql/20260721_trial_credit_redemptions.sql"),
+    read("supabase/migrations/20260721000000_trial_credit_redemptions.sql")
   )
 })
 
@@ -154,7 +165,9 @@ test("side-by-side deployment docs capture live database constraints", () => {
   assert.match(readiness, /20260706_backfill_organizations_workspaces\.sql/)
   assert.match(readiness, /20260707_workspace_archiving\.sql/)
   assert.match(readiness, /20260709_workspace_billing\.sql/)
+  assert.match(readiness, /20260721_trial_credit_redemptions\.sql/)
   assert.match(readiness, /20260709_workspace_report_tables\.sql/)
+  assert.match(readiness, /trial_credit_redemptions\.user_id/)
   assert.match(readiness, /Do not run the v2 greenfield bootstrap migration on live/)
   assert.match(readiness, /Supabase Auth Invite user email template/)
   assert.match(readiness, /Stripe webhook endpoint/)
@@ -574,6 +587,7 @@ test("critical UI controls are wired to their own actions", () => {
   assert.match(onboardingContent, /startKlaviyoOAuth/)
   assert.match(onboardingContent, /window\.location\.assign\("\/settings\?connected=1"\)/)
   assert.doesNotMatch(onboardingContent, /href="\/settings\/klaviyo"/)
+  assert.match(onboardingContent, /Eligible users unlock 300 trial credits/)
   assert.match(onboardingContent, /support@listhygiene\.com/)
   assert.doesNotMatch(onboardingContent, /support@prismfly\.com/)
   assert.match(workspaceSwitcher, /onValueChange=\{\(value\) => \{[\s\S]*switchWorkspace\(value\)/)
@@ -631,6 +645,13 @@ test("Klaviyo OAuth routes are workspace-scoped and maintain token lifecycle", (
   assert.match(callback, /workspace_id: tenantContext\.workspaceId/)
   assert.match(callback, /token_expires_in/)
   assert.match(callback, /fetchKlaviyoSegments\(tokenJson\.access_token\)/)
+  assert.match(callback, /const TRIAL_CREDITS = 300/)
+  assert.match(callback, /reserveTrialRedemption/)
+  assert.match(callback, /trial_credit_redemptions/)
+  assert.match(callback, /hasUserRedeemedTrial/)
+  assert.match(callback, /klaviyo_accounts_directory/)
+  assert.match(callback, /recordTrialCreditHistory/)
+  assert.match(callback, /Trial credits granted/)
   assert.match(accounts, /applyAccountScope/)
   assert.match(accounts, /Only owners and admins can manage integrations/)
   assert.match(accounts, /const \{ error: updateError \} = await applyAccountScope\(updateQuery, context\)/)
@@ -677,6 +698,9 @@ test("dashboard non-demo mode is wired to workspace-scoped live API data", () =>
   assert.match(route, /DASHBOARD_CATEGORY_BREAKDOWN_METRICS/)
   assert.match(route, /categoryBreakdown/)
   assert.match(route, /currentMonthReport/)
+  assert.match(route, /getLastTwelveMonthBuckets\(now\)/)
+  assert.match(route, /\.gte\("start", `\$\{firstMonthStart\}T00:00:00\.000Z`\)/)
+  assert.match(route, /\.gte\("month_start", firstMonthStart\)/)
   assert.match(route, /typo_fixed/)
   assert.match(breakdown, /metric: "attempts"/)
   assert.match(breakdown, /metric: "bounce_reason"/)
@@ -688,42 +712,48 @@ test("dashboard non-demo mode is wired to workspace-scoped live API data", () =>
   assert.match(breakdown, /globally_suppressed/)
   assert.match(report, /distribution: DASHBOARD_CATEGORY_KEYS\.map/)
   assert.match(report, /categoryBreakdown: counts\.categoryBreakdown \|\| \[\]/)
+  assert.match(report, /label: "Emails Removed"/)
+  assert.match(report, /label: "Typos Fixed"/)
   assert.match(report, /nextMilestoneRemaining/)
 })
 
-test("dashboard category breakdown matches tabbed stacked design", () => {
+test("dashboard matches updated chart and milestone direction", () => {
   const component = read("src/components/dashboard/dashboard-content.tsx")
   const breakdown = read("src/lib/dashboard/breakdown.ts")
 
   assert.match(component, /DASHBOARD_CATEGORY_KEYS\.map/)
   assert.match(component, /DASHBOARD_CATEGORY_BREAKDOWN_CONFIG/)
   assert.match(component, /buildDerivedDashboardCategoryBreakdownRows/)
+  assert.match(component, /Cleanup Milestones/)
+  assert.match(component, /Emails Removed/)
+  assert.match(component, /Typos Fixed/)
+  assert.match(component, /RadialBarChart/)
+  assert.match(component, /ChartLegend/)
+  assert.match(component, /stackId="status"/)
+  assert.match(component, /layout="vertical"/)
+  assert.match(component, /horizontalCategoryData/)
   assert.match(breakdown, /Valid/)
   assert.match(breakdown, /No mail accepted/)
   assert.match(breakdown, /Possible spam trap/)
   assert.match(breakdown, /Globally suppressed/)
-  assert.match(component, /<Tabs[\s\S]*value=\{activeBreakdownCategory\}/)
-  assert.match(component, /<TabsList className="h-auto w-full flex-wrap justify-start sm:w-fit">/)
-  assert.match(component, /<TabsTrigger key=\{status\} value=\{status\}>/)
-  assert.doesNotMatch(component, /variant="line"/)
-  assert.doesNotMatch(component, /after:bg-\[#346ce6\]/)
-  assert.doesNotMatch(component, /<TabsList[^>]*rounded-full/)
-  assert.match(component, /activeBreakdownSegments\.map/)
-  assert.match(component, /stackId=\{activeBreakdownCategory\}/)
-  assert.doesNotMatch(component, /<Bar[\s\S]*dataKey="valid"/)
-  assert.doesNotMatch(component, /<Bar[\s\S]*dataKey="restricted"/)
+  assert.match(breakdown, /var\(--chart-1\)/)
+  assert.doesNotMatch(component, /Wipe out/)
+  assert.doesNotMatch(component, /<Tabs/)
+  assert.doesNotMatch(component, /activeBreakdownCategory/)
+  assert.doesNotMatch(component, /#[0-9A-Fa-f]{3,6}/)
+  assert.doesNotMatch(breakdown, /#[0-9A-Fa-f]{3,6}/)
 })
 
 test("dashboard charts render with zero-state data instead of placeholders", () => {
   const component = read("src/components/dashboard/dashboard-content.tsx")
 
   assert.match(component, /getLastTwelveEmptyHistoricalPoints/)
-  assert.match(component, /status: "no-data"/)
-  assert.match(component, /label: "No Data"/)
-  assert.match(component, /fill: "var\(--foreground\)"/)
+  assert.match(component, /normalizeLastTwelveHistoricalPoints/)
+  assert.match(component, /removedChartData/)
+  assert.match(component, /remaining: Math\.max/)
   assert.match(component, /data=\{visibleHistorical\}/)
-  assert.match(component, /data=\{categoryBreakdownData\}/)
-  assert.match(component, /data=\{emailStatusChartData\}/)
+  assert.match(component, /data=\{horizontalCategoryData\}/)
+  assert.match(component, /data=\{removedChartData\}/)
   assert.doesNotMatch(component, /categoryBreakdownData\.length \?/)
   assert.doesNotMatch(component, /historical\.length \?/)
   assert.doesNotMatch(component, /distribution\.length \?/)

@@ -146,6 +146,21 @@ create table if not exists public.klaviyo_accounts_directory (
   updated_at timestamptz not null default now()
 );
 
+create table if not exists public.trial_credit_redemptions (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  organization_id uuid references public.organizations(id) on delete set null,
+  workspace_id uuid references public.workspaces(id) on delete set null,
+  platform text not null default 'klaviyo',
+  external_account_id text not null,
+  klaviyo_account_id text,
+  stripe_account_id text,
+  credits_granted integer not null default 300,
+  status text not null default 'reserved' check (status in ('reserved', 'granted', 'failed')),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
 create table if not exists public.emails (
   id uuid primary key default gen_random_uuid(),
   user_id uuid references auth.users(id) on delete set null,
@@ -429,6 +444,17 @@ create index if not exists klaviyo_accounts_tenant_idx
 create index if not exists klaviyo_accounts_directory_account_idx
   on public.klaviyo_accounts_directory (account_id);
 
+create unique index if not exists trial_credit_redemptions_user_once_idx
+  on public.trial_credit_redemptions (user_id)
+  where status in ('reserved', 'granted');
+
+create unique index if not exists trial_credit_redemptions_platform_account_once_idx
+  on public.trial_credit_redemptions (platform, external_account_id)
+  where status in ('reserved', 'granted');
+
+create index if not exists trial_credit_redemptions_tenant_idx
+  on public.trial_credit_redemptions (organization_id, workspace_id);
+
 create index if not exists emails_tenant_idx
   on public.emails (organization_id, workspace_id);
 
@@ -477,6 +503,7 @@ begin
     'organization_invitations',
     'klaviyo_accounts',
     'klaviyo_accounts_directory',
+    'trial_credit_redemptions',
     'emails',
     'bulk_jobs',
     'bulk_emails',
@@ -685,6 +712,7 @@ begin
     'organization_invitations',
     'klaviyo_accounts',
     'klaviyo_accounts_directory',
+    'trial_credit_redemptions',
     'emails',
     'bulk_jobs',
     'bulk_emails',
@@ -777,6 +805,14 @@ for select using (user_id = auth.uid());
 drop policy if exists klaviyo_accounts_directory_manage_own on public.klaviyo_accounts_directory;
 create policy klaviyo_accounts_directory_manage_own on public.klaviyo_accounts_directory
 for all using (user_id = auth.uid()) with check (user_id = auth.uid());
+
+drop policy if exists trial_credit_redemptions_select_tenant on public.trial_credit_redemptions;
+create policy trial_credit_redemptions_select_tenant on public.trial_credit_redemptions
+for select using (
+  user_id = auth.uid()
+  or public.is_organization_member(organization_id)
+  or public.is_workspace_member(workspace_id)
+);
 
 drop policy if exists emails_select_workspace_member on public.emails;
 create policy emails_select_workspace_member on public.emails

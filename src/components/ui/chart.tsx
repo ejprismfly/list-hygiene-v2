@@ -2,7 +2,11 @@
 
 import * as React from "react"
 import * as RechartsPrimitive from "recharts"
-import type { TooltipContentProps, TooltipPayloadEntry } from "recharts"
+import type {
+  LegendPayload,
+  TooltipContentProps,
+  TooltipPayloadEntry,
+} from "recharts"
 
 import { cn } from "@/lib/utils"
 
@@ -61,6 +65,7 @@ function ChartContainer({
 }
 
 const ChartTooltip = RechartsPrimitive.Tooltip
+const ChartLegend = RechartsPrimitive.Legend
 
 function ChartTooltipContent({
   active,
@@ -127,20 +132,72 @@ function ChartTooltipContent({
   )
 }
 
+function ChartLegendContent({
+  className,
+  hideIcon = false,
+  payload,
+  verticalAlign = "bottom",
+  nameKey,
+}: React.ComponentProps<"div"> & {
+  hideIcon?: boolean
+  payload?: ReadonlyArray<LegendPayload>
+  verticalAlign?: "top" | "bottom" | "middle"
+  nameKey?: string
+}) {
+  const { config } = useChart()
+
+  if (!payload?.length) {
+    return null
+  }
+
+  return (
+    <div
+      className={cn(
+        "flex items-center justify-center gap-4",
+        verticalAlign === "top" ? "pb-3" : "pt-3",
+        className
+      )}
+    >
+      {payload.map((item) => {
+        const itemConfig = getPayloadConfig(config, item, nameKey)
+        const label = itemConfig?.label ?? item.value
+        const color = itemConfig?.color ?? item.color
+
+        return (
+          <div
+            key={`${item.dataKey || item.value}`}
+            className="flex items-center gap-1.5"
+          >
+            {!hideIcon ? (
+              <span
+                className="size-2 shrink-0 rounded-full"
+                style={{ backgroundColor: color }}
+              />
+            ) : null}
+            <span className="text-muted-foreground">{label}</span>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
 function getPayloadConfig(
   config: ChartConfig,
-  item: TooltipPayloadEntry,
+  item: TooltipPayloadEntry | LegendPayload,
   nameKey?: string
 ) {
   const itemPayload = isObject(item.payload) ? item.payload : undefined
+  const itemName =
+    "name" in item && typeof item.name === "string" ? item.name : undefined
+  const itemDataKey =
+    typeof item.dataKey === "string" ? item.dataKey : undefined
   const configKey =
     nameKey && itemPayload && typeof itemPayload[nameKey] === "string"
       ? itemPayload[nameKey]
-      : typeof item.name === "string"
-        ? item.name
-        : typeof item.dataKey === "string"
-          ? item.dataKey
-          : undefined
+      : itemName
+        ? itemName
+        : itemDataKey
 
   if (configKey && configKey in config) {
     return config[configKey]
@@ -153,4 +210,4 @@ function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null
 }
 
-export { ChartContainer, ChartTooltip, ChartTooltipContent }
+export { ChartContainer, ChartLegend, ChartLegendContent, ChartTooltip, ChartTooltipContent }
