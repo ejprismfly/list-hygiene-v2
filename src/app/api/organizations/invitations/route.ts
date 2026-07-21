@@ -228,6 +228,7 @@ export async function POST(request: Request) {
       ...buildInvitationResponse(request, data, token),
       auth_user_id: authData.user?.id || null,
       email_delivery: "supabase_auth",
+      resent: true,
     })
   }
 
@@ -308,10 +309,93 @@ export async function PATCH(request: Request) {
 
   const body = await readJsonBody(request)
   const id = typeof body.id === "string" ? body.id : ""
+  const action = typeof body.action === "string" ? body.action : ""
   const status = body.status || "revoked"
 
   if (!id) {
     return errorJson("id must be a string.", 400)
+  }
+
+  if (action === "resend") {
+    let adminSupabase: ReturnType<typeof createAdminClient>
+    try {
+      adminSupabase = createAdminClient()
+    } catch {
+      return errorJson(
+        "SUPABASE_SERVICE_ROLE_KEY is required to send invitation emails.",
+        500
+      )
+    }
+
+    const { data: invitation, error: invitationError } = await supabase
+      .from("organization_invitations")
+      .select(invitationSelect)
+      .eq("organization_id", context.organizationId)
+      .eq("id", id)
+      .eq("status", "pending")
+      .single()
+
+    if (invitationError || !invitation) {
+      return errorJson(
+        invitationError?.message || "Pending invitation not found",
+        404
+      )
+    }
+
+    const token = crypto.randomBytes(32).toString("hex")
+    const expiresAt = new Date(
+      Date.now() + 14 * 24 * 60 * 60 * 1000
+    ).toISOString()
+    const { data, error } = await supabase
+      .from("organization_invitations")
+      .update({
+        token_hash: hashToken(token),
+        invited_by_user_id: context.user?.id,
+        expires_at: expiresAt,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("organization_id", context.organizationId)
+      .eq("id", id)
+      .eq("status", "pending")
+      .select(invitationSelect)
+      .single()
+
+    if (error || !data) {
+      return errorJson(error?.message || "Unable to refresh invitation")
+    }
+
+    const role = data.role === "admin" ? "admin" : "member"
+    const workspaceIds = normalizeWorkspaceIds(data.workspace_ids)
+    let authResponse: Awaited<ReturnType<typeof sendSupabaseInviteEmail>>
+    try {
+      authResponse = await sendSupabaseInviteEmail({
+        adminSupabase,
+        email: data.email,
+        organizationId: context.organizationId,
+        role,
+        request,
+        token,
+        workspaceIds,
+      })
+    } catch (error) {
+      return errorJson(
+        error instanceof Error
+          ? error.message
+          : "Unable to send invitation email."
+      )
+    }
+
+    const { data: authData, error: authError } = authResponse
+    if (authError) {
+      return errorJson(authError.message)
+    }
+
+    return json({
+      ...buildInvitationResponse(request, data, token),
+      auth_user_id: authData.user?.id || null,
+      email_delivery: "supabase_auth",
+      resent: true,
+    })
   }
 
   if (status !== "revoked") {

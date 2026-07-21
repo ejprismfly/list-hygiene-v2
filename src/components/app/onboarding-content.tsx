@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
+import { Loader2 } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -8,6 +9,7 @@ import { startKlaviyoOAuth } from "@/lib/klaviyo-oauth"
 
 export function OnboardingContent() {
   const [statusMessage, setStatusMessage] = useState("")
+  const [connecting, setConnecting] = useState(false)
 
   useEffect(() => {
     function onMessage(event: MessageEvent) {
@@ -36,10 +38,20 @@ export function OnboardingContent() {
 
   async function connectKlaviyo() {
     setStatusMessage("")
-    await startKlaviyoOAuth({
-      onMissingClientId: () =>
-        setStatusMessage("Klaviyo client ID is not configured."),
-    })
+    setConnecting(true)
+    try {
+      const started = await startKlaviyoOAuth({
+        onMissingClientId: () =>
+          setStatusMessage("Klaviyo client ID is not configured."),
+      })
+      if (started) {
+        setStatusMessage("Opening Klaviyo authorization.")
+      }
+    } catch {
+      setStatusMessage("Unable to connect Klaviyo. Please try again.")
+    } finally {
+      setConnecting(false)
+    }
   }
 
   return (
@@ -58,7 +70,8 @@ export function OnboardingContent() {
           </Badge>
         </div>
         <div className="pt-4">
-          <Button type="button" onClick={connectKlaviyo}>
+          <Button type="button" disabled={connecting} onClick={connectKlaviyo}>
+            {connecting && <Loader2 className="size-4 animate-spin" />}
             Connect Klaviyo
           </Button>
         </div>

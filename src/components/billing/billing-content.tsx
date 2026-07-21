@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useMemo, useState } from "react"
-import { Info } from "lucide-react"
+import { Info, Loader2 } from "lucide-react"
 
 import { BillingReturnTracker } from "@/components/billing/billing-return-tracker"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
@@ -221,6 +221,8 @@ export function BillingContent({ email }: BillingContentProps) {
   const [statusMessage, setStatusMessage] = useState("")
   const [loading, setLoading] = useState(true)
   const [activePlanRange, setActivePlanRange] = useState("9999")
+  const [openingPortal, setOpeningPortal] = useState(false)
+  const [checkingOutPlanId, setCheckingOutPlanId] = useState<string | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -305,11 +307,13 @@ export function BillingContent({ email }: BillingContentProps) {
   }
 
   function openPortal() {
+    setOpeningPortal(true)
     openBillingRoute(billing.portal, "/api/billing/portal")
   }
 
   function selectPlan(plan: BillingPlanRow) {
     if (plan.checkout_url) {
+      setCheckingOutPlanId(plan.id)
       trackPlanChangeStarted({
         context: billing.billing_context || null,
         plan,
@@ -319,6 +323,7 @@ export function BillingContent({ email }: BillingContentProps) {
     }
 
     setStatusMessage(`${plan.name} is already selected.`)
+    setCheckingOutPlanId(null)
   }
 
   const activePlanGroup =
@@ -422,7 +427,12 @@ export function BillingContent({ email }: BillingContentProps) {
               Each credit represents an email verification.
             </p>
           </div>
-          <Button type="button" disabled={loading} onClick={openPortal}>
+          <Button
+            type="button"
+            disabled={loading || openingPortal || Boolean(checkingOutPlanId)}
+            onClick={openPortal}
+          >
+            {openingPortal && <Loader2 className="size-4 animate-spin" />}
             Manage
           </Button>
         </div>
@@ -497,9 +507,16 @@ export function BillingContent({ email }: BillingContentProps) {
                         <Button
                           type="button"
                           className="w-full md:w-32"
-                          disabled={plan.selected}
+                          disabled={
+                            plan.selected ||
+                            openingPortal ||
+                            Boolean(checkingOutPlanId)
+                          }
                           onClick={() => selectPlan(plan)}
                         >
+                          {checkingOutPlanId === plan.id && (
+                            <Loader2 className="size-4 animate-spin" />
+                          )}
                           {plan.action_label || "Upgrade"}
                         </Button>
                       </TableCell>
@@ -539,7 +556,12 @@ export function BillingContent({ email }: BillingContentProps) {
           <h2 className="text-2xl font-semibold tracking-normal sm:text-3xl">
             Billing Contact
           </h2>
-          <Button type="button" disabled={loading} onClick={openPortal}>
+          <Button
+            type="button"
+            disabled={loading || openingPortal || Boolean(checkingOutPlanId)}
+            onClick={openPortal}
+          >
+            {openingPortal && <Loader2 className="size-4 animate-spin" />}
             Edit
           </Button>
         </div>

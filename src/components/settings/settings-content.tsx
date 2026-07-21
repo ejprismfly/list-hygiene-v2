@@ -136,6 +136,7 @@ export function SettingsContent({ connected = false }: SettingsContentProps) {
     useState(false)
   const [deleteConnectionConfirmation, setDeleteConnectionConfirmation] =
     useState("")
+  const [connectingKlaviyo, setConnectingKlaviyo] = useState(false)
   const [deletingConnection, setDeletingConnection] = useState(false)
   const hasConnections = connections.length > 0
   const deleteConnectionName = connectionToDelete
@@ -182,10 +183,21 @@ export function SettingsContent({ connected = false }: SettingsContentProps) {
   }, [connected])
 
   async function addKlaviyoConnection() {
-    await startKlaviyoOAuth({
-      onMissingClientId: () =>
-        setStatusMessage("Klaviyo client ID is not configured."),
-    })
+    setConnectingKlaviyo(true)
+    setStatusMessage("")
+    try {
+      const started = await startKlaviyoOAuth({
+        onMissingClientId: () =>
+          setStatusMessage("Klaviyo client ID is not configured."),
+      })
+      if (started) {
+        setStatusMessage("Opening Klaviyo authorization.")
+      }
+    } catch {
+      setStatusMessage("Unable to connect Klaviyo. Please try again.")
+    } finally {
+      setConnectingKlaviyo(false)
+    }
   }
 
   function openDeleteConnectionDialog(connection: KlaviyoConnection) {
@@ -364,10 +376,14 @@ export function SettingsContent({ connected = false }: SettingsContentProps) {
                           <Button
                             type="button"
                             className="w-full sm:w-36"
+                            disabled={connectingKlaviyo}
                             onClick={addKlaviyoConnection}
                           />
                         }
                       >
+                        {connectingKlaviyo && (
+                          <Loader2 className="size-4 animate-spin" />
+                        )}
                         {provider.status}
                       </DialogClose>
                     ) : (

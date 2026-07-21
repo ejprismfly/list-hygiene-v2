@@ -6,6 +6,7 @@ import {
   Copy,
   Loader2,
   Plus,
+  Send,
   Settings,
   Trash2,
   UserMinus,
@@ -185,6 +186,14 @@ export function WorkspaceSwitcher({
   const [invitationToCancel, setInvitationToCancel] =
     useState<WorkspaceInvitation | null>(null)
   const [creatingWorkspace, setCreatingWorkspace] = useState(false)
+  const [savingWorkspaceName, setSavingWorkspaceName] = useState(false)
+  const [invitingMember, setInvitingMember] = useState(false)
+  const [resendingInvitationId, setResendingInvitationId] = useState<
+    string | null
+  >(null)
+  const [updatingMemberUserId, setUpdatingMemberUserId] = useState<string | null>(
+    null
+  )
   const [archivingWorkspace, setArchivingWorkspace] = useState(false)
   const [teamActionSubmitting, setTeamActionSubmitting] = useState(false)
   const [message, setMessage] = useState("")
@@ -391,24 +400,31 @@ export function WorkspaceSwitcher({
       return
     }
 
-    const response = await fetch("/api/workspaces", {
-      method: "PATCH",
-      headers: headersFor(organizationId, selectedId),
-      body: JSON.stringify({ id: selectedWorkspace.id, name: editName }),
-    })
-    const data = await response.json()
-    if (!response.ok) {
-      setMessage(data.error || "Unable to update workspace.")
-      return
-    }
+    setSavingWorkspaceName(true)
+    try {
+      const response = await fetch("/api/workspaces", {
+        method: "PATCH",
+        headers: headersFor(organizationId, selectedId),
+        body: JSON.stringify({ id: selectedWorkspace.id, name: editName }),
+      })
+      const data = await response.json()
+      if (!response.ok) {
+        setMessage(data.error || "Unable to update workspace.")
+        return
+      }
 
-    invalidateWorkspaceClientData(organizationId)
-    setWorkspaces((current) =>
-      current.map((workspace) =>
-        workspace.id === data.id ? { ...workspace, name: data.name } : workspace
+      invalidateWorkspaceClientData(organizationId)
+      setWorkspaces((current) =>
+        current.map((workspace) =>
+          workspace.id === data.id ? { ...workspace, name: data.name } : workspace
+        )
       )
-    )
-    setMessage(`${workspaceLabel(data.name)} updated.`)
+      setMessage(`${workspaceLabel(data.name)} updated.`)
+    } catch {
+      setMessage("Unable to update workspace.")
+    } finally {
+      setSavingWorkspaceName(false)
+    }
   }
 
   function openArchiveWorkspaceDialog() {
@@ -481,76 +497,85 @@ export function WorkspaceSwitcher({
       return
     }
 
+    setInvitingMember(true)
     const payload = {
       email,
       role: inviteRole,
       workspace_ids: [selectedWorkspace.id],
     }
-    const memberResponse = await fetch("/api/organizations/members", {
-      method: "POST",
-      headers: headersFor(organizationId, selectedId),
-      body: JSON.stringify(payload),
-    })
-    const memberData = await memberResponse.json()
-
-    if (memberResponse.ok) {
-      setInviteEmail("")
-      setInviteRole("member")
-      setLastInviteLink("")
-      setMembers((current) => {
-        const nextMember = memberData as WorkspaceMember
-        const existingIndex = current.findIndex(
-          (member) => member.user_id === nextMember.user_id
-        )
-        if (existingIndex === -1) {
-          return [nextMember, ...current]
-        }
-
-        return current.map((member, index) =>
-          index === existingIndex ? nextMember : member
-        )
+    try {
+      const memberResponse = await fetch("/api/organizations/members", {
+        method: "POST",
+        headers: headersFor(organizationId, selectedId),
+        body: JSON.stringify(payload),
       })
-      setInviteStatusMessage(
-        `${email} added to ${workspaceLabel(selectedWorkspace.name)}.`
-      )
-      return
-    }
+      const memberData = await memberResponse.json()
 
-    if (memberResponse.status !== 404) {
-      setInviteStatusMessage(memberData.error || "Unable to add member.")
-      setInviteStatusIsError(true)
-      return
-    }
+      if (memberResponse.ok) {
+        setInviteEmail("")
+        setInviteRole("member")
+        setLastInviteLink("")
+        setMembers((current) => {
+          const nextMember = memberData as WorkspaceMember
+          const existingIndex = current.findIndex(
+            (member) => member.user_id === nextMember.user_id
+          )
+          if (existingIndex === -1) {
+            return [nextMember, ...current]
+          }
 
-    const response = await fetch("/api/organizations/invitations", {
-      method: "POST",
-      headers: headersFor(organizationId, selectedId),
-      body: JSON.stringify(payload),
-    })
-    const data = await response.json()
-    if (!response.ok) {
-      setInviteStatusMessage(data.error || "Unable to invite member.")
-      setInviteStatusIsError(true)
-      return
-    }
-
-    setInviteEmail("")
-    setInviteRole("member")
-    setLastInviteLink(data.invite_url || "")
-    setInvitations((current) => {
-      const invitation = data as WorkspaceInvitation
-      const existingIndex = current.findIndex((item) => item.id === invitation.id)
-      if (existingIndex === -1) {
-        return [invitation, ...current]
+          return current.map((member, index) =>
+            index === existingIndex ? nextMember : member
+          )
+        })
+        setInviteStatusMessage(
+          `${email} added to ${workspaceLabel(selectedWorkspace.name)}.`
+        )
+        return
       }
 
-      return current.map((item, index) =>
-        index === existingIndex ? invitation : item
+      if (memberResponse.status !== 404) {
+        setInviteStatusMessage(memberData.error || "Unable to add member.")
+        setInviteStatusIsError(true)
+        return
+      }
+
+      const response = await fetch("/api/organizations/invitations", {
+        method: "POST",
+        headers: headersFor(organizationId, selectedId),
+        body: JSON.stringify(payload),
+      })
+      const data = await response.json()
+      if (!response.ok) {
+        setInviteStatusMessage(data.error || "Unable to invite member.")
+        setInviteStatusIsError(true)
+        return
+      }
+
+      setInviteEmail("")
+      setInviteRole("member")
+      setLastInviteLink(data.invite_url || "")
+      setInvitations((current) => {
+        const invitation = data as WorkspaceInvitation
+        const existingIndex = current.findIndex((item) => item.id === invitation.id)
+        if (existingIndex === -1) {
+          return [invitation, ...current]
+        }
+
+        return current.map((item, index) =>
+          index === existingIndex ? invitation : item
+        )
+      })
+      const inviteVerb = data.resent ? "resent" : "invited"
+      setInviteStatusMessage(
+        `${email} ${inviteVerb} to ${workspaceLabel(selectedWorkspace.name)}.`
       )
-    })
-    setInviteStatusMessage(
-      `${email} invited to ${workspaceLabel(selectedWorkspace.name)}.`
-    )
+    } catch {
+      setInviteStatusMessage("Unable to invite member.")
+      setInviteStatusIsError(true)
+    } finally {
+      setInvitingMember(false)
+    }
   }
 
   async function copyInviteLink() {
@@ -566,32 +591,75 @@ export function WorkspaceSwitcher({
     }
   }
 
-  async function updateMemberRole(member: WorkspaceMember, role: "admin" | "member") {
-    if (!organizationId) {
+  async function resendInvitation(invitation: WorkspaceInvitation) {
+    if (!organizationId || resendingInvitationId) {
       return
     }
 
-    const response = await fetch("/api/organizations/members", {
-      method: "PATCH",
-      headers: headersFor(organizationId, selectedId),
-      body: JSON.stringify({
-        user_id: member.user_id,
-        role,
-        workspace_ids: member.workspace_ids,
-      }),
-    })
-
-    if (!response.ok) {
+    setResendingInvitationId(invitation.id)
+    setInviteStatusMessage("")
+    setInviteStatusIsError(false)
+    try {
+      const response = await fetch("/api/organizations/invitations", {
+        method: "PATCH",
+        headers: headersFor(organizationId, selectedId),
+        body: JSON.stringify({ id: invitation.id, action: "resend" }),
+      })
       const data = await response.json()
-      setMessage(data.error || "Unable to update member.")
+      if (!response.ok) {
+        setInviteStatusMessage(data.error || "Unable to resend invite.")
+        setInviteStatusIsError(true)
+        return
+      }
+
+      setLastInviteLink(data.invite_url || "")
+      setInvitations((current) =>
+        current.map((item) =>
+          item.id === invitation.id ? (data as WorkspaceInvitation) : item
+        )
+      )
+      setInviteStatusMessage(`${invitation.email} invite resent.`)
+    } catch {
+      setInviteStatusMessage("Unable to resend invite.")
+      setInviteStatusIsError(true)
+    } finally {
+      setResendingInvitationId(null)
+    }
+  }
+
+  async function updateMemberRole(member: WorkspaceMember, role: "admin" | "member") {
+    if (!organizationId || member.role === role || updatingMemberUserId) {
       return
     }
 
-    setMembers((current) =>
-      current.map((item) =>
-        item.user_id === member.user_id ? { ...item, role } : item
+    setUpdatingMemberUserId(member.user_id)
+    try {
+      const response = await fetch("/api/organizations/members", {
+        method: "PATCH",
+        headers: headersFor(organizationId, selectedId),
+        body: JSON.stringify({
+          user_id: member.user_id,
+          role,
+          workspace_ids: member.workspace_ids,
+        }),
+      })
+
+      if (!response.ok) {
+        const data = await response.json()
+        setMessage(data.error || "Unable to update member.")
+        return
+      }
+
+      setMembers((current) =>
+        current.map((item) =>
+          item.user_id === member.user_id ? { ...item, role } : item
+        )
       )
-    )
+    } catch {
+      setMessage("Unable to update member.")
+    } finally {
+      setUpdatingMemberUserId(null)
+    }
   }
 
   function openRemoveMemberDialog(member: WorkspaceMember) {
@@ -605,25 +673,29 @@ export function WorkspaceSwitcher({
     }
 
     setTeamActionSubmitting(true)
-    const response = await fetch("/api/organizations/members", {
-      method: "DELETE",
-      headers: headersFor(organizationId, selectedId),
-      body: JSON.stringify({ user_id: memberToRemove.user_id }),
-    })
+    try {
+      const response = await fetch("/api/organizations/members", {
+        method: "DELETE",
+        headers: headersFor(organizationId, selectedId),
+        body: JSON.stringify({ user_id: memberToRemove.user_id }),
+      })
 
-    if (!response.ok) {
-      const data = await response.json()
-      setMessage(data.error || "Unable to remove member.")
+      if (!response.ok) {
+        const data = await response.json()
+        setMessage(data.error || "Unable to remove member.")
+        return
+      }
+
+      setMembers((current) =>
+        current.filter((item) => item.user_id !== memberToRemove.user_id)
+      )
+      setMemberRemovalDialogOpen(false)
+      setMemberToRemove(null)
+    } catch {
+      setMessage("Unable to remove member.")
+    } finally {
       setTeamActionSubmitting(false)
-      return
     }
-
-    setMembers((current) =>
-      current.filter((item) => item.user_id !== memberToRemove.user_id)
-    )
-    setMemberRemovalDialogOpen(false)
-    setMemberToRemove(null)
-    setTeamActionSubmitting(false)
   }
 
   function openCancelInvitationDialog(invitation: WorkspaceInvitation) {
@@ -637,27 +709,33 @@ export function WorkspaceSwitcher({
     }
 
     setTeamActionSubmitting(true)
-    const response = await fetch("/api/organizations/invitations", {
-      method: "PATCH",
-      headers: headersFor(organizationId, selectedId),
-      body: JSON.stringify({ id: invitationToCancel.id, status: "revoked" }),
-    })
+    try {
+      const response = await fetch("/api/organizations/invitations", {
+        method: "PATCH",
+        headers: headersFor(organizationId, selectedId),
+        body: JSON.stringify({ id: invitationToCancel.id, status: "revoked" }),
+      })
 
-    if (!response.ok) {
-      const data = await response.json()
-      setMessage(data.error || "Unable to cancel invitation.")
-      setTeamActionSubmitting(false)
-      return
-    }
+      if (!response.ok) {
+        const data = await response.json()
+        setMessage(data.error || "Unable to cancel invitation.")
+        return
+      }
 
-    setInvitations((current) =>
-      current.map((item) =>
-        item.id === invitationToCancel.id ? { ...item, status: "revoked" } : item
+      setInvitations((current) =>
+        current.map((item) =>
+          item.id === invitationToCancel.id
+            ? { ...item, status: "revoked" }
+            : item
+        )
       )
-    )
-    setInvitationCancelDialogOpen(false)
-    setInvitationToCancel(null)
-    setTeamActionSubmitting(false)
+      setInvitationCancelDialogOpen(false)
+      setInvitationToCancel(null)
+    } catch {
+      setMessage("Unable to cancel invitation.")
+    } finally {
+      setTeamActionSubmitting(false)
+    }
   }
 
   const activeRows = useMemo(() => [...selectedMembers, ...selectedInvitations], [
@@ -747,15 +825,18 @@ export function WorkspaceSwitcher({
                       <Input
                         id="current-workspace-name"
                         value={editName}
-                        disabled={!managerEnabled}
+                        disabled={!managerEnabled || savingWorkspaceName}
                         onChange={(event) => setEditName(event.target.value)}
                         placeholder="Workspace name"
                       />
                       <Button
                         type="button"
-                        disabled={!managerEnabled}
+                        disabled={!managerEnabled || savingWorkspaceName}
                         onClick={saveWorkspaceName}
                       >
+                        {savingWorkspaceName && (
+                          <Loader2 className="size-4 animate-spin" />
+                        )}
                         Save
                       </Button>
                     </div>
@@ -770,7 +851,7 @@ export function WorkspaceSwitcher({
                         id="member-email"
                         type="email"
                         value={inviteEmail}
-                        disabled={!managerEnabled}
+                        disabled={!managerEnabled || invitingMember}
                         aria-describedby={
                           inviteStatusMessage ? "member-email-feedback" : undefined
                         }
@@ -786,7 +867,7 @@ export function WorkspaceSwitcher({
                       <Label>Role</Label>
                       <Select
                         value={inviteRole}
-                        disabled={!managerEnabled}
+                        disabled={!managerEnabled || invitingMember}
                         onValueChange={(value) =>
                           setInviteRole(value === "admin" ? "admin" : "member")
                         }
@@ -802,10 +883,14 @@ export function WorkspaceSwitcher({
                     </div>
                     <Button
                       type="button"
-                      disabled={!managerEnabled}
+                      disabled={!managerEnabled || invitingMember}
                       onClick={inviteMember}
                     >
-                      <UserPlus className="size-4" />
+                      {invitingMember ? (
+                        <Loader2 className="size-4 animate-spin" />
+                      ) : (
+                        <UserPlus className="size-4" />
+                      )}
                       Invite
                     </Button>
                   </div>
@@ -850,7 +935,7 @@ export function WorkspaceSwitcher({
                           <TableHead>Email</TableHead>
                           <TableHead>Status</TableHead>
                           <TableHead>Role</TableHead>
-                          <TableHead className="w-24" />
+                          <TableHead className="w-28 text-right" />
                         </TableRow>
                       </TableHeader>
                       <TableBody>
@@ -896,7 +981,10 @@ export function WorkspaceSwitcher({
                                   ) : (
                                     <Select
                                       value={role}
-                                      disabled={!managerEnabled}
+                                      disabled={
+                                        !managerEnabled ||
+                                        Boolean(updatingMemberUserId)
+                                      }
                                       onValueChange={(value) =>
                                         updateMemberRole(
                                           row,
@@ -905,7 +993,17 @@ export function WorkspaceSwitcher({
                                       }
                                     >
                                       <SelectTrigger className="w-28">
-                                        <SelectValue>{role}</SelectValue>
+                                        <SelectValue>
+                                          {updatingMemberUserId ===
+                                          row.user_id ? (
+                                            <span className="inline-flex items-center gap-2">
+                                              <Loader2 className="size-4 animate-spin" />
+                                              {role}
+                                            </span>
+                                          ) : (
+                                            role
+                                          )}
+                                        </SelectValue>
                                       </SelectTrigger>
                                       <SelectContent>
                                         <SelectItem value="member">member</SelectItem>
@@ -914,26 +1012,59 @@ export function WorkspaceSwitcher({
                                     </Select>
                                   )}
                                 </TableCell>
-                                <TableCell>
-                                  <Button
-                                    type="button"
-                                    variant="ghost"
-                                    size="icon"
-                                    disabled={!managerEnabled || (!isInvitation && row.role === "owner")}
-                                    aria-label={
-                                      isInvitation ? "Cancel invite" : "Remove member"
-                                    }
-                                    title={
-                                      isInvitation ? "Cancel invite" : "Remove member"
-                                    }
-                                    onClick={() =>
-                                      isInvitation
-                                        ? openCancelInvitationDialog(row)
-                                        : openRemoveMemberDialog(row)
-                                    }
-                                  >
-                                    <UserMinus className="size-4" />
-                                  </Button>
+                                <TableCell className="text-right">
+                                  <div className="inline-flex items-center justify-end gap-1">
+                                    {isInvitation ? (
+                                      <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="icon"
+                                        disabled={
+                                          !managerEnabled ||
+                                          Boolean(resendingInvitationId) ||
+                                          teamActionSubmitting
+                                        }
+                                        aria-label="Resend invite"
+                                        title="Resend invite"
+                                        onClick={() => resendInvitation(row)}
+                                      >
+                                        {resendingInvitationId === row.id ? (
+                                          <Loader2 className="size-4 animate-spin" />
+                                        ) : (
+                                          <Send className="size-4" />
+                                        )}
+                                      </Button>
+                                    ) : null}
+                                    <Button
+                                      type="button"
+                                      variant="ghost"
+                                      size="icon"
+                                      disabled={
+                                        !managerEnabled ||
+                                        teamActionSubmitting ||
+                                        (isInvitation &&
+                                          resendingInvitationId === row.id) ||
+                                        (!isInvitation && row.role === "owner")
+                                      }
+                                      aria-label={
+                                        isInvitation
+                                          ? "Cancel invite"
+                                          : "Remove member"
+                                      }
+                                      title={
+                                        isInvitation
+                                          ? "Cancel invite"
+                                          : "Remove member"
+                                      }
+                                      onClick={() =>
+                                        isInvitation
+                                          ? openCancelInvitationDialog(row)
+                                          : openRemoveMemberDialog(row)
+                                      }
+                                    >
+                                      <UserMinus className="size-4" />
+                                    </Button>
+                                  </div>
                                 </TableCell>
                               </TableRow>
                             )
