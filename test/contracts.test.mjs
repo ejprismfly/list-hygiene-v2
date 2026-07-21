@@ -759,6 +759,19 @@ test("custom CSS is limited to the shadcn global stylesheet", () => {
   assert.deepEqual(cssFiles, ["src/app/globals.css"])
 })
 
+test("shadcn preset colors stay applied", () => {
+  const components = read("components.json")
+  const globals = read("src/app/globals.css")
+  const layout = read("src/app/layout.tsx")
+
+  assert.match(components, /"style": "base-nova"/)
+  assert.match(components, /"menuColor": "default-translucent"/)
+  assert.match(globals, /--primary: oklch\(0\.488 0\.243 264\.376\)/)
+  assert.match(globals, /--chart-1: oklch\(0\.828 0\.111 230\.318\)/)
+  assert.match(globals, /--sidebar-primary: oklch\(0\.546 0\.245 262\.881\)/)
+  assert.match(layout, /Inter\(\{ subsets: \["latin"\], variable: "--font-sans" \}\)/)
+})
+
 test("theme mode switcher lives in profile as a button group", () => {
   const layout = read("src/app/layout.tsx")
   const profileContent = read("src/components/profile/profile-content.tsx")
