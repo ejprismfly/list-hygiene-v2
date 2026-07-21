@@ -12,6 +12,20 @@ export type DashboardCategoryBreakdownSegment = {
   fallbackWeight: number
 }
 
+const categoryBreakdownColors = [
+  "#3f5d9f",
+  "#7895cc",
+  "#6d54a8",
+  "#a65397",
+  "#f25292",
+  "#dc3f4e",
+  "#fb7133",
+  "#ff9f0a",
+  "#42cdb1",
+  "#0b9f95",
+  "#bfdc3e",
+]
+
 export const DASHBOARD_CATEGORY_BREAKDOWN_CONFIG: Record<
   DashboardCategory,
   {
@@ -22,11 +36,16 @@ export const DASHBOARD_CATEGORY_BREAKDOWN_CONFIG: Record<
   valid: {
     metric: "attempts",
     segments: [
-      { key: "valid_first", label: "Valid", color: "var(--chart-1)", fallbackWeight: 9 },
+      {
+        key: "valid_first",
+        label: "Valid",
+        color: categoryBreakdownColors[0],
+        fallbackWeight: 9,
+      },
       {
         key: "valid_secondary",
         label: "Secondary",
-        color: "var(--chart-2)",
+        color: categoryBreakdownColors[1],
         fallbackWeight: 1,
       },
     ],
@@ -37,52 +56,67 @@ export const DASHBOARD_CATEGORY_BREAKDOWN_CONFIG: Record<
       {
         key: "no_mail_accepted",
         label: "No mail accepted",
-        color: "var(--chart-1)",
+        color: categoryBreakdownColors[0],
         fallbackWeight: 13,
       },
       {
         key: "wrong_format",
         label: "Invalid email format",
-        color: "var(--chart-2)",
+        color: categoryBreakdownColors[1],
         fallbackWeight: 8,
       },
-      { key: "no_mailbox", label: "No mailbox", color: "var(--chart-3)", fallbackWeight: 12 },
-      { key: "no_dns", label: "No DNS", color: "var(--chart-4)", fallbackWeight: 9 },
+      {
+        key: "no_mailbox",
+        label: "No mailbox",
+        color: categoryBreakdownColors[2],
+        fallbackWeight: 12,
+      },
+      {
+        key: "no_dns",
+        label: "No DNS",
+        color: categoryBreakdownColors[3],
+        fallbackWeight: 9,
+      },
       {
         key: "full_mailbox",
         label: "Full mailbox",
-        color: "var(--chart-5)",
+        color: categoryBreakdownColors[4],
         fallbackWeight: 6,
       },
       {
         key: "unreachable_domain",
         label: "Unreachable domain",
-        color: "var(--chart-1)",
+        color: categoryBreakdownColors[5],
         fallbackWeight: 11,
       },
       {
         key: "anti_spam",
         label: "Anti-spam system",
-        color: "var(--chart-2)",
+        color: categoryBreakdownColors[6],
         fallbackWeight: 11,
       },
-      { key: "smtp_failed", label: "SMTP failure", color: "var(--chart-3)", fallbackWeight: 10 },
+      {
+        key: "smtp_failed",
+        label: "SMTP failure",
+        color: categoryBreakdownColors[7],
+        fallbackWeight: 10,
+      },
       {
         key: "connection_dropped",
         label: "Connection dropped",
-        color: "var(--chart-4)",
+        color: categoryBreakdownColors[8],
         fallbackWeight: 6,
       },
       {
         key: "mail_server_no_response",
         label: "Mail server did not respond",
-        color: "var(--chart-5)",
+        color: categoryBreakdownColors[9],
         fallbackWeight: 8,
       },
       {
         key: "connection_timeout",
         label: "Connection timeout",
-        color: "var(--chart-1)",
+        color: categoryBreakdownColors[10],
         fallbackWeight: 6,
       },
     ],
@@ -90,50 +124,70 @@ export const DASHBOARD_CATEGORY_BREAKDOWN_CONFIG: Record<
   risky: {
     metric: "risk_flag",
     segments: [
-      { key: "typo", label: "Typo", color: "var(--chart-1)", fallbackWeight: 18 },
-      { key: "catch_all", label: "Catch-all", color: "var(--chart-2)", fallbackWeight: 16 },
+      {
+        key: "typo",
+        label: "Typo",
+        color: categoryBreakdownColors[0],
+        fallbackWeight: 18,
+      },
+      {
+        key: "catch_all",
+        label: "Catch-all",
+        color: categoryBreakdownColors[1],
+        fallbackWeight: 16,
+      },
       {
         key: "possible_trap",
         label: "Possible spam trap",
-        color: "var(--chart-3)",
+        color: categoryBreakdownColors[2],
         fallbackWeight: 11,
       },
-      { key: "role_based", label: "Role-based", color: "var(--chart-4)", fallbackWeight: 11 },
+      {
+        key: "role_based",
+        label: "Role-based",
+        color: categoryBreakdownColors[3],
+        fallbackWeight: 11,
+      },
       {
         key: "temporary_email",
         label: "Temporary",
-        color: "var(--chart-5)",
+        color: categoryBreakdownColors[4],
         fallbackWeight: 8,
       },
       {
         key: "high_risk",
         label: "High risk (bots)",
-        color: "var(--chart-1)",
+        color: categoryBreakdownColors[5],
         fallbackWeight: 10,
       },
       {
         key: "role_based_catch_all",
         label: "Role-based catch-all",
-        color: "var(--chart-2)",
+        color: categoryBreakdownColors[6],
         fallbackWeight: 7,
       },
       {
         key: "forwarding_address",
         label: "Forwarding",
-        color: "var(--chart-3)",
+        color: categoryBreakdownColors[7],
         fallbackWeight: 8,
       },
       {
         key: "unexpected_error",
         label: "Unexpected error",
-        color: "var(--chart-4)",
+        color: categoryBreakdownColors[8],
         fallbackWeight: 5,
       },
-      { key: "greylisted", label: "Greylisted", color: "var(--chart-5)", fallbackWeight: 6 },
+      {
+        key: "greylisted",
+        label: "Greylisted",
+        color: categoryBreakdownColors[9],
+        fallbackWeight: 6,
+      },
       {
         key: "mail_server_temp_error",
         label: "Mail server temporary error",
-        color: "var(--chart-1)",
+        color: categoryBreakdownColors[10],
         fallbackWeight: 5,
       },
     ],
@@ -141,17 +195,22 @@ export const DASHBOARD_CATEGORY_BREAKDOWN_CONFIG: Record<
   restricted: {
     metric: "suppress_reason",
     segments: [
-      { key: "spam_trap", label: "Spam trap", color: "var(--chart-1)", fallbackWeight: 3 },
+      {
+        key: "spam_trap",
+        label: "Spam trap",
+        color: categoryBreakdownColors[0],
+        fallbackWeight: 3,
+      },
       {
         key: "abuse",
         label: "Abuse-tied email",
-        color: "var(--chart-2)",
+        color: categoryBreakdownColors[1],
         fallbackWeight: 2,
       },
       {
         key: "globally_suppressed",
         label: "Globally suppressed",
-        color: "var(--chart-3)",
+        color: categoryBreakdownColors[2],
         fallbackWeight: 5,
       },
     ],

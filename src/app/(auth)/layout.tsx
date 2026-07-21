@@ -1,7 +1,7 @@
-import Image from "next/image"
 import Link from "next/link"
 
 import { BrandLogo } from "@/components/app/brand-logo"
+import { AuthVisual } from "@/components/auth/auth-visual"
 
 export default function AuthLayout({
   children,
@@ -20,15 +20,7 @@ export default function AuthLayout({
           <div className="w-full max-w-sm">{children}</div>
         </div>
       </section>
-      <section className="relative hidden bg-muted lg:block">
-        <Image
-          src="/auth-cover.svg"
-          alt="List Hygiene dashboard preview"
-          fill
-          priority
-          className="object-cover dark:brightness-[0.2] dark:grayscale"
-        />
-      </section>
+      <AuthVisual />
     </main>
   )
 }

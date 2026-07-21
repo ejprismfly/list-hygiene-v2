@@ -239,11 +239,11 @@ const emptyDashboardData: DashboardViewData = {
 }
 
 const chartColors = [
-  "var(--chart-1)",
-  "var(--chart-2)",
-  "var(--chart-3)",
-  "var(--chart-4)",
-  "var(--chart-5)",
+  "#346ce6",
+  "#ef4444",
+  "#f59e0b",
+  "#64748b",
+  "#3f5d9f",
 ]
 
 const statusChartConfig: ChartConfig = {
@@ -262,6 +262,10 @@ const statusChartConfig: ChartConfig = {
   restricted: {
     label: "Restricted",
     color: chartColors[3],
+  },
+  "no-data": {
+    label: "No Data",
+    color: "var(--foreground)",
   },
 }
 
@@ -794,6 +798,14 @@ export function DashboardContent() {
                       }}
                     />
                   </Pie>
+                  <ChartLegend
+                    content={
+                      <ChartLegendContent
+                        className="flex-wrap gap-x-5 gap-y-3"
+                        nameKey="status"
+                      />
+                    }
+                  />
                 </PieChart>
               </ChartContainer>
             </CardContent>
