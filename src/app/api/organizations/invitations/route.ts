@@ -24,12 +24,26 @@ const hashToken = (token: string) => {
   return crypto.createHash("sha256").update(token).digest("hex")
 }
 
+type SendSupabaseInviteEmailArgs = {
+  adminSupabase: ReturnType<typeof createAdminClient>
+  email: string
+  organizationId: string
+  role: "admin" | "member"
+  request: Request
+  token: string
+  workspaceIds: string[]
+}
+
 function isInviteSendCoolingDown(updatedAt?: string | null) {
   if (!updatedAt) {
     return false
   }
 
   return Date.now() - new Date(updatedAt).getTime() < inviteResendCooldownMs
+}
+
+function isAlreadyRegisteredAuthError(message?: string) {
+  return /already (been )?registered|user already registered/i.test(message || "")
 }
 
 const buildInvitationResponse = (request: Request, invitation: object, token: string) => {
@@ -62,15 +76,7 @@ const sendSupabaseInviteEmail = async ({
   request,
   token,
   workspaceIds,
-}: {
-  adminSupabase: ReturnType<typeof createAdminClient>
-  email: string
-  organizationId: string
-  role: "admin" | "member"
-  request: Request
-  token: string
-  workspaceIds: string[]
-}) => {
+}: SendSupabaseInviteEmailArgs) => {
   return adminSupabase.auth.admin.inviteUserByEmail(email, {
     redirectTo: buildInviteRedirectTo(request, token),
     data: {
@@ -80,6 +86,42 @@ const sendSupabaseInviteEmail = async ({
       workspace_ids: workspaceIds,
     },
   })
+}
+
+async function deliverSupabaseInviteEmail(args: SendSupabaseInviteEmailArgs) {
+  let authResponse: Awaited<ReturnType<typeof sendSupabaseInviteEmail>>
+  try {
+    authResponse = await sendSupabaseInviteEmail(args)
+  } catch (error) {
+    return {
+      ok: false as const,
+      error:
+        error instanceof Error
+          ? error.message
+          : "Unable to send invitation email.",
+    }
+  }
+
+  const { data, error } = authResponse
+  if (error) {
+    if (isAlreadyRegisteredAuthError(error.message)) {
+      return {
+        ok: true as const,
+        authUserId: null,
+        emailDelivery: "manual_link" as const,
+        emailDeliveryError: error.message,
+      }
+    }
+
+    return { ok: false as const, error: error.message }
+  }
+
+  return {
+    ok: true as const,
+    authUserId: data.user?.id || null,
+    emailDelivery: "supabase_auth" as const,
+    emailDeliveryError: null,
+  }
 }
 
 export async function GET(request: Request) {
@@ -150,6 +192,83 @@ export async function POST(request: Request) {
     return errorJson(resolvedWorkspaceIds.error, 400)
   }
 
+  const { data: existingInvitation, error: existingInvitationError } =
+    await supabase
+      .from("organization_invitations")
+      .select(invitationSelect)
+      .eq("organization_id", context.organizationId)
+      .eq("email", email)
+      .eq("status", "pending")
+      .maybeSingle()
+
+  if (existingInvitationError) {
+    return errorJson(existingInvitationError.message)
+  }
+
+  if (existingInvitation) {
+    const existingWorkspaceIds = Array.isArray(existingInvitation.workspace_ids)
+      ? existingInvitation.workspace_ids.filter(
+          (id): id is string => typeof id === "string" && !!id
+        )
+      : []
+    const mergedWorkspaceIds = Array.from(
+      new Set([...existingWorkspaceIds, ...resolvedWorkspaceIds.workspaceIds])
+    )
+    if (isInviteSendCoolingDown(existingInvitation.updated_at)) {
+      return errorJson("Please wait before resending this invitation.", 429)
+    }
+
+    let adminSupabase: ReturnType<typeof createAdminClient>
+    try {
+      adminSupabase = createAdminClient()
+    } catch {
+      return errorJson(
+        "SUPABASE_SERVICE_ROLE_KEY is required to send invitation emails.",
+        500
+      )
+    }
+
+    const token = crypto.randomBytes(32).toString("hex")
+    const { data, error } = await supabase
+      .from("organization_invitations")
+      .update({
+        role,
+        workspace_ids: mergedWorkspaceIds,
+        token_hash: hashToken(token),
+        invited_by_user_id: context.user?.id,
+        expires_at: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString(),
+      })
+      .eq("id", existingInvitation.id)
+      .select(invitationSelect)
+      .single()
+
+    if (error || !data) {
+      return errorJson(error?.message || "Unable to refresh invitation")
+    }
+
+    const delivery = await deliverSupabaseInviteEmail({
+      adminSupabase,
+      email,
+      organizationId: context.organizationId,
+      role,
+      request,
+      token,
+      workspaceIds: mergedWorkspaceIds,
+    })
+
+    if (!delivery.ok) {
+      return errorJson(delivery.error)
+    }
+
+    return json({
+      ...buildInvitationResponse(request, data, token),
+      auth_user_id: delivery.authUserId,
+      email_delivery: delivery.emailDelivery,
+      email_delivery_error: delivery.emailDeliveryError,
+      resent: delivery.emailDelivery === "supabase_auth",
+    })
+  }
+
   const profileLookup = await findTeamMemberProfileByEmail(supabase, email)
   if (!profileLookup.ok) {
     return errorJson(profileLookup.error)
@@ -191,81 +310,6 @@ export async function POST(request: Request) {
   }
 
   const token = crypto.randomBytes(32).toString("hex")
-  const { data: existingInvitation, error: existingInvitationError } =
-    await supabase
-      .from("organization_invitations")
-      .select(invitationSelect)
-      .eq("organization_id", context.organizationId)
-      .eq("email", email)
-      .eq("status", "pending")
-      .maybeSingle()
-
-  if (existingInvitationError) {
-    return errorJson(existingInvitationError.message)
-  }
-
-  if (existingInvitation) {
-    const existingWorkspaceIds = Array.isArray(existingInvitation.workspace_ids)
-      ? existingInvitation.workspace_ids.filter(
-          (id): id is string => typeof id === "string" && !!id
-        )
-      : []
-    const mergedWorkspaceIds = Array.from(
-      new Set([...existingWorkspaceIds, ...resolvedWorkspaceIds.workspaceIds])
-    )
-    if (isInviteSendCoolingDown(existingInvitation.updated_at)) {
-      return errorJson("Please wait before resending this invitation.", 429)
-    }
-
-    const { data, error } = await supabase
-      .from("organization_invitations")
-      .update({
-        role,
-        workspace_ids: mergedWorkspaceIds,
-        token_hash: hashToken(token),
-        invited_by_user_id: context.user?.id,
-        expires_at: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString(),
-      })
-      .eq("id", existingInvitation.id)
-      .select(invitationSelect)
-      .single()
-
-    if (error || !data) {
-      return errorJson(error?.message || "Unable to refresh invitation")
-    }
-
-    let authResponse: Awaited<ReturnType<typeof sendSupabaseInviteEmail>>
-    try {
-      authResponse = await sendSupabaseInviteEmail({
-        adminSupabase,
-        email,
-        organizationId: context.organizationId,
-        role,
-        request,
-        token,
-        workspaceIds: mergedWorkspaceIds,
-      })
-    } catch (error) {
-      return errorJson(
-        error instanceof Error
-          ? error.message
-          : "Unable to send invitation email."
-      )
-    }
-
-    const { data: authData, error: authError } = authResponse
-
-    if (authError) {
-      return errorJson(authError.message)
-    }
-
-    return json({
-      ...buildInvitationResponse(request, data, token),
-      auth_user_id: authData.user?.id || null,
-      email_delivery: "supabase_auth",
-      resent: true,
-    })
-  }
 
   const { data, error } = await supabase
     .from("organization_invitations")
@@ -284,44 +328,31 @@ export async function POST(request: Request) {
     return errorJson(error?.message || "Unable to create invitation")
   }
 
-  let authResponse: Awaited<ReturnType<typeof sendSupabaseInviteEmail>>
-  try {
-    authResponse = await sendSupabaseInviteEmail({
-      adminSupabase,
-      email,
-      organizationId: context.organizationId,
-      role,
-      request,
-      token,
-      workspaceIds: resolvedWorkspaceIds.workspaceIds,
-    })
-  } catch (error) {
+  const delivery = await deliverSupabaseInviteEmail({
+    adminSupabase,
+    email,
+    organizationId: context.organizationId,
+    role,
+    request,
+    token,
+    workspaceIds: resolvedWorkspaceIds.workspaceIds,
+  })
+
+  if (!delivery.ok) {
     await supabase
       .from("organization_invitations")
       .update({ status: "revoked" })
       .eq("id", data.id)
 
-    return errorJson(
-      error instanceof Error ? error.message : "Unable to send invitation email."
-    )
-  }
-
-  const { data: authData, error: authError } = authResponse
-
-  if (authError) {
-    await supabase
-      .from("organization_invitations")
-      .update({ status: "revoked" })
-      .eq("id", data.id)
-
-    return errorJson(authError.message)
+    return errorJson(delivery.error)
   }
 
   return json(
     {
       ...buildInvitationResponse(request, data, token),
-      auth_user_id: authData.user?.id || null,
-      email_delivery: "supabase_auth",
+      auth_user_id: delivery.authUserId,
+      email_delivery: delivery.emailDelivery,
+      email_delivery_error: delivery.emailDeliveryError,
     },
     { status: 201 }
   )
@@ -380,39 +411,6 @@ export async function PATCH(request: Request) {
       return errorJson(resolvedWorkspaceIds.error, 400)
     }
 
-    const profileLookup = await findTeamMemberProfileByEmail(
-      supabase,
-      invitation.email
-    )
-    if (!profileLookup.ok) {
-      return errorJson(profileLookup.error)
-    }
-
-    if (profileLookup.profile) {
-      const added = await addExistingUserToTeam({
-        acceptedInvitationId: invitation.id,
-        invitedByUserId: context.user?.id,
-        organizationId: context.organizationId,
-        profile: profileLookup.profile,
-        role,
-        supabase,
-        workspaceIds: resolvedWorkspaceIds.workspaceIds,
-      })
-
-      if (!added.ok) {
-        return errorJson(added.error)
-      }
-
-      return json({
-        ...invitation,
-        status: "accepted",
-        member: added.member,
-        email_delivery: "existing_user",
-        accepted: true,
-        resent: false,
-      })
-    }
-
     if (isInviteSendCoolingDown(invitation.updated_at)) {
       return errorJson("Please wait before resending this invitation.", 429)
     }
@@ -450,35 +448,26 @@ export async function PATCH(request: Request) {
       return errorJson(error?.message || "Unable to refresh invitation")
     }
 
-    let authResponse: Awaited<ReturnType<typeof sendSupabaseInviteEmail>>
-    try {
-      authResponse = await sendSupabaseInviteEmail({
-        adminSupabase,
-        email: data.email,
-        organizationId: context.organizationId,
-        role,
-        request,
-        token,
-        workspaceIds: resolvedWorkspaceIds.workspaceIds,
-      })
-    } catch (error) {
-      return errorJson(
-        error instanceof Error
-          ? error.message
-          : "Unable to send invitation email."
-      )
-    }
+    const delivery = await deliverSupabaseInviteEmail({
+      adminSupabase,
+      email: data.email,
+      organizationId: context.organizationId,
+      role,
+      request,
+      token,
+      workspaceIds: resolvedWorkspaceIds.workspaceIds,
+    })
 
-    const { data: authData, error: authError } = authResponse
-    if (authError) {
-      return errorJson(authError.message)
+    if (!delivery.ok) {
+      return errorJson(delivery.error)
     }
 
     return json({
       ...buildInvitationResponse(request, data, token),
-      auth_user_id: authData.user?.id || null,
-      email_delivery: "supabase_auth",
-      resent: true,
+      auth_user_id: delivery.authUserId,
+      email_delivery: delivery.emailDelivery,
+      email_delivery_error: delivery.emailDeliveryError,
+      resent: delivery.emailDelivery === "supabase_auth",
     })
   }
 

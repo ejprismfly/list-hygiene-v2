@@ -83,7 +83,8 @@ type WorkspaceInvitation = {
 
 type InvitationResponse = WorkspaceInvitation & {
   accepted?: boolean
-  email_delivery?: "existing_user" | "supabase_auth"
+  email_delivery?: "existing_user" | "manual_link" | "supabase_auth"
+  email_delivery_error?: string | null
   member?: WorkspaceMember
 }
 
@@ -607,6 +608,13 @@ export function WorkspaceSwitcher({
           index === existingIndex ? invitation : item
         )
       })
+      if (data.email_delivery === "manual_link") {
+        setInviteStatusMessage(
+          `${email} invite link refreshed. Copy the link to send it manually.`
+        )
+        return
+      }
+
       const inviteVerb = data.resent ? "resent" : "invited"
       setInviteStatusMessage(
         `${email} ${inviteVerb} to ${workspaceLabel(selectedWorkspace.name)}.`
@@ -655,35 +663,19 @@ export function WorkspaceSwitcher({
         return
       }
 
-      if (data.member) {
-        const nextMember = data.member
-        setMembers((current) => {
-          const existingIndex = current.findIndex(
-            (member) => member.user_id === nextMember.user_id
-          )
-          if (existingIndex === -1) {
-            return [nextMember, ...current]
-          }
-
-          return current.map((member, index) =>
-            index === existingIndex ? nextMember : member
-          )
-        })
-        setInvitations((current) =>
-          current.filter((item) => item.id !== invitation.id)
-        )
-        setLastInviteLink("")
-        setInviteStatusMessage(`${invitation.email} added to the workspace.`)
-        return
-      }
-
       setLastInviteLink(data.invite_url || "")
       setInvitations((current) =>
         current.map((item) =>
-          item.id === invitation.id ? (data as WorkspaceInvitation) : item
+          item.id === invitation.id
+            ? { ...item, ...(data as WorkspaceInvitation), status: "pending" }
+            : item
         )
       )
-      setInviteStatusMessage(`${invitation.email} invite resent.`)
+      setInviteStatusMessage(
+        data.email_delivery === "manual_link"
+          ? `${invitation.email} invite link refreshed. Copy the link to send it manually.`
+          : `${invitation.email} invite resent.`
+      )
     } catch {
       setInviteStatusMessage("Unable to resend invite.")
       setInviteStatusIsError(true)
