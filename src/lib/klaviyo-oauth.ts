@@ -47,16 +47,19 @@ function klaviyoPopupFeatures() {
   ].join(",")
 }
 
+export function openKlaviyoOAuthPopup() {
+  return window.open("about:blank", "klaviyo-oauth", klaviyoPopupFeatures())
+}
+
 export async function startKlaviyoOAuth({
   onMissingClientId,
+  popup: existingPopup,
 }: {
   onMissingClientId?: () => void
+  popup?: Window | null
 } = {}) {
-  const popup = window.open(
-    "about:blank",
-    "klaviyo-oauth",
-    klaviyoPopupFeatures()
-  )
+  const popup =
+    existingPopup === undefined ? openKlaviyoOAuthPopup() : existingPopup
   const clientId = process.env.NEXT_PUBLIC_KLAVIYO_CLIENT_ID
 
   if (!clientId) {

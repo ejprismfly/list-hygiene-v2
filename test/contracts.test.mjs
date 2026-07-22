@@ -226,6 +226,30 @@ test("auth UI is password-only", () => {
   assert.match(impersonate, /SUPABASE_SERVICE_ROLE_KEY/)
 })
 
+test("direct signup enters workspace onboarding while invites keep invite flow", () => {
+  const signupPage = read("src/app/(auth)/signup/page.tsx")
+  const signupForm = read("src/components/auth/signup-form.tsx")
+  const inviteAcceptance = read("src/components/auth/invite-acceptance.tsx")
+  const onboardingContent = read("src/components/app/onboarding-content.tsx")
+  const klaviyoOAuth = read("src/lib/klaviyo-oauth.ts")
+
+  assert.match(signupPage, /safeNextPath\(next \|\| "\/onboarding"\)/)
+  assert.match(signupForm, /nextPath = "\/onboarding"/)
+  assert.match(inviteAcceptance, /href=\{`\/signup\?\$\{authQuery\}`\}/)
+  assert.match(onboardingContent, /loadOrganizations/)
+  assert.match(onboardingContent, /loadWorkspaces/)
+  assert.match(onboardingContent, /canUseOnboarding\(nextOrganization\.role\)/)
+  assert.match(onboardingContent, /window\.location\.assign\("\/dashboard"\)/)
+  assert.match(onboardingContent, /Workspace name is required\./)
+  assert.match(onboardingContent, /method: workspace \? "PATCH" : "POST"/)
+  assert.match(onboardingContent, /body: JSON\.stringify\(/)
+  assert.match(onboardingContent, /persistSelection\(organization\.id, data\.id\)/)
+  assert.match(onboardingContent, /openKlaviyoOAuthPopup/)
+  assert.match(onboardingContent, /startKlaviyoOAuth\(\{[\s\S]*popup/)
+  assert.match(klaviyoOAuth, /export function openKlaviyoOAuthPopup/)
+  assert.match(klaviyoOAuth, /popup: existingPopup/)
+})
+
 test("team invitations are usable by existing and new users", () => {
   const workspaceSwitcher = read("src/components/app/workspace-switcher.tsx")
   const memberRoute = read("src/app/api/organizations/members/route.ts")

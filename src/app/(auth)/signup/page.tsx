@@ -15,5 +15,5 @@ export default async function SignupPage({ searchParams }: SignupPageProps) {
   const params = await searchParams
   const next = Array.isArray(params?.next) ? params?.next[0] : params?.next
 
-  return <SignupForm nextPath={safeNextPath(next)} />
+  return <SignupForm nextPath={safeNextPath(next || "/onboarding")} />
 }

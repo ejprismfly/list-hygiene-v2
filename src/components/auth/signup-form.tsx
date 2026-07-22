@@ -17,7 +17,7 @@ import { Label } from "@/components/ui/label"
 import { PasswordInput } from "@/components/auth/password-input"
 import { AUTH_FORM_INITIAL_STATE } from "@/lib/auth-form"
 
-export function SignupForm({ nextPath = "/dashboard" }: { nextPath?: string }) {
+export function SignupForm({ nextPath = "/onboarding" }: { nextPath?: string }) {
   const [state, formAction, pending] = useActionState(
     signupAction,
     AUTH_FORM_INITIAL_STATE
