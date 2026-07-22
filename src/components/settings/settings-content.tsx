@@ -89,40 +89,53 @@ function connectionDisplayName(connection: KlaviyoConnection) {
 
 function ConnectionsTableSkeleton() {
   return (
-    <div className="overflow-x-auto">
-      <Table className="min-w-[38rem]">
-        <TableHeader>
-          <TableRow>
-            <TableHead>Platform</TableHead>
-            <TableHead>Connection Name</TableHead>
-            <TableHead>Connected</TableHead>
-            <TableHead>Status</TableHead>
-            <TableHead className="w-12" />
+    <Table className="min-w-0 md:min-w-[38rem]">
+      <TableHeader className="hidden md:table-header-group">
+        <TableRow>
+          <TableHead>Platform</TableHead>
+          <TableHead>Connection Name</TableHead>
+          <TableHead>Connected</TableHead>
+          <TableHead>Status</TableHead>
+          <TableHead className="w-12" />
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {Array.from({ length: 2 }).map((_, index) => (
+          <TableRow
+            key={index}
+            className="grid gap-3 p-4 md:table-row md:p-0"
+          >
+            <TableCell className="flex items-center justify-between gap-4 p-0 md:table-cell md:p-2">
+              <span className="text-sm text-muted-foreground md:hidden">
+                Platform
+              </span>
+              <Skeleton className="h-4 w-20" />
+            </TableCell>
+            <TableCell className="flex items-center justify-between gap-4 p-0 md:table-cell md:p-2">
+              <span className="text-sm text-muted-foreground md:hidden">
+                Connection
+              </span>
+              <Skeleton className="h-4 w-32" />
+            </TableCell>
+            <TableCell className="flex items-center justify-between gap-4 p-0 md:table-cell md:p-2">
+              <span className="text-sm text-muted-foreground md:hidden">
+                Connected
+              </span>
+              <Skeleton className="h-4 w-24" />
+            </TableCell>
+            <TableCell className="flex items-center justify-between gap-4 p-0 md:table-cell md:p-2">
+              <span className="text-sm text-muted-foreground md:hidden">
+                Status
+              </span>
+              <Skeleton className="h-5 w-20 rounded-full" />
+            </TableCell>
+            <TableCell className="flex justify-end p-0 md:table-cell md:p-2">
+              <Skeleton className="h-8 w-8" />
+            </TableCell>
           </TableRow>
-        </TableHeader>
-        <TableBody>
-          {Array.from({ length: 2 }).map((_, index) => (
-            <TableRow key={index}>
-              <TableCell>
-                <Skeleton className="h-4 w-20" />
-              </TableCell>
-              <TableCell>
-                <Skeleton className="h-4 w-32" />
-              </TableCell>
-              <TableCell>
-                <Skeleton className="h-4 w-24" />
-              </TableCell>
-              <TableCell>
-                <Skeleton className="h-5 w-20 rounded-full" />
-              </TableCell>
-              <TableCell>
-                <Skeleton className="h-8 w-8" />
-              </TableCell>
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
-    </div>
+        ))}
+      </TableBody>
+    </Table>
   )
 }
 
@@ -279,70 +292,89 @@ export function SettingsContent({ connected = false }: SettingsContentProps) {
       {loadingConnections ? (
         <ConnectionsTableSkeleton />
       ) : hasConnections ? (
-        <div className="overflow-x-auto">
-          <Table className="min-w-[38rem]">
-            <TableHeader>
-              <TableRow>
-                <TableHead>Platform</TableHead>
-                <TableHead>Connection Name</TableHead>
-                <TableHead>Connected</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead className="w-12 text-right">
-                  <span className="sr-only">Actions</span>
-                </TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {connections.map((connection) => (
-                <TableRow key={connection.id}>
-                  <TableCell>{connection.platform || "Klaviyo"}</TableCell>
-                  <TableCell>{connectionDisplayName(connection)}</TableCell>
-                  <TableCell>{connection.connection_date || "-"}</TableCell>
-                  <TableCell>
-                    <Badge variant="secondary">
-                      {connection.status || "Connected"}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <DropdownMenu>
-                      <DropdownMenuTrigger
+        <Table className="min-w-0 md:min-w-[38rem]">
+          <TableHeader className="hidden md:table-header-group">
+            <TableRow>
+              <TableHead>Platform</TableHead>
+              <TableHead>Connection Name</TableHead>
+              <TableHead>Connected</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead className="w-12 text-right">
+                <span className="sr-only">Actions</span>
+              </TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {connections.map((connection) => (
+              <TableRow
+                key={connection.id}
+                className="grid gap-3 p-4 md:table-row md:p-0"
+              >
+                <TableCell className="flex items-center justify-between gap-4 p-0 md:table-cell md:p-2">
+                  <span className="text-sm text-muted-foreground md:hidden">
+                    Platform
+                  </span>
+                  <span>{connection.platform || "Klaviyo"}</span>
+                </TableCell>
+                <TableCell className="flex min-w-0 items-center justify-between gap-4 whitespace-normal p-0 md:table-cell md:p-2">
+                  <span className="text-sm text-muted-foreground md:hidden">
+                    Connection
+                  </span>
+                  <span className="min-w-0 truncate text-right font-medium md:text-left md:font-normal">
+                    {connectionDisplayName(connection)}
+                  </span>
+                </TableCell>
+                <TableCell className="flex items-center justify-between gap-4 p-0 md:table-cell md:p-2">
+                  <span className="text-sm text-muted-foreground md:hidden">
+                    Connected
+                  </span>
+                  <span>{connection.connection_date || "-"}</span>
+                </TableCell>
+                <TableCell className="flex items-center justify-between gap-4 p-0 md:table-cell md:p-2">
+                  <span className="text-sm text-muted-foreground md:hidden">
+                    Status
+                  </span>
+                  <Badge variant="secondary">
+                    {connection.status || "Connected"}
+                  </Badge>
+                </TableCell>
+                <TableCell className="p-0 text-right md:table-cell md:p-2">
+                  <DropdownMenu>
+                    <DropdownMenuTrigger
+                      render={
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          aria-label={`Actions for ${connectionDisplayName(
+                            connection
+                          )}`}
+                        />
+                      }
+                    >
+                      <MoreHorizontal className="size-4" />
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuLinkItem
                         render={
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon"
-                            aria-label={`Actions for ${connectionDisplayName(
-                              connection
-                            )}`}
-                          />
+                          <Link href={`/settings/klaviyo?id=${connection.id}`} />
                         }
                       >
-                        <MoreHorizontal className="size-4" />
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuLinkItem
-                          render={
-                            <Link
-                              href={`/settings/klaviyo?id=${connection.id}`}
-                            />
-                          }
-                        >
-                          Edit
-                        </DropdownMenuLinkItem>
-                        <DropdownMenuItem
-                          className="text-destructive data-highlighted:bg-destructive/10 data-highlighted:text-destructive"
-                          onClick={() => openDeleteConnectionDialog(connection)}
-                        >
-                          Delete
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
+                        Edit
+                      </DropdownMenuLinkItem>
+                      <DropdownMenuItem
+                        className="text-destructive data-highlighted:bg-destructive/10 data-highlighted:text-destructive"
+                        onClick={() => openDeleteConnectionDialog(connection)}
+                      >
+                        Delete
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
       ) : (
         <p className="text-lg text-muted-foreground">No connections</p>
       )}
@@ -352,7 +384,10 @@ export function SettingsContent({ connected = false }: SettingsContentProps) {
           <DialogTrigger render={<Button className="w-full sm:w-fit" />}>
             Add Connection
           </DialogTrigger>
-          <DialogContent className="sm:max-w-4xl" showCloseButton={false}>
+          <DialogContent
+            className="max-h-[calc(100svh-2rem)] overflow-y-auto sm:max-w-4xl"
+            showCloseButton={false}
+          >
             <DialogHeader>
               <DialogTitle>Add Connections</DialogTitle>
             </DialogHeader>

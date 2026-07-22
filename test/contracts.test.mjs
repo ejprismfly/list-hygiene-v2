@@ -626,7 +626,10 @@ test("critical UI controls are wired to their own actions", () => {
   assert.match(settingsContent, /ConnectionsTableSkeleton/)
   assert.match(settingsContent, /<Skeleton className="h-4 w-20" \/>/)
   assert.doesNotMatch(settingsContent, /Loading connections\.\.\./)
-  assert.match(settingsContent, /<div className="overflow-x-auto">\s*<Table className="min-w-\[38rem\]">/)
+  assert.match(settingsContent, /<Table className="min-w-0 md:min-w-\[38rem\]">/)
+  assert.match(settingsContent, /<TableHeader className="hidden md:table-header-group">/)
+  assert.match(settingsContent, /className="grid gap-3 p-4 md:table-row md:p-0"/)
+  assert.match(settingsContent, /max-h-\[calc\(100svh-2rem\)\] overflow-y-auto sm:max-w-4xl/)
   assert.doesNotMatch(settingsContent, /<TableHead>Workspace<\/TableHead>/)
   assert.doesNotMatch(settingsContent, /Multiple connections coming soon\./)
   assert.doesNotMatch(settingsContent, /Multiple connections will be available soon\./)
@@ -987,6 +990,10 @@ test("workspace selector shows loading state without a field label", () => {
   assert.match(switcher, /<Skeleton className="h-4 w-44" \/>/)
   assert.match(switcher, /<Loader2 className="size-4 animate-spin" \/>/)
   assert.match(switcher, /Loading/)
+  assert.match(switcher, /<Table className="min-w-0 md:min-w-\[38rem\]">/)
+  assert.match(switcher, /<TableHeader className="hidden md:table-header-group">/)
+  assert.match(switcher, /className="grid gap-3 p-4 md:table-row md:p-0"/)
+  assert.match(switcher, /className="min-w-0 break-all text-right font-medium md:text-left md:font-normal"/)
   assert.doesNotMatch(switcher, /Loading\.\.\./)
   assert.doesNotMatch(
     switcher,

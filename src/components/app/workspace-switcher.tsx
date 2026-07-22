@@ -1017,160 +1017,185 @@ export function WorkspaceSwitcher({
                     </div>
                   ) : null}
 
-                  <div className="overflow-x-auto">
-                    <Table className="min-w-[38rem]">
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>Email</TableHead>
-                          <TableHead>Status</TableHead>
-                          <TableHead>Role</TableHead>
-                          <TableHead className="w-28 text-right" />
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {teamLoading ? (
-                          Array.from({ length: 3 }).map((_, index) => (
-                            <TableRow key={index}>
-                              <TableCell>
-                                <Skeleton className="h-4 w-44" />
-                              </TableCell>
-                              <TableCell>
-                                <Skeleton className="h-5 w-20 rounded-full" />
-                              </TableCell>
-                              <TableCell>
-                                <Skeleton className="h-8 w-28" />
-                              </TableCell>
-                              <TableCell>
-                                <Skeleton className="h-8 w-8" />
-                              </TableCell>
-                            </TableRow>
-                          ))
-                        ) : activeRows.length ? (
-                          activeRows.map((row) => {
-                            const isInvitation =
-                              "email" in row && !("user_id" in row)
-                            const key = isInvitation
-                              ? `invite:${row.id}`
-                              : `member:${row.user_id}`
-                            const email = row.email || "No email"
-                            const status = row.status
-                            const role = row.role
+                  <Table className="min-w-0 md:min-w-[38rem]">
+                    <TableHeader className="hidden md:table-header-group">
+                      <TableRow>
+                        <TableHead>Email</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead>Role</TableHead>
+                        <TableHead className="w-28 text-right" />
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {teamLoading ? (
+                        Array.from({ length: 3 }).map((_, index) => (
+                          <TableRow
+                            key={index}
+                            className="grid gap-3 p-4 md:table-row md:p-0"
+                          >
+                            <TableCell className="flex items-center justify-between gap-4 p-0 md:table-cell md:p-2">
+                              <span className="text-sm text-muted-foreground md:hidden">
+                                Email
+                              </span>
+                              <Skeleton className="h-4 w-44" />
+                            </TableCell>
+                            <TableCell className="flex items-center justify-between gap-4 p-0 md:table-cell md:p-2">
+                              <span className="text-sm text-muted-foreground md:hidden">
+                                Status
+                              </span>
+                              <Skeleton className="h-5 w-20 rounded-full" />
+                            </TableCell>
+                            <TableCell className="flex items-center justify-between gap-4 p-0 md:table-cell md:p-2">
+                              <span className="text-sm text-muted-foreground md:hidden">
+                                Role
+                              </span>
+                              <Skeleton className="h-8 w-28" />
+                            </TableCell>
+                            <TableCell className="flex justify-end p-0 md:table-cell md:p-2">
+                              <Skeleton className="h-8 w-8" />
+                            </TableCell>
+                          </TableRow>
+                        ))
+                      ) : activeRows.length ? (
+                        activeRows.map((row) => {
+                          const isInvitation =
+                            "email" in row && !("user_id" in row)
+                          const key = isInvitation
+                            ? `invite:${row.id}`
+                            : `member:${row.user_id}`
+                          const email = row.email || "No email"
+                          const status = row.status
+                          const role = row.role
 
-                            return (
-                              <TableRow key={key}>
-                                <TableCell>{email}</TableCell>
-                                <TableCell>
-                                  <Badge variant="secondary">{status}</Badge>
-                                </TableCell>
-                                <TableCell>
-                                  {isInvitation ? (
-                                    role
-                                  ) : row.role === "owner" ? (
-                                    <Badge variant="secondary">owner</Badge>
-                                  ) : (
-                                    <Select
-                                      value={role}
-                                      disabled={
-                                        !managerEnabled ||
-                                        Boolean(updatingMemberUserId)
-                                      }
-                                      onValueChange={(value) =>
-                                        updateMemberRole(
-                                          row,
-                                          value === "admin" ? "admin" : "member"
-                                        )
-                                      }
-                                    >
-                                      <SelectTrigger className="w-28">
-                                        <SelectValue>
-                                          {updatingMemberUserId ===
-                                          row.user_id ? (
-                                            <span className="inline-flex items-center gap-2">
-                                              <Loader2 className="size-4 animate-spin" />
-                                              {role}
-                                            </span>
-                                          ) : (
-                                            role
-                                          )}
-                                        </SelectValue>
-                                      </SelectTrigger>
-                                      <SelectContent>
-                                        <SelectItem value="member">member</SelectItem>
-                                        <SelectItem value="admin">admin</SelectItem>
-                                      </SelectContent>
-                                    </Select>
-                                  )}
-                                </TableCell>
-                                <TableCell className="text-right">
-                                  <div className="inline-flex items-center justify-end gap-1">
-                                    {isInvitation ? (
-                                      <Button
-                                        type="button"
-                                        variant="ghost"
-                                        size="icon"
-                                        disabled={
-                                          !managerEnabled ||
-                                          Boolean(resendingInvitationId) ||
-                                          teamActionSubmitting
-                                        }
-                                        aria-label="Resend invite"
-                                        title="Resend invite"
-                                        onClick={() => resendInvitation(row)}
-                                      >
-                                        {resendingInvitationId === row.id ? (
-                                          <Loader2 className="size-4 animate-spin" />
+                          return (
+                            <TableRow
+                              key={key}
+                              className="grid gap-3 p-4 md:table-row md:p-0"
+                            >
+                              <TableCell className="flex min-w-0 items-center justify-between gap-4 whitespace-normal p-0 md:table-cell md:p-2">
+                                <span className="text-sm text-muted-foreground md:hidden">
+                                  Email
+                                </span>
+                                <span className="min-w-0 break-all text-right font-medium md:text-left md:font-normal">
+                                  {email}
+                                </span>
+                              </TableCell>
+                              <TableCell className="flex items-center justify-between gap-4 p-0 md:table-cell md:p-2">
+                                <span className="text-sm text-muted-foreground md:hidden">
+                                  Status
+                                </span>
+                                <Badge variant="secondary">{status}</Badge>
+                              </TableCell>
+                              <TableCell className="flex items-center justify-between gap-4 p-0 md:table-cell md:p-2">
+                                <span className="text-sm text-muted-foreground md:hidden">
+                                  Role
+                                </span>
+                                {isInvitation ? (
+                                  role
+                                ) : row.role === "owner" ? (
+                                  <Badge variant="secondary">owner</Badge>
+                                ) : (
+                                  <Select
+                                    value={role}
+                                    disabled={
+                                      !managerEnabled ||
+                                      Boolean(updatingMemberUserId)
+                                    }
+                                    onValueChange={(value) =>
+                                      updateMemberRole(
+                                        row,
+                                        value === "admin" ? "admin" : "member"
+                                      )
+                                    }
+                                  >
+                                    <SelectTrigger className="w-28">
+                                      <SelectValue>
+                                        {updatingMemberUserId === row.user_id ? (
+                                          <span className="inline-flex items-center gap-2">
+                                            <Loader2 className="size-4 animate-spin" />
+                                            {role}
+                                          </span>
                                         ) : (
-                                          <Send className="size-4" />
+                                          role
                                         )}
-                                      </Button>
-                                    ) : null}
+                                      </SelectValue>
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      <SelectItem value="member">member</SelectItem>
+                                      <SelectItem value="admin">admin</SelectItem>
+                                    </SelectContent>
+                                  </Select>
+                                )}
+                              </TableCell>
+                              <TableCell className="p-0 text-right md:table-cell md:p-2">
+                                <div className="inline-flex items-center justify-end gap-1">
+                                  {isInvitation ? (
                                     <Button
                                       type="button"
                                       variant="ghost"
                                       size="icon"
                                       disabled={
                                         !managerEnabled ||
-                                        teamActionSubmitting ||
-                                        (isInvitation &&
-                                          resendingInvitationId === row.id) ||
-                                        (!isInvitation && row.role === "owner")
+                                        Boolean(resendingInvitationId) ||
+                                        teamActionSubmitting
                                       }
-                                      aria-label={
-                                        isInvitation
-                                          ? "Cancel invite"
-                                          : "Remove member"
-                                      }
-                                      title={
-                                        isInvitation
-                                          ? "Cancel invite"
-                                          : "Remove member"
-                                      }
-                                      onClick={() =>
-                                        isInvitation
-                                          ? openCancelInvitationDialog(row)
-                                          : openRemoveMemberDialog(row)
-                                      }
+                                      aria-label="Resend invite"
+                                      title="Resend invite"
+                                      onClick={() => resendInvitation(row)}
                                     >
-                                      <UserMinus className="size-4" />
+                                      {resendingInvitationId === row.id ? (
+                                        <Loader2 className="size-4 animate-spin" />
+                                      ) : (
+                                        <Send className="size-4" />
+                                      )}
                                     </Button>
-                                  </div>
-                                </TableCell>
-                              </TableRow>
-                            )
-                          })
-                        ) : (
-                          <TableRow>
-                            <TableCell
-                              colSpan={4}
-                              className="h-24 text-center text-muted-foreground"
-                            >
-                              No team access for this workspace.
-                            </TableCell>
-                          </TableRow>
-                        )}
-                      </TableBody>
-                    </Table>
-                  </div>
+                                  ) : null}
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="icon"
+                                    disabled={
+                                      !managerEnabled ||
+                                      teamActionSubmitting ||
+                                      (isInvitation &&
+                                        resendingInvitationId === row.id) ||
+                                      (!isInvitation && row.role === "owner")
+                                    }
+                                    aria-label={
+                                      isInvitation
+                                        ? "Cancel invite"
+                                        : "Remove member"
+                                    }
+                                    title={
+                                      isInvitation
+                                        ? "Cancel invite"
+                                        : "Remove member"
+                                    }
+                                    onClick={() =>
+                                      isInvitation
+                                        ? openCancelInvitationDialog(row)
+                                        : openRemoveMemberDialog(row)
+                                    }
+                                  >
+                                    <UserMinus className="size-4" />
+                                  </Button>
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                          )
+                        })
+                      ) : (
+                        <TableRow>
+                          <TableCell
+                            colSpan={4}
+                            className="h-24 text-center text-muted-foreground"
+                          >
+                            No team access for this workspace.
+                          </TableCell>
+                        </TableRow>
+                      )}
+                    </TableBody>
+                  </Table>
 
                   <Dialog
                     open={memberRemovalDialogOpen}
