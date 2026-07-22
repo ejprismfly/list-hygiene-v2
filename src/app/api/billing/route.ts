@@ -265,7 +265,7 @@ export async function GET(request: Request) {
       organization_id: billing.context.organizationId,
       workspace_id: billing.context.workspaceId,
       account_source: stripeAccount ? billing.context.accountSource : "none",
-      billing_scope: stripeAccount?.workspace_id ? "workspace" : "user",
+      billing_scope: billing.context.workspaceId ? "workspace" : "user",
     },
   })
 }

@@ -54,7 +54,7 @@ export async function GET(request: Request) {
     user_id: billing.context.user.id,
     organization_id: billing.context.organizationId,
     workspace_id: billing.context.workspaceId,
-    billing_scope: stripeAccount?.workspace_id ? "workspace" : "user",
+    billing_scope: billing.context.workspaceId ? "workspace" : "user",
     account_source: stripeAccount ? billing.context.accountSource : "none",
     is_legacy_fallback: Boolean(
       billing.context.workspaceId && fallbackAccount?.customer_id

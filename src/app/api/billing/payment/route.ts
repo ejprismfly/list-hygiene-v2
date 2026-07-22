@@ -14,6 +14,10 @@ export async function POST(request: Request) {
     return errorJson("payment_id must be a string.", 400)
   }
 
+  if (!/^pm_[A-Za-z0-9_]+$/.test(paymentId)) {
+    return errorJson("payment_id must be a Stripe payment method id.", 400)
+  }
+
   const billing = await getBillingContext(
     request,
     "id, user_id, customer_id, subscription_id, organization_id, workspace_id"
@@ -35,6 +39,25 @@ export async function POST(request: Request) {
   }
 
   const stripe = getStripeClient()
+  let paymentMethod
+  try {
+    paymentMethod = await stripe.paymentMethods.retrieve(paymentId)
+  } catch {
+    return errorJson("Payment method not found.", 404)
+  }
+
+  const paymentMethodCustomerId =
+    typeof paymentMethod.customer === "string"
+      ? paymentMethod.customer
+      : paymentMethod.customer?.id || null
+
+  if (paymentMethodCustomerId !== customerId) {
+    return errorJson(
+      "Payment method does not belong to this billing customer.",
+      403
+    )
+  }
+
   await stripe.customers.update(customerId, {
     invoice_settings: { default_payment_method: paymentId },
   })

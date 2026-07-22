@@ -146,6 +146,7 @@ async function findStripeAccount({
   const { data, error } = await query.limit(1).maybeSingle()
   if (error) {
     console.error("Stripe account webhook lookup error:", error)
+    throw new Error(error.message || "Unable to look up Stripe account")
   }
 
   return data
@@ -232,13 +233,23 @@ async function handleInvoicePaid({
     return
   }
 
-  await supabase
+  const { error: updateError } = await supabase
     .from("stripe_accounts")
     .update(planChange.update)
     .eq("id", stripeAccount.id)
 
+  if (updateError) {
+    throw new Error(updateError.message)
+  }
+
   if (planChange.history.length) {
-    await supabase.from("credit_history").insert(planChange.history)
+    const { error: historyError } = await supabase
+      .from("credit_history")
+      .insert(planChange.history)
+
+    if (historyError) {
+      throw new Error(historyError.message)
+    }
   }
 
   await cachePaymentMethods({ stripe, stripeAccount, supabase })
@@ -328,7 +339,10 @@ async function handleSubscriptionDeleted({
     ? query.eq("id", stripeAccountId)
     : query.eq("customer_id", customerId)
 
-  await query
+  const { error } = await query
+  if (error) {
+    throw new Error(error.message)
+  }
 }
 
 export async function POST(request: Request) {
