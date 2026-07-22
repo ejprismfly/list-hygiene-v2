@@ -60,6 +60,20 @@ function buildAuthCallbackUrl(origin: string, nextPath: string, type?: string) {
   return url.toString()
 }
 
+function isAlreadyRegisteredAuthError(message?: string) {
+  return /already (been )?registered|user already registered/i.test(message || "")
+}
+
+function existingAccountState(email?: string, nextPath?: string): AuthFormState {
+  return {
+    status: "error",
+    message:
+      "An account with this email already exists. Please log in, or reset your password if you cannot access it.",
+    email,
+    nextPath,
+  }
+}
+
 export async function loginAction(
   _previousState: AuthFormState,
   formData: FormData
@@ -208,7 +222,15 @@ export async function signupAction(
     })
 
     if (error) {
+      if (isAlreadyRegisteredAuthError(error.message)) {
+        return existingAccountState(email, nextPath)
+      }
+
       return { status: "error", message: error.message }
+    }
+
+    if (data.user && !data.session && data.user.identities?.length === 0) {
+      return existingAccountState(email, nextPath)
     }
 
     shouldRedirect = Boolean(data.session)
@@ -259,6 +281,10 @@ export async function resendSignupConfirmationAction(
     })
 
     if (error) {
+      if (isAlreadyRegisteredAuthError(error.message)) {
+        return existingAccountState(email, nextPath)
+      }
+
       return { status: "error", message: error.message, email, nextPath }
     }
   } catch {

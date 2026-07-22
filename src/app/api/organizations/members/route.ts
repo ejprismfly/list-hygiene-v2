@@ -4,14 +4,12 @@ import {
   json,
   readJsonBody,
   resolveTenantContext,
-  type OrganizationRole,
 } from "@/lib/api/tenant"
-
-const validMemberRole = (
-  role: unknown
-): role is Exclude<OrganizationRole, "owner"> => {
-  return role === "admin" || role === "member"
-}
+import {
+  addExistingUserToTeam,
+  findTeamMemberProfileByEmail,
+  validManagedMemberRole,
+} from "@/lib/api/team-members"
 
 const normalizeWorkspaceIds = (value: unknown) => {
   if (!Array.isArray(value)) {
@@ -108,7 +106,7 @@ export async function POST(request: Request) {
     return errorJson("email must be a string.", 400)
   }
 
-  if (!validMemberRole(role)) {
+  if (!validManagedMemberRole(role)) {
     return errorJson("role must be admin or member.", 400)
   }
 
@@ -128,56 +126,30 @@ export async function POST(request: Request) {
     }
   }
 
-  const { data: userProfile, error: userError } = await supabase
-    .from("user_details")
-    .select("user_id, email, name")
-    .ilike("email", email)
-    .maybeSingle()
+  const profileLookup = await findTeamMemberProfileByEmail(supabase, email)
+  if (!profileLookup.ok) {
+    return errorJson(profileLookup.error)
+  }
 
-  if (userError || !userProfile) {
+  if (!profileLookup.profile) {
     return errorJson("User does not exist. Create an invitation instead.", 404)
   }
 
-  const { data: member, error } = await supabase
-    .from("organization_members")
-    .upsert(
-      {
-        organization_id: context.organizationId,
-        user_id: userProfile.user_id,
-        role,
-        status: "active",
-        invited_by_user_id: context.user?.id,
-      },
-      { onConflict: "organization_id,user_id" }
-    )
-    .select("id, organization_id, user_id, role, status, created_at")
-    .single()
+  const added = await addExistingUserToTeam({
+    email,
+    invitedByUserId: context.user?.id,
+    organizationId: context.organizationId,
+    profile: profileLookup.profile,
+    role,
+    supabase,
+    workspaceIds,
+  })
 
-  if (error || !member) {
-    return errorJson(error?.message || "Unable to add member")
+  if (!added.ok) {
+    return errorJson(added.error)
   }
 
-  if (workspaceIds.length) {
-    await supabase.from("workspace_members").upsert(
-      workspaceIds.map((workspaceId) => ({
-        organization_id: context.organizationId,
-        workspace_id: workspaceId,
-        user_id: userProfile.user_id,
-        role,
-      })),
-      { onConflict: "workspace_id,user_id" }
-    )
-  }
-
-  return json(
-    {
-      ...member,
-      email: userProfile.email,
-      name: userProfile.name,
-      workspace_ids: workspaceIds,
-    },
-    { status: 201 }
-  )
+  return json(added.member, { status: 201 })
 }
 
 export async function PATCH(request: Request) {
@@ -203,7 +175,7 @@ export async function PATCH(request: Request) {
 
   const updates: Record<string, unknown> = {}
   if (body.role !== undefined) {
-    if (!validMemberRole(body.role)) {
+    if (!validManagedMemberRole(body.role)) {
       return errorJson("role must be admin or member.", 400)
     }
     updates.role = body.role
@@ -243,7 +215,7 @@ export async function PATCH(request: Request) {
           organization_id: context.organizationId,
           workspace_id: workspaceId,
           user_id: userId,
-          role: validMemberRole(body.role) ? body.role : "member",
+          role: validManagedMemberRole(body.role) ? body.role : "member",
         })),
         { onConflict: "workspace_id,user_id" }
       )

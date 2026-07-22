@@ -81,6 +81,12 @@ type WorkspaceInvitation = {
   token?: string
 }
 
+type InvitationResponse = WorkspaceInvitation & {
+  accepted?: boolean
+  email_delivery?: "existing_user" | "supabase_auth"
+  member?: WorkspaceMember
+}
+
 function workspaceLabel(name: string) {
   return /\bworkspace\b/i.test(name) ? name : `${name} Workspace`
 }
@@ -545,7 +551,10 @@ export function WorkspaceSwitcher({
         headers: headersFor(organizationId, selectedId),
         body: JSON.stringify(payload),
       })
-      const data = await response.json()
+      const data = (await response.json()) as InvitationResponse & {
+        error?: string
+        resent?: boolean
+      }
       if (!response.ok) {
         setInviteStatusMessage(data.error || "Unable to invite member.")
         setInviteStatusIsError(true)
@@ -554,6 +563,32 @@ export function WorkspaceSwitcher({
 
       setInviteEmail("")
       setInviteRole("member")
+      if (data.member) {
+        const nextMember = data.member
+        setLastInviteLink("")
+        setMembers((current) => {
+          const existingIndex = current.findIndex(
+            (member) => member.user_id === nextMember.user_id
+          )
+          if (existingIndex === -1) {
+            return [nextMember, ...current]
+          }
+
+          return current.map((member, index) =>
+            index === existingIndex ? nextMember : member
+          )
+        })
+        setInvitations((current) =>
+          current.filter(
+            (invitation) => invitation.email.toLowerCase() !== email.toLowerCase()
+          )
+        )
+        setInviteStatusMessage(
+          `${email} added to ${workspaceLabel(selectedWorkspace.name)}.`
+        )
+        return
+      }
+
       setLastInviteLink(data.invite_url || "")
       setInvitations((current) => {
         const invitation = data as WorkspaceInvitation
@@ -605,10 +640,34 @@ export function WorkspaceSwitcher({
         headers: headersFor(organizationId, selectedId),
         body: JSON.stringify({ id: invitation.id, action: "resend" }),
       })
-      const data = await response.json()
+      const data = (await response.json()) as InvitationResponse & {
+        error?: string
+      }
       if (!response.ok) {
         setInviteStatusMessage(data.error || "Unable to resend invite.")
         setInviteStatusIsError(true)
+        return
+      }
+
+      if (data.member) {
+        const nextMember = data.member
+        setMembers((current) => {
+          const existingIndex = current.findIndex(
+            (member) => member.user_id === nextMember.user_id
+          )
+          if (existingIndex === -1) {
+            return [nextMember, ...current]
+          }
+
+          return current.map((member, index) =>
+            index === existingIndex ? nextMember : member
+          )
+        })
+        setInvitations((current) =>
+          current.filter((item) => item.id !== invitation.id)
+        )
+        setLastInviteLink("")
+        setInviteStatusMessage(`${invitation.email} added to the workspace.`)
         return
       }
 

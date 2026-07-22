@@ -7,6 +7,10 @@ import {
   readJsonBody,
   resolveTenantContext,
 } from "@/lib/api/tenant"
+import {
+  addExistingUserToTeam,
+  findTeamMemberProfileByEmail,
+} from "@/lib/api/team-members"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { buildInviteAuthRedirectUrl, buildInviteUrl } from "@/lib/url-safety.cjs"
 
@@ -132,16 +136,6 @@ export async function POST(request: Request) {
     return errorJson("role must be admin or member.", 400)
   }
 
-  let adminSupabase: ReturnType<typeof createAdminClient>
-  try {
-    adminSupabase = createAdminClient()
-  } catch {
-    return errorJson(
-      "SUPABASE_SERVICE_ROLE_KEY is required to send invitation emails.",
-      500
-    )
-  }
-
   if (workspaceIds.length) {
     const { count, error } = await supabase
       .from("workspaces")
@@ -156,6 +150,46 @@ export async function POST(request: Request) {
     if (count !== workspaceIds.length) {
       return errorJson("One or more workspaces are invalid.", 400)
     }
+  }
+
+  const profileLookup = await findTeamMemberProfileByEmail(supabase, email)
+  if (!profileLookup.ok) {
+    return errorJson(profileLookup.error)
+  }
+
+  if (profileLookup.profile) {
+    const added = await addExistingUserToTeam({
+      email,
+      invitedByUserId: context.user?.id,
+      organizationId: context.organizationId,
+      profile: profileLookup.profile,
+      role,
+      supabase,
+      workspaceIds,
+    })
+
+    if (!added.ok) {
+      return errorJson(added.error)
+    }
+
+    return json(
+      {
+        member: added.member,
+        email_delivery: "existing_user",
+        accepted: true,
+      },
+      { status: 201 }
+    )
+  }
+
+  let adminSupabase: ReturnType<typeof createAdminClient>
+  try {
+    adminSupabase = createAdminClient()
+  } catch {
+    return errorJson(
+      "SUPABASE_SERVICE_ROLE_KEY is required to send invitation emails.",
+      500
+    )
   }
 
   const token = crypto.randomBytes(32).toString("hex")
@@ -317,16 +351,6 @@ export async function PATCH(request: Request) {
   }
 
   if (action === "resend") {
-    let adminSupabase: ReturnType<typeof createAdminClient>
-    try {
-      adminSupabase = createAdminClient()
-    } catch {
-      return errorJson(
-        "SUPABASE_SERVICE_ROLE_KEY is required to send invitation emails.",
-        500
-      )
-    }
-
     const { data: invitation, error: invitationError } = await supabase
       .from("organization_invitations")
       .select(invitationSelect)
@@ -339,6 +363,51 @@ export async function PATCH(request: Request) {
       return errorJson(
         invitationError?.message || "Pending invitation not found",
         404
+      )
+    }
+
+    const role = invitation.role === "admin" ? "admin" : "member"
+    const workspaceIds = normalizeWorkspaceIds(invitation.workspace_ids)
+    const profileLookup = await findTeamMemberProfileByEmail(
+      supabase,
+      invitation.email
+    )
+    if (!profileLookup.ok) {
+      return errorJson(profileLookup.error)
+    }
+
+    if (profileLookup.profile) {
+      const added = await addExistingUserToTeam({
+        acceptedInvitationId: invitation.id,
+        invitedByUserId: context.user?.id,
+        organizationId: context.organizationId,
+        profile: profileLookup.profile,
+        role,
+        supabase,
+        workspaceIds,
+      })
+
+      if (!added.ok) {
+        return errorJson(added.error)
+      }
+
+      return json({
+        ...invitation,
+        status: "accepted",
+        member: added.member,
+        email_delivery: "existing_user",
+        accepted: true,
+        resent: false,
+      })
+    }
+
+    let adminSupabase: ReturnType<typeof createAdminClient>
+    try {
+      adminSupabase = createAdminClient()
+    } catch {
+      return errorJson(
+        "SUPABASE_SERVICE_ROLE_KEY is required to send invitation emails.",
+        500
       )
     }
 
@@ -364,8 +433,6 @@ export async function PATCH(request: Request) {
       return errorJson(error?.message || "Unable to refresh invitation")
     }
 
-    const role = data.role === "admin" ? "admin" : "member"
-    const workspaceIds = normalizeWorkspaceIds(data.workspace_ids)
     let authResponse: Awaited<ReturnType<typeof sendSupabaseInviteEmail>>
     try {
       authResponse = await sendSupabaseInviteEmail({

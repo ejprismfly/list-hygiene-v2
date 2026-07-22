@@ -71,6 +71,16 @@ export function SignupForm({ nextPath = "/dashboard" }: { nextPath?: string }) {
             >
               Back to Login
             </Link>
+            <Link
+              href="/forgot-password"
+              className={buttonVariants({
+                variant: "link",
+                size: "sm",
+                className: "w-full",
+              })}
+            >
+              Reset password
+            </Link>
           </form>
         }
       />
