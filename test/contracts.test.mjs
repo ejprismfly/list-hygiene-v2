@@ -238,6 +238,8 @@ test("direct signup enters workspace onboarding while invites keep invite flow",
   assert.match(inviteAcceptance, /href=\{`\/signup\?\$\{authQuery\}`\}/)
   assert.match(onboardingContent, /loadOrganizations/)
   assert.match(onboardingContent, /loadWorkspaces/)
+  assert.match(onboardingContent, /setWorkspaceName\(nextWorkspace\?\.name \|\| ""\)/)
+  assert.doesNotMatch(onboardingContent, /Default Workspace/)
   assert.match(onboardingContent, /canUseOnboarding\(nextOrganization\.role\)/)
   assert.match(onboardingContent, /window\.location\.assign\("\/dashboard"\)/)
   assert.match(onboardingContent, /Workspace name is required\./)

@@ -142,13 +142,8 @@ export function OnboardingContent() {
         workspaces[0] ||
         null
 
-      const nextWorkspaceName =
-        nextWorkspace?.is_default && nextWorkspace.name === "Default Workspace"
-          ? ""
-          : nextWorkspace?.name || ""
-
       setWorkspace(nextWorkspace)
-      setWorkspaceName(nextWorkspaceName)
+      setWorkspaceName(nextWorkspace?.name || "")
       persistSelection(nextOrganization.id, nextWorkspace?.id || null)
 
       if (!canUseOnboarding(nextOrganization.role)) {
