@@ -233,6 +233,12 @@ export function WorkspaceSwitcher({
     archiveConfirmation.trim() === selectedWorkspace?.name
   const memberRemovalName =
     memberToRemove?.email || memberToRemove?.name || "this member"
+  const memberRemovalBlockedReason =
+    memberToRemove?.role === "admin"
+      ? "Admins have organization-wide access. Change this user to member before removing workspace access."
+      : memberToRemove?.role === "owner"
+        ? "Owners cannot be removed from workspace access."
+        : ""
   const invitationCancelName = invitationToCancel?.email || "this invitation"
 
   useEffect(() => {
@@ -736,17 +742,41 @@ export function WorkspaceSwitcher({
       const response = await fetch("/api/organizations/members", {
         method: "DELETE",
         headers: headersFor(organizationId, selectedId),
-        body: JSON.stringify({ user_id: memberToRemove.user_id }),
+        body: JSON.stringify({
+          user_id: memberToRemove.user_id,
+          workspace_id: selectedId,
+          scope: "workspace",
+        }),
       })
+      const data = await response.json()
 
       if (!response.ok) {
-        const data = await response.json()
         setMessage(data.error || "Unable to remove member.")
         return
       }
 
       setMembers((current) =>
-        current.filter((item) => item.user_id !== memberToRemove.user_id)
+        current
+          .map((item) =>
+            item.user_id === memberToRemove.user_id
+              ? {
+                  ...item,
+                  workspace_ids: item.workspace_ids.filter(
+                    (workspaceId) => workspaceId !== selectedId
+                  ),
+                }
+              : item
+          )
+          .filter(
+            (item) =>
+              item.user_id !== memberToRemove.user_id ||
+              !data.organization_removed
+          )
+      )
+      setMessage(
+        data.organization_removed
+          ? `${memberRemovalName} removed from the organization.`
+          : `${memberRemovalName} removed from this workspace.`
       )
       setMemberRemovalDialogOpen(false)
       setMemberToRemove(null)
@@ -1015,7 +1045,7 @@ export function WorkspaceSwitcher({
                               </TableCell>
                             </TableRow>
                           ))
-                        ) : (
+                        ) : activeRows.length ? (
                           activeRows.map((row) => {
                             const isInvitation =
                               "email" in row && !("user_id" in row)
@@ -1128,6 +1158,15 @@ export function WorkspaceSwitcher({
                               </TableRow>
                             )
                           })
+                        ) : (
+                          <TableRow>
+                            <TableCell
+                              colSpan={4}
+                              className="h-24 text-center text-muted-foreground"
+                            >
+                              No team access for this workspace.
+                            </TableCell>
+                          </TableRow>
                         )}
                       </TableBody>
                     </Table>
@@ -1146,8 +1185,10 @@ export function WorkspaceSwitcher({
                       <DialogHeader>
                         <DialogTitle>Remove member</DialogTitle>
                         <DialogDescription>
-                          Remove {memberRemovalName} from this workspace? They
-                          will lose access to this workspace.
+                          {memberRemovalBlockedReason ||
+                            `Remove ${memberRemovalName} from ${
+                              selectedWorkspace?.name || "this workspace"
+                            }? They will lose access to this workspace.`}
                         </DialogDescription>
                       </DialogHeader>
                       <div className="grid gap-2 sm:flex sm:justify-end">
@@ -1162,7 +1203,9 @@ export function WorkspaceSwitcher({
                         <Button
                           type="button"
                           variant="destructive"
-                          disabled={teamActionSubmitting}
+                          disabled={
+                            teamActionSubmitting || Boolean(memberRemovalBlockedReason)
+                          }
                           onClick={removeMember}
                         >
                           {teamActionSubmitting && (

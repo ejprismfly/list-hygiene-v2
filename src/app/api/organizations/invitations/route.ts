@@ -10,23 +10,26 @@ import {
 import {
   addExistingUserToTeam,
   findTeamMemberProfileByEmail,
+  normalizeWorkspaceIds,
+  resolveTeamWorkspaceIds,
 } from "@/lib/api/team-members"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { buildInviteAuthRedirectUrl, buildInviteUrl } from "@/lib/url-safety.cjs"
 
 const invitationSelect =
-  "id, organization_id, email, role, workspace_ids, status, expires_at, created_at"
-
-const normalizeWorkspaceIds = (value: unknown) => {
-  if (!Array.isArray(value)) {
-    return []
-  }
-
-  return value.filter((id): id is string => typeof id === "string" && !!id)
-}
+  "id, organization_id, email, role, workspace_ids, status, expires_at, created_at, updated_at"
+const inviteResendCooldownMs = 60 * 1000
 
 const hashToken = (token: string) => {
   return crypto.createHash("sha256").update(token).digest("hex")
+}
+
+function isInviteSendCoolingDown(updatedAt?: string | null) {
+  if (!updatedAt) {
+    return false
+  }
+
+  return Date.now() - new Date(updatedAt).getTime() < inviteResendCooldownMs
 }
 
 const buildInvitationResponse = (request: Request, invitation: object, token: string) => {
@@ -136,20 +139,15 @@ export async function POST(request: Request) {
     return errorJson("role must be admin or member.", 400)
   }
 
-  if (workspaceIds.length) {
-    const { count, error } = await supabase
-      .from("workspaces")
-      .select("id", { count: "exact", head: true })
-      .eq("organization_id", context.organizationId)
-      .in("id", workspaceIds)
+  const resolvedWorkspaceIds = await resolveTeamWorkspaceIds({
+    organizationId: context.organizationId,
+    role,
+    supabase,
+    workspaceIds,
+  })
 
-    if (error) {
-      return errorJson(error.message)
-    }
-
-    if (count !== workspaceIds.length) {
-      return errorJson("One or more workspaces are invalid.", 400)
-    }
+  if (!resolvedWorkspaceIds.ok) {
+    return errorJson(resolvedWorkspaceIds.error, 400)
   }
 
   const profileLookup = await findTeamMemberProfileByEmail(supabase, email)
@@ -165,7 +163,7 @@ export async function POST(request: Request) {
       profile: profileLookup.profile,
       role,
       supabase,
-      workspaceIds,
+      workspaceIds: resolvedWorkspaceIds.workspaceIds,
     })
 
     if (!added.ok) {
@@ -213,8 +211,11 @@ export async function POST(request: Request) {
         )
       : []
     const mergedWorkspaceIds = Array.from(
-      new Set([...existingWorkspaceIds, ...workspaceIds])
+      new Set([...existingWorkspaceIds, ...resolvedWorkspaceIds.workspaceIds])
     )
+    if (isInviteSendCoolingDown(existingInvitation.updated_at)) {
+      return errorJson("Please wait before resending this invitation.", 429)
+    }
 
     const { data, error } = await supabase
       .from("organization_invitations")
@@ -272,7 +273,7 @@ export async function POST(request: Request) {
       organization_id: context.organizationId,
       email,
       role,
-      workspace_ids: workspaceIds,
+      workspace_ids: resolvedWorkspaceIds.workspaceIds,
       token_hash: hashToken(token),
       invited_by_user_id: context.user?.id,
     })
@@ -292,7 +293,7 @@ export async function POST(request: Request) {
       role,
       request,
       token,
-      workspaceIds,
+      workspaceIds: resolvedWorkspaceIds.workspaceIds,
     })
   } catch (error) {
     await supabase
@@ -368,6 +369,17 @@ export async function PATCH(request: Request) {
 
     const role = invitation.role === "admin" ? "admin" : "member"
     const workspaceIds = normalizeWorkspaceIds(invitation.workspace_ids)
+    const resolvedWorkspaceIds = await resolveTeamWorkspaceIds({
+      organizationId: context.organizationId,
+      role,
+      supabase,
+      workspaceIds,
+    })
+
+    if (!resolvedWorkspaceIds.ok) {
+      return errorJson(resolvedWorkspaceIds.error, 400)
+    }
+
     const profileLookup = await findTeamMemberProfileByEmail(
       supabase,
       invitation.email
@@ -384,7 +396,7 @@ export async function PATCH(request: Request) {
         profile: profileLookup.profile,
         role,
         supabase,
-        workspaceIds,
+        workspaceIds: resolvedWorkspaceIds.workspaceIds,
       })
 
       if (!added.ok) {
@@ -399,6 +411,10 @@ export async function PATCH(request: Request) {
         accepted: true,
         resent: false,
       })
+    }
+
+    if (isInviteSendCoolingDown(invitation.updated_at)) {
+      return errorJson("Please wait before resending this invitation.", 429)
     }
 
     let adminSupabase: ReturnType<typeof createAdminClient>
@@ -419,6 +435,7 @@ export async function PATCH(request: Request) {
       .from("organization_invitations")
       .update({
         token_hash: hashToken(token),
+        workspace_ids: resolvedWorkspaceIds.workspaceIds,
         invited_by_user_id: context.user?.id,
         expires_at: expiresAt,
         updated_at: new Date().toISOString(),
@@ -442,7 +459,7 @@ export async function PATCH(request: Request) {
         role,
         request,
         token,
-        workspaceIds,
+        workspaceIds: resolvedWorkspaceIds.workspaceIds,
       })
     } catch (error) {
       return errorJson(

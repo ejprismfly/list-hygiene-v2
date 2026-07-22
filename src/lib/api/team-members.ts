@@ -22,10 +22,99 @@ export type TeamMemberResponse = {
   workspace_ids: string[]
 }
 
+const roleRank: Record<OrganizationRole, number> = {
+  member: 1,
+  admin: 2,
+  owner: 3,
+}
+
 export const validManagedMemberRole = (
   role: unknown
 ): role is ManagedMemberRole => {
   return role === "admin" || role === "member"
+}
+
+export function normalizeWorkspaceIds(value: unknown) {
+  if (!Array.isArray(value)) {
+    return []
+  }
+
+  return Array.from(
+    new Set(value.filter((id): id is string => typeof id === "string" && !!id))
+  )
+}
+
+function escapeLikeValue(value: string) {
+  return value.replace(/[\\%_]/g, (character) => `\\${character}`)
+}
+
+function preserveHighestRole(
+  existingRole: OrganizationRole | null | undefined,
+  requestedRole: ManagedMemberRole
+): OrganizationRole {
+  if (!existingRole) {
+    return requestedRole
+  }
+
+  return roleRank[existingRole] > roleRank[requestedRole]
+    ? existingRole
+    : requestedRole
+}
+
+export async function resolveTeamWorkspaceIds({
+  organizationId,
+  role,
+  supabase,
+  workspaceIds,
+}: {
+  organizationId: string
+  role: OrganizationRole
+  supabase: SupabaseClient
+  workspaceIds: string[]
+}) {
+  if (role === "owner" || role === "admin") {
+    const { data, error } = await supabase
+      .from("workspaces")
+      .select("id")
+      .eq("organization_id", organizationId)
+      .is("archived_at", null)
+
+    if (error) {
+      return { ok: false as const, error: error.message }
+    }
+
+    return {
+      ok: true as const,
+      workspaceIds: (data || []).map((workspace) => String(workspace.id)),
+    }
+  }
+
+  if (!workspaceIds.length) {
+    return {
+      ok: false as const,
+      error: "Members must have at least one workspace.",
+    }
+  }
+
+  const { count, error } = await supabase
+    .from("workspaces")
+    .select("id", { count: "exact", head: true })
+    .eq("organization_id", organizationId)
+    .is("archived_at", null)
+    .in("id", workspaceIds)
+
+  if (error) {
+    return { ok: false as const, error: error.message }
+  }
+
+  if (count !== workspaceIds.length) {
+    return {
+      ok: false as const,
+      error: "One or more workspaces are invalid.",
+    }
+  }
+
+  return { ok: true as const, workspaceIds }
 }
 
 export async function findTeamMemberProfileByEmail(
@@ -33,7 +122,7 @@ export async function findTeamMemberProfileByEmail(
   email: string
 ) {
   const normalizedEmail = email.trim().toLowerCase()
-  const escapedEmail = normalizedEmail.replace(/[\\%_]/g, (value) => `\\${value}`)
+  const escapedEmail = escapeLikeValue(normalizedEmail)
   const { data, error } = await supabase
     .from("user_details")
     .select("user_id, email, name")
@@ -82,13 +171,39 @@ export async function addExistingUserToTeam({
   supabase: SupabaseClient
   workspaceIds: string[]
 }) {
+  const { data: existingMember, error: existingMemberError } = await supabase
+    .from("organization_members")
+    .select("role")
+    .eq("organization_id", organizationId)
+    .eq("user_id", profile.user_id)
+    .maybeSingle()
+
+  if (existingMemberError) {
+    return { ok: false as const, error: existingMemberError.message }
+  }
+
+  const effectiveRole = preserveHighestRole(
+    existingMember?.role as OrganizationRole | null | undefined,
+    role
+  )
+  const resolvedWorkspaceIds = await resolveTeamWorkspaceIds({
+    organizationId,
+    role: effectiveRole,
+    supabase,
+    workspaceIds,
+  })
+
+  if (!resolvedWorkspaceIds.ok) {
+    return resolvedWorkspaceIds
+  }
+
   const { data: member, error } = await supabase
     .from("organization_members")
     .upsert(
       {
         organization_id: organizationId,
         user_id: profile.user_id,
-        role,
+        role: effectiveRole,
         status: "active",
         invited_by_user_id: invitedByUserId,
       },
@@ -101,15 +216,15 @@ export async function addExistingUserToTeam({
     return { ok: false as const, error: error?.message || "Unable to add member" }
   }
 
-  if (workspaceIds.length) {
+  if (resolvedWorkspaceIds.workspaceIds.length) {
     const { error: workspaceError } = await supabase
       .from("workspace_members")
       .upsert(
-        workspaceIds.map((workspaceId) => ({
+        resolvedWorkspaceIds.workspaceIds.map((workspaceId) => ({
           organization_id: organizationId,
           workspace_id: workspaceId,
           user_id: profile.user_id,
-          role,
+          role: effectiveRole,
         })),
         { onConflict: "workspace_id,user_id" }
       )
@@ -138,7 +253,7 @@ export async function addExistingUserToTeam({
     }
   } else if (email) {
     const acceptedAt = new Date().toISOString()
-    const escapedEmail = email.trim().toLowerCase().replace(/[\\%_]/g, (value) => `\\${value}`)
+    const escapedEmail = escapeLikeValue(email.trim().toLowerCase())
     const { error: invitationError } = await supabase
       .from("organization_invitations")
       .update({

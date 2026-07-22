@@ -7,6 +7,10 @@ import {
   json,
   readJsonBody,
 } from "@/lib/api/tenant"
+import {
+  addExistingUserToTeam,
+  normalizeWorkspaceIds,
+} from "@/lib/api/team-members"
 
 const hashToken = (token: string) => {
   return crypto.createHash("sha256").update(token).digest("hex")
@@ -42,18 +46,14 @@ export async function POST(request: Request) {
   }
 
   const role = invitation.role === "admin" ? "admin" : "member"
-  const workspaceIds = Array.isArray(invitation.workspace_ids)
-    ? invitation.workspace_ids.filter(
-        (id): id is string => typeof id === "string"
-      )
-    : []
+  const requestedWorkspaceIds = normalizeWorkspaceIds(invitation.workspace_ids)
 
   if (invitation.status === "accepted") {
     if (invitation.accepted_by_user_id === user.id) {
       return json({
         organization_id: invitation.organization_id,
         role,
-        workspace_ids: workspaceIds,
+        workspace_ids: requestedWorkspaceIds,
       })
     }
 
@@ -80,52 +80,26 @@ export async function POST(request: Request) {
     )
   }
 
-  const { error: memberError } = await supabase
-    .from("organization_members")
-    .upsert(
-      {
-        organization_id: invitation.organization_id,
-        user_id: user.id,
-        role,
-        status: "active",
-      },
-      { onConflict: "organization_id,user_id" }
-    )
+  const added = await addExistingUserToTeam({
+    acceptedInvitationId: invitation.id,
+    organizationId: invitation.organization_id,
+    profile: {
+      user_id: user.id,
+      email: user.email,
+      name: null,
+    },
+    role,
+    supabase,
+    workspaceIds: requestedWorkspaceIds,
+  })
 
-  if (memberError) {
-    return errorJson(memberError.message)
+  if (!added.ok) {
+    return errorJson(added.error)
   }
-
-  if (workspaceIds.length) {
-    const { error: workspaceError } = await supabase
-      .from("workspace_members")
-      .upsert(
-        workspaceIds.map((workspaceId) => ({
-          organization_id: invitation.organization_id,
-          workspace_id: workspaceId,
-          user_id: user.id,
-          role,
-        })),
-        { onConflict: "workspace_id,user_id" }
-      )
-
-    if (workspaceError) {
-      return errorJson(workspaceError.message)
-    }
-  }
-
-  await supabase
-    .from("organization_invitations")
-    .update({
-      status: "accepted",
-      accepted_by_user_id: user.id,
-      accepted_at: new Date().toISOString(),
-    })
-    .eq("id", invitation.id)
 
   return json({
     organization_id: invitation.organization_id,
-    role,
-    workspace_ids: workspaceIds,
+    role: added.member.role,
+    workspace_ids: added.member.workspace_ids,
   })
 }

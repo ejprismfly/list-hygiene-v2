@@ -8,16 +8,11 @@ import {
 import {
   addExistingUserToTeam,
   findTeamMemberProfileByEmail,
+  type ManagedMemberRole,
+  normalizeWorkspaceIds,
+  resolveTeamWorkspaceIds,
   validManagedMemberRole,
 } from "@/lib/api/team-members"
-
-const normalizeWorkspaceIds = (value: unknown) => {
-  if (!Array.isArray(value)) {
-    return []
-  }
-
-  return value.filter((id): id is string => typeof id === "string" && !!id)
-}
 
 export async function GET(request: Request) {
   const tenant = await resolveTenantContext(request)
@@ -110,20 +105,15 @@ export async function POST(request: Request) {
     return errorJson("role must be admin or member.", 400)
   }
 
-  if (workspaceIds.length) {
-    const { count, error } = await supabase
-      .from("workspaces")
-      .select("id", { count: "exact", head: true })
-      .eq("organization_id", context.organizationId)
-      .in("id", workspaceIds)
+  const resolvedWorkspaceIds = await resolveTeamWorkspaceIds({
+    organizationId: context.organizationId,
+    role,
+    supabase,
+    workspaceIds,
+  })
 
-    if (error) {
-      return errorJson(error.message)
-    }
-
-    if (count !== workspaceIds.length) {
-      return errorJson("One or more workspaces are invalid.", 400)
-    }
+  if (!resolvedWorkspaceIds.ok) {
+    return errorJson(resolvedWorkspaceIds.error, 400)
   }
 
   const profileLookup = await findTeamMemberProfileByEmail(supabase, email)
@@ -142,7 +132,7 @@ export async function POST(request: Request) {
     profile: profileLookup.profile,
     role,
     supabase,
-    workspaceIds,
+    workspaceIds: resolvedWorkspaceIds.workspaceIds,
   })
 
   if (!added.ok) {
@@ -173,19 +163,62 @@ export async function PATCH(request: Request) {
     return errorJson("user_id must be a string.", 400)
   }
 
+  const hasRoleUpdate = body.role !== undefined
+  const hasStatusUpdate = body.status !== undefined
+  const hasWorkspaceUpdate = body.workspace_ids !== undefined
+  if (!hasRoleUpdate && !hasStatusUpdate && !hasWorkspaceUpdate) {
+    return errorJson("No updates provided.", 400)
+  }
+
+  const { data: member, error: memberLookupError } = await supabase
+    .from("organization_members")
+    .select("id, role, status")
+    .eq("organization_id", context.organizationId)
+    .eq("user_id", userId)
+    .single()
+
+  if (memberLookupError || !member) {
+    return errorJson(memberLookupError?.message || "Member not found", 404)
+  }
+
+  if (member.role === "owner") {
+    return errorJson("Owners cannot be changed.", 403)
+  }
+
   const updates: Record<string, unknown> = {}
-  if (body.role !== undefined) {
+  let nextRole: ManagedMemberRole = member.role === "admin" ? "admin" : "member"
+  if (hasRoleUpdate) {
     if (!validManagedMemberRole(body.role)) {
       return errorJson("role must be admin or member.", 400)
     }
     updates.role = body.role
+    nextRole = body.role
   }
 
-  if (body.status !== undefined) {
+  if (hasStatusUpdate) {
     if (body.status !== "active" && body.status !== "disabled") {
       return errorJson("status must be active or disabled.", 400)
     }
     updates.status = body.status
+  }
+
+  let resolvedWorkspaceIds: string[] | null = null
+  if (hasWorkspaceUpdate || (hasRoleUpdate && nextRole === "admin")) {
+    const workspaceIds = hasWorkspaceUpdate
+      ? normalizeWorkspaceIds(body.workspace_ids)
+      : []
+    const resolved = await resolveTeamWorkspaceIds({
+      organizationId: context.organizationId,
+      role: nextRole,
+      supabase,
+      workspaceIds,
+    })
+
+    if (!resolved.ok) {
+      return errorJson(resolved.error, 400)
+    }
+
+    resolvedWorkspaceIds = resolved.workspaceIds
   }
 
   if (Object.keys(updates).length) {
@@ -201,28 +234,51 @@ export async function PATCH(request: Request) {
     }
   }
 
-  if (body.workspace_ids !== undefined) {
-    const workspaceIds = normalizeWorkspaceIds(body.workspace_ids)
-    await supabase
+  if (resolvedWorkspaceIds) {
+    const { error: workspaceDeleteError } = await supabase
       .from("workspace_members")
       .delete()
       .eq("organization_id", context.organizationId)
       .eq("user_id", userId)
 
-    if (workspaceIds.length) {
-      await supabase.from("workspace_members").upsert(
-        workspaceIds.map((workspaceId) => ({
-          organization_id: context.organizationId,
-          workspace_id: workspaceId,
-          user_id: userId,
-          role: validManagedMemberRole(body.role) ? body.role : "member",
-        })),
-        { onConflict: "workspace_id,user_id" }
-      )
+    if (workspaceDeleteError) {
+      return errorJson(workspaceDeleteError.message)
+    }
+
+    if (resolvedWorkspaceIds.length) {
+      const { error: workspaceUpsertError } = await supabase
+        .from("workspace_members")
+        .upsert(
+          resolvedWorkspaceIds.map((workspaceId) => ({
+            organization_id: context.organizationId,
+            workspace_id: workspaceId,
+            user_id: userId,
+            role: nextRole,
+          })),
+          { onConflict: "workspace_id,user_id" }
+        )
+
+      if (workspaceUpsertError) {
+        return errorJson(workspaceUpsertError.message)
+      }
+    }
+  } else if (hasRoleUpdate) {
+    const { error } = await supabase
+      .from("workspace_members")
+      .update({ role: nextRole })
+      .eq("organization_id", context.organizationId)
+      .eq("user_id", userId)
+
+    if (error) {
+      return errorJson(error.message)
     }
   }
 
-  return json({ user_id: userId })
+  return json({
+    user_id: userId,
+    role: nextRole,
+    workspace_ids: resolvedWorkspaceIds,
+  })
 }
 
 export async function DELETE(request: Request) {
@@ -242,6 +298,9 @@ export async function DELETE(request: Request) {
 
   const body = await readJsonBody(request)
   const userId = typeof body.user_id === "string" ? body.user_id : ""
+  const workspaceId =
+    typeof body.workspace_id === "string" ? body.workspace_id : context.workspaceId
+  const scope = typeof body.scope === "string" ? body.scope : "workspace"
   if (!userId) {
     return errorJson("user_id must be a string.", 400)
   }
@@ -263,6 +322,71 @@ export async function DELETE(request: Request) {
 
   if (member.role === "owner") {
     return errorJson("Owners cannot be removed.", 403)
+  }
+
+  if (scope !== "organization" && workspaceId) {
+    if (member.role === "admin") {
+      return errorJson(
+        "Admins have organization-wide access. Change the role to member before removing workspace access.",
+        400
+      )
+    }
+
+    const { count, error: workspaceLookupError } = await supabase
+      .from("workspaces")
+      .select("id", { count: "exact", head: true })
+      .eq("organization_id", context.organizationId)
+      .eq("id", workspaceId)
+      .is("archived_at", null)
+
+    if (workspaceLookupError) {
+      return errorJson(workspaceLookupError.message)
+    }
+
+    if (!count) {
+      return errorJson("Workspace not found", 404)
+    }
+
+    const { error: workspaceRemoveError } = await supabase
+      .from("workspace_members")
+      .delete()
+      .eq("organization_id", context.organizationId)
+      .eq("workspace_id", workspaceId)
+      .eq("user_id", userId)
+
+    if (workspaceRemoveError) {
+      return errorJson(workspaceRemoveError.message)
+    }
+
+    const { count: remainingWorkspaceCount, error: remainingWorkspaceError } =
+      await supabase
+        .from("workspace_members")
+        .select("id", { count: "exact", head: true })
+        .eq("organization_id", context.organizationId)
+        .eq("user_id", userId)
+
+    if (remainingWorkspaceError) {
+      return errorJson(remainingWorkspaceError.message)
+    }
+
+    if (!remainingWorkspaceCount) {
+      const { error } = await supabase
+        .from("organization_members")
+        .delete()
+        .eq("organization_id", context.organizationId)
+        .eq("user_id", userId)
+        .neq("role", "owner")
+
+      if (error) {
+        return errorJson(error.message)
+      }
+    }
+
+    return json({
+      user_id: userId,
+      workspace_id: workspaceId,
+      organization_removed: !remainingWorkspaceCount,
+    })
   }
 
   const { error: workspaceError } = await supabase

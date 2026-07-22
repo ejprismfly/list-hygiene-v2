@@ -269,7 +269,7 @@ async function directPOST(request: Request) {
     return errorJson("Unable to create workspace")
   }
 
-  await queryRows(
+  const seededMembers = await queryRows<{ user_id: string }>(
     `
       insert into public.workspace_members (
         organization_id,
@@ -277,15 +277,27 @@ async function directPOST(request: Request) {
         user_id,
         role
       )
-      values ($1::uuid, $2::uuid, $3::uuid, $4::text)
+      select
+        $1::uuid,
+        $2::uuid,
+        om.user_id,
+        om.role
+      from public.organization_members om
+      where om.organization_id = $1::uuid
+        and om.status = 'active'
+        and om.role in ('owner', 'admin')
       on conflict (workspace_id, user_id) do update
         set role = excluded.role,
             updated_at = now()
+      returning user_id::text
     `,
-    [context.organizationId, workspace.id, context.userId, context.role]
+    [context.organizationId, workspace.id]
   )
 
-  return json(workspace, { status: 201 })
+  return json(
+    { ...workspace, member_count: seededMembers.length },
+    { status: 201 }
+  )
 }
 
 async function directPATCH(request: Request) {
@@ -668,22 +680,41 @@ export async function POST(request: Request) {
     return errorJson(error?.message || "Unable to create workspace")
   }
 
-  await supabase.from("workspace_members").upsert(
-    {
-      organization_id: context.organizationId,
-      workspace_id: workspace.id,
-      user_id: context.user?.id,
-      role: context.role,
-    },
-    { onConflict: "workspace_id,user_id" }
-  )
+  const { data: organizationManagers, error: managerError } = await supabase
+    .from("organization_members")
+    .select("user_id, role")
+    .eq("organization_id", context.organizationId)
+    .eq("status", "active")
+    .in("role", ["owner", "admin"])
+
+  if (managerError) {
+    return errorJson(managerError.message)
+  }
+
+  if (organizationManagers?.length) {
+    const { error: workspaceMemberError } = await supabase
+      .from("workspace_members")
+      .upsert(
+        organizationManagers.map((member) => ({
+          organization_id: context.organizationId,
+          workspace_id: workspace.id,
+          user_id: member.user_id,
+          role: member.role,
+        })),
+        { onConflict: "workspace_id,user_id" }
+      )
+
+    if (workspaceMemberError) {
+      return errorJson(workspaceMemberError.message)
+    }
+  }
 
   return json(
     {
       ...workspace,
       has_connected_account: false,
       has_active_billing: false,
-      member_count: 1,
+      member_count: organizationManagers?.length || 0,
     },
     { status: 201 }
   )
