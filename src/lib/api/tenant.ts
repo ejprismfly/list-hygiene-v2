@@ -52,6 +52,10 @@ export function canManageOrganization(role: OrganizationRole | null) {
   return role === "owner" || role === "admin"
 }
 
+export function canManageIntegrations(role: OrganizationRole | null) {
+  return role === "owner" || role === "admin" || role === "member"
+}
+
 export async function getCurrentUser() {
   const supabase = await createClient()
   const {

@@ -1,4 +1,5 @@
 import {
+  canManageIntegrations,
   canManageOrganization,
   errorJson,
   json,
@@ -173,8 +174,8 @@ export async function POST(request: Request) {
   }
 
   const { context, supabase } = tenant
-  if (!canManageOrganization(context.role)) {
-    return errorJson("Only owners and admins can manage integrations", 403)
+  if (!canManageIntegrations(context.role)) {
+    return errorJson("Workspace access is required to manage integrations", 403)
   }
 
   const body = await readJsonBody(request)
