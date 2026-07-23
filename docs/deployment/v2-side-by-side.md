@@ -67,6 +67,7 @@ Add these URLs to Supabase Auth redirect allowlist before testing v2 login, sign
 
 ```text
 https://beta.listhygiene.com/auth/callback
+https://beta.listhygiene.com/auth/invite-callback
 https://beta.listhygiene.com/invite
 https://beta.listhygiene.com
 ```
@@ -99,11 +100,13 @@ link in [supabase-invite-template.html](./supabase-invite-template.html):
 </a>
 ```
 
-The app passes `https://beta.listhygiene.com/auth/callback?next=/reset-password?...`
+The app passes `https://beta.listhygiene.com/auth/invite-callback?next=/reset-password?...`
 as `.RedirectTo`. The template appends Supabase's `token_hash` and
-`type=invite`, so `/auth/callback` can verify the Supabase invite, set the
-session cookie, send new invitees through password setup, and then continue to
-`/invite` to apply the app-level organization/workspace role.
+`type=invite`, so `/auth/invite-callback` can verify the Supabase invite, set
+the session cookie, send new invitees through password setup, and then continue
+to `/invite` to apply the app-level organization/workspace role. If Supabase's
+default `{{ .ConfirmationURL }}` invite template is still used, the same client
+callback also captures the session hash returned by Supabase's verify endpoint.
 
 Invite roles are intentionally limited to `admin` and `member`. Owners and
 admins can manage workspace members and pending invitations; members can use the

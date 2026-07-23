@@ -66,7 +66,7 @@ test("buildInviteAuthRedirectUrl ignores localhost request URL behind proxy", ()
       hostHeader: "localhost:3000",
       token: "abc 123",
     }),
-    "https://beta.listhygiene.com/auth/callback?next=%2Freset-password%3Fnext%3D%252Finvite%253Ftoken%253Dabc%252B123"
+    "https://beta.listhygiene.com/auth/invite-callback?next=%2Freset-password%3Fnext%3D%252Finvite%253Ftoken%253Dabc%252B123"
   )
 })
 
@@ -77,6 +77,6 @@ test("buildInviteAuthRedirectUrl sends Supabase invite email through callback", 
       originHeader: "https://beta.listhygiene.com",
       token: "abc 123",
     }),
-    "https://beta.listhygiene.com/auth/callback?next=%2Freset-password%3Fnext%3D%252Finvite%253Ftoken%253Dabc%252B123"
+    "https://beta.listhygiene.com/auth/invite-callback?next=%2Freset-password%3Fnext%3D%252Finvite%253Ftoken%253Dabc%252B123"
   )
 })

@@ -33,6 +33,23 @@ function redirectTo(request: NextRequest, path: string) {
   return NextResponse.redirect(new URL(path, getRequestOrigin(request)))
 }
 
+function inviteFallbackCallbackPath(nextPath: string) {
+  try {
+    const url = new URL(nextPath, "https://listhygiene.local")
+    const nestedNext = safeNextPath(url.searchParams.get("next"), "")
+
+    if (url.pathname === "/reset-password" && nestedNext.startsWith("/invite")) {
+      return `/auth/invite-callback?${new URLSearchParams({
+        next: nextPath,
+      }).toString()}`
+    }
+  } catch {
+    return null
+  }
+
+  return null
+}
+
 export async function GET(request: NextRequest) {
   const requestUrl = new URL(request.url)
   const code = requestUrl.searchParams.get("code")
@@ -60,6 +77,13 @@ export async function GET(request: NextRequest) {
 
     if (error) {
       return redirectTo(request, "/login")
+    }
+  }
+
+  if (!tokenHash && !code) {
+    const fallbackPath = inviteFallbackCallbackPath(nextPath)
+    if (fallbackPath) {
+      return redirectTo(request, fallbackPath)
     }
   }
 

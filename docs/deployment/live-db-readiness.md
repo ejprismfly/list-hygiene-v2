@@ -88,7 +88,10 @@ shape during side-by-side testing.
   verify through `/auth/callback` with `token_hash`.
 - Configure the Supabase Auth Invite user email template from
   `docs/deployment/supabase-invite-template.html` so team invites verify through
-  `/auth/callback` with `token_hash` before applying workspace membership.
+  `/auth/invite-callback` with `token_hash` before applying workspace
+  membership. Also allowlist `/auth/invite-callback` in Supabase Auth redirect
+  URLs; this route supports Supabase's default `{{ .ConfirmationURL }}` hash
+  flow as a fallback.
 - Add the v2 Klaviyo callback URL in the Klaviyo app.
 - Stripe webhook endpoint: v2 exposes `/api/billing/webhook`, but keep live Stripe webhooks pointed at v1 until the v2 endpoint has been tested with signed events and its own `STRIPE_WEBHOOK_SECRET`.
 - Use a small internal tester list first because v2 will create default organization/workspace rows for users who do not have them yet.

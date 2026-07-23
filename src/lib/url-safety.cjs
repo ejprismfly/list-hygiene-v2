@@ -152,7 +152,7 @@ function buildInviteAuthRedirectUrl({
   const passwordUrl = new URL("/reset-password", origin)
   passwordUrl.searchParams.set("next", `${inviteUrl.pathname}${inviteUrl.search}`)
 
-  const callbackUrl = new URL("/auth/callback", origin)
+  const callbackUrl = new URL("/auth/invite-callback", origin)
   callbackUrl.searchParams.set(
     "next",
     `${passwordUrl.pathname}${passwordUrl.search}`
