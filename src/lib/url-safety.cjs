@@ -16,18 +16,72 @@ function safeNextPath(nextPath, fallback = "/dashboard") {
   return trimmed
 }
 
-function getOrigin(configuredHost, originHeader, requestUrl) {
-  const candidates = [configuredHost, originHeader, requestUrl]
+function firstHeaderValue(value) {
+  return typeof value === "string" ? value.split(",")[0]?.trim() || "" : ""
+}
+
+function urlOrigin(value) {
+  if (typeof value !== "string" || !value.trim()) {
+    return null
+  }
+
+  try {
+    return new URL(value.trim()).origin
+  } catch {
+    return null
+  }
+}
+
+function protocolFrom(value) {
+  const protocol = firstHeaderValue(value).replace(/:$/, "").toLowerCase()
+  return protocol === "http" || protocol === "https" ? protocol : ""
+}
+
+function protocolFromUrl(value) {
+  try {
+    return new URL(value).protocol.replace(/:$/, "")
+  } catch {
+    return ""
+  }
+}
+
+function hostOrigin(hostHeader, protocol) {
+  const host = firstHeaderValue(hostHeader)
+  if (!host) {
+    return null
+  }
+
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(host)) {
+    return urlOrigin(host)
+  }
+
+  const fallbackProtocol =
+    /^localhost(?::|$)/i.test(host) || /^127\./.test(host) ? "http" : "https"
+
+  return urlOrigin(`${protocol || fallbackProtocol}://${host}`)
+}
+
+function getOrigin(configuredHost, originHeader, requestUrl, options = {}) {
+  const requestProtocol = protocolFromUrl(requestUrl)
+  const forwardedOrigin = hostOrigin(
+    options.forwardedHost,
+    protocolFrom(options.forwardedProto) || requestProtocol || "https"
+  )
+  const hostHeaderOrigin = hostOrigin(
+    options.hostHeader,
+    protocolFrom(options.forwardedProto) || requestProtocol || "https"
+  )
+  const candidates = [
+    urlOrigin(configuredHost),
+    forwardedOrigin,
+    urlOrigin(originHeader),
+    hostHeaderOrigin,
+    urlOrigin(requestUrl),
+  ]
 
   for (const candidate of candidates) {
-    if (typeof candidate !== "string" || !candidate.trim()) {
-      continue
-    }
-
-    try {
-      return new URL(candidate.trim()).origin
-    } catch {
-      continue
+    if (candidate) {
+      return candidate
     }
   }
 
@@ -38,9 +92,16 @@ function buildInviteUrl({
   requestUrl,
   token,
   configuredHost,
+  forwardedHost,
+  forwardedProto,
+  hostHeader,
   originHeader,
 }) {
-  const origin = getOrigin(configuredHost, originHeader, requestUrl)
+  const origin = getOrigin(configuredHost, originHeader, requestUrl, {
+    forwardedHost,
+    forwardedProto,
+    hostHeader,
+  })
   const url = new URL("/invite", origin)
   url.searchParams.set("token", token)
 
@@ -51,9 +112,16 @@ function buildInviteAuthRedirectUrl({
   requestUrl,
   token,
   configuredHost,
+  forwardedHost,
+  forwardedProto,
+  hostHeader,
   originHeader,
 }) {
-  const origin = getOrigin(configuredHost, originHeader, requestUrl)
+  const origin = getOrigin(configuredHost, originHeader, requestUrl, {
+    forwardedHost,
+    forwardedProto,
+    hostHeader,
+  })
   const inviteUrl = new URL("/invite", origin)
   inviteUrl.searchParams.set("token", token)
 

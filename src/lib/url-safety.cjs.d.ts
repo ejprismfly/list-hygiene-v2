@@ -6,13 +6,21 @@ export function safeNextPath(
 export function getOrigin(
   configuredHost?: string | null,
   originHeader?: string | null,
-  requestUrl?: string | null
+  requestUrl?: string | null,
+  options?: {
+    forwardedHost?: string | null
+    forwardedProto?: string | null
+    hostHeader?: string | null
+  }
 ): string
 
 export function buildInviteUrl(options: {
   requestUrl: string
   token: string
   configuredHost?: string | null
+  forwardedHost?: string | null
+  forwardedProto?: string | null
+  hostHeader?: string | null
   originHeader?: string | null
 }): string
 
@@ -20,5 +28,8 @@ export function buildInviteAuthRedirectUrl(options: {
   requestUrl: string
   token: string
   configuredHost?: string | null
+  forwardedHost?: string | null
+  forwardedProto?: string | null
+  hostHeader?: string | null
   originHeader?: string | null
 }): string

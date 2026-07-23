@@ -9,7 +9,7 @@ import type { AuthFormState } from "@/lib/auth-form"
 import { getFormString } from "@/lib/auth-form"
 import { getSupabaseConfig } from "@/lib/supabase/env"
 import { createClient } from "@/lib/supabase/server"
-import { safeNextPath } from "@/lib/url-safety.cjs"
+import { getOrigin, safeNextPath } from "@/lib/url-safety.cjs"
 import {
   WORKSPACE_ID_COOKIE,
   WORKSPACE_ORGANIZATION_COOKIE,
@@ -41,7 +41,11 @@ async function getRequestOrigin() {
   const headerList = await headers()
   const configuredHost = process.env.NEXT_PUBLIC_APP_HOST?.replace(/\/+$/, "")
 
-  return configuredHost || headerList.get("origin") || "http://localhost:3000"
+  return getOrigin(configuredHost, headerList.get("origin"), undefined, {
+    forwardedHost: headerList.get("x-forwarded-host"),
+    forwardedProto: headerList.get("x-forwarded-proto"),
+    hostHeader: headerList.get("host"),
+  })
 }
 
 function getNextPath(formData: FormData) {

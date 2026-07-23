@@ -185,11 +185,16 @@ test("side-by-side deployment docs capture live database constraints", () => {
 
 test("side-by-side callbacks prefer the configured v2 host", () => {
   const authActions = read("src/app/(auth)/actions.ts")
+  const invitationsRoute = read("src/app/api/organizations/invitations/route.ts")
   const klaviyoOAuth = read("src/lib/klaviyo-oauth.ts")
   const stripe = read("src/lib/billing/stripe.ts")
 
   assert.match(authActions, /NEXT_PUBLIC_APP_HOST\?\.replace\(\/\\\/\+\$\/, ""\)/)
-  assert.match(authActions, /configuredHost \|\| headerList\.get\("origin"\)/)
+  assert.match(authActions, /getOrigin\(configuredHost, headerList\.get\("origin"\), undefined/)
+  assert.match(authActions, /forwardedHost: headerList\.get\("x-forwarded-host"\)/)
+  assert.match(invitationsRoute, /forwardedHost: request\.headers\.get\("x-forwarded-host"\)/)
+  assert.match(invitationsRoute, /forwardedProto: request\.headers\.get\("x-forwarded-proto"\)/)
+  assert.match(invitationsRoute, /hostHeader: request\.headers\.get\("host"\)/)
   assert.match(klaviyoOAuth, /NEXT_PUBLIC_APP_HOST\?\.replace\(\/\\\/\+\$\/, ""\)/)
   assert.match(klaviyoOAuth, /\$\{appHost\}\/api\/oauth\/klaviyo\/callback/)
   assert.match(stripe, /NEXT_PUBLIC_APP_HOST \|\| "http:\/\/localhost:3000"/)
