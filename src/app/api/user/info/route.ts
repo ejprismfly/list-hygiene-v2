@@ -1,4 +1,4 @@
-import { errorJson, json } from "@/lib/api/tenant"
+import { canManageBilling, errorJson, json } from "@/lib/api/tenant"
 import { appHost, getStripeClient } from "@/lib/billing/stripe"
 import {
   getBillingContext,
@@ -14,6 +14,9 @@ export async function GET(request: Request) {
 
   const { user } = billing.context
   const stripeAccount = getScopedBillingAccount(billing.context)
+  const canManage =
+    billing.context.legacyFallback ||
+    canManageBilling(billing.context.tenant?.role ?? null)
   const billingHost = appHost(request)
   const subscription: {
     name: string | null
@@ -32,7 +35,7 @@ export async function GET(request: Request) {
   }
   let paymentMethods: unknown[] = []
 
-  if (process.env.STRIPE_SECRET_KEY && stripeAccount?.customer_id) {
+  if (canManage && process.env.STRIPE_SECRET_KEY && stripeAccount?.customer_id) {
     const stripe = getStripeClient()
 
     if (stripeAccount.subscription_id) {
@@ -94,7 +97,10 @@ export async function GET(request: Request) {
     payment_methods: paymentMethods,
     customer,
     subscription,
-    portal: `${billingHost}/api/billing/portal`,
+    portal: canManage ? `${billingHost}/api/billing/portal` : null,
+    permissions: {
+      can_manage_billing: canManage,
+    },
     credits_remaining: stripeAccount?.credits_remaining || 0,
     credits_used: stripeAccount?.credits_used || 0,
     credits_plan: stripeAccount?.credits_plan || 0,

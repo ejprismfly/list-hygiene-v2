@@ -1,4 +1,9 @@
-import { errorJson, json, readJsonBody } from "@/lib/api/tenant"
+import {
+  canManageBilling,
+  errorJson,
+  json,
+  readJsonBody,
+} from "@/lib/api/tenant"
 import { getStripeClient } from "@/lib/billing/stripe"
 import {
   getBillingContext,
@@ -24,6 +29,13 @@ export async function POST(request: Request) {
   )
   if (!billing.ok) {
     return errorJson(billing.error, billing.status)
+  }
+
+  if (
+    !billing.context.legacyFallback &&
+    !canManageBilling(billing.context.tenant?.role ?? null)
+  ) {
+    return errorJson("Only owners and admins can manage billing", 403)
   }
 
   const { supabase } = billing.context

@@ -1,6 +1,5 @@
 import {
-  canManageIntegrations,
-  canManageOrganization,
+  canUpdateIntegrations,
   errorJson,
   json,
   readJsonBody,
@@ -44,8 +43,6 @@ function applyAccountScope<T>(query: ScopedQuery<T>, context: TenantContext) {
   let scoped = query.eq("organization_id", context.organizationId)
   if (context.workspaceId) {
     scoped = scoped.eq("workspace_id", context.workspaceId)
-  } else if (!canManageOrganization(context.role)) {
-    scoped = scoped.in("workspace_id", context.allowedWorkspaceIds)
   }
 
   return scoped
@@ -96,7 +93,7 @@ function formatAccount(account: KlaviyoStoredAccount, firstOwnerUserId?: string 
 }
 
 export async function GET(request: Request) {
-  const tenant = await resolveTenantContext(request)
+  const tenant = await resolveTenantContext(request, { requireWorkspace: true })
   if (!tenant.ok) {
     return errorJson(tenant.error, tenant.status)
   }
@@ -168,13 +165,13 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const tenant = await resolveTenantContext(request)
+  const tenant = await resolveTenantContext(request, { requireWorkspace: true })
   if (!tenant.ok) {
     return errorJson(tenant.error, tenant.status)
   }
 
   const { context, supabase } = tenant
-  if (!canManageIntegrations(context.role)) {
+  if (!canUpdateIntegrations(context.role)) {
     return errorJson("Workspace access is required to manage integrations", 403)
   }
 

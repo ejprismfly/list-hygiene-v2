@@ -2,7 +2,7 @@ import {
   getBillingContext,
   getScopedBillingAccount,
 } from "@/lib/billing/scope"
-import { errorJson, json } from "@/lib/api/tenant"
+import { canManageBilling, errorJson, json } from "@/lib/api/tenant"
 import { ensureScopedStripeCustomer } from "@/lib/billing/customer"
 
 const BILLING_CONTEXT_TIMEOUT_MS = 6000
@@ -45,12 +45,15 @@ export async function GET(request: Request) {
     return errorJson(billing.error, billing.status)
   }
 
+  const canManage =
+    billing.context.legacyFallback ||
+    canManageBilling(billing.context.tenant?.role ?? null)
   const stripeAccount = getScopedBillingAccount(billing.context)
   const fallbackAccount = stripeAccount ? null : billing.context.stripeAccount
 
   return json({
-    customer_id: stripeAccount?.customer_id || null,
-    fallback_customer_id: fallbackAccount?.customer_id || null,
+    customer_id: canManage ? stripeAccount?.customer_id || null : null,
+    fallback_customer_id: canManage ? fallbackAccount?.customer_id || null : null,
     user_id: billing.context.user.id,
     organization_id: billing.context.organizationId,
     workspace_id: billing.context.workspaceId,
@@ -59,7 +62,10 @@ export async function GET(request: Request) {
     is_legacy_fallback: Boolean(
       billing.context.workspaceId && fallbackAccount?.customer_id
     ),
-    has_customer: Boolean(stripeAccount?.customer_id),
+    has_customer: canManage && Boolean(stripeAccount?.customer_id),
+    permissions: {
+      can_manage_billing: canManage,
+    },
   })
 }
 
@@ -70,6 +76,13 @@ export async function POST(request: Request) {
   )
   if (!billing.ok) {
     return errorJson(billing.error, billing.status)
+  }
+
+  if (
+    !billing.context.legacyFallback &&
+    !canManageBilling(billing.context.tenant?.role ?? null)
+  ) {
+    return errorJson("Only owners and admins can manage billing", 403)
   }
 
   const { user } = billing.context

@@ -108,16 +108,20 @@ to `/invite` to apply the app-level organization/workspace role. If Supabase's
 default `{{ .ConfirmationURL }}` invite template is still used, the same client
 callback also captures the session hash returned by Supabase's verify endpoint.
 
-Invite roles are intentionally limited to `admin` and `member`. Owners and
-admins can manage workspace members and pending invitations; members can use the
-workspace data they are granted but cannot manage team access. The `owner` role
-is reserved for organization ownership and cannot be selected in the invite UI.
+Invite roles are intentionally limited to `admin` and `member`. Workspace roles
+are the app permission source of truth: Owners and Admins can manage workspace
+members and pending invitations, while Members can view team access and manage
+existing integration settings for the workspaces they are assigned. The `owner`
+role is reserved for one workspace Owner and cannot be selected in the invite UI.
 
 ## Database Safety
 
 Expected v2 writes during testing:
 
 - `organizations`, `organization_members`, `workspaces`, `workspace_members` default rows for legacy users.
+- `workspace_members.role` is normalized so each workspace has one Owner. Run
+  `docs/migration/sql/20260723_workspace_roles.sql` after the earlier
+  workspace-era migrations.
 - `klaviyo_accounts` rows when a tester connects Klaviyo from v2.
 - `stripe_accounts` workspace rows if billing customer creation or checkout is tested.
 - Stripe webhook endpoint `/api/billing/webhook` receives signed events for checkout completion, subscription invoices, and subscription deletion.
@@ -131,13 +135,14 @@ Existing v1 rows remain readable because v2 falls back to legacy user-scoped dat
 2. Confirm password login, signup confirmation, forgot password, and logout.
 3. Confirm default organization/workspace creation for an existing live user.
 4. Confirm workspace switch, create, rename, archive/delete, and forced create modal after deleting the last workspace.
-5. Confirm dashboard data changes by workspace.
-6. Confirm Klaviyo connection uses the v2 callback URL and creates a workspace-scoped row.
-7. Confirm connected-workspace delete is blocked while an active Klaviyo account exists.
-8. Confirm billing page loads without hanging.
-9. Test checkout only if you are comfortable creating live Stripe customer/subscription objects for the selected workspace.
-10. If testing v2 billing webhooks, point a Stripe webhook endpoint at `{NEXT_PUBLIC_APP_HOST}/api/billing/webhook` and use its own `STRIPE_WEBHOOK_SECRET`.
-11. Keep v1 deployed and serving the main hostname as rollback until v2 webhook handling and any remaining route aliases are fully verified.
+5. Confirm workspace ownership transfer from Owner to an existing Admin.
+6. Confirm dashboard data changes by workspace.
+7. Confirm Klaviyo connection uses the v2 callback URL and creates a workspace-scoped row.
+8. Confirm connected-workspace delete is blocked while an active Klaviyo account exists.
+9. Confirm billing page loads without hanging.
+10. Test checkout only if you are comfortable creating live Stripe customer/subscription objects for the selected workspace.
+11. If testing v2 billing webhooks, point a Stripe webhook endpoint at `{NEXT_PUBLIC_APP_HOST}/api/billing/webhook` and use its own `STRIPE_WEBHOOK_SECRET`.
+12. Keep v1 deployed and serving the main hostname as rollback until v2 webhook handling and any remaining route aliases are fully verified.
 
 ## Known Gaps Before Full Cutover
 

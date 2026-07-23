@@ -1,6 +1,6 @@
 import type Stripe from "stripe"
 
-import { errorJson, json } from "@/lib/api/tenant"
+import { canManageBilling, errorJson, json } from "@/lib/api/tenant"
 import { appHost, getStripeClient } from "@/lib/billing/stripe"
 import {
   appendBillingScopeParams,
@@ -65,6 +65,9 @@ export async function GET(request: Request) {
 
   const billingHost = appHost(request)
   const stripeAccount = getScopedBillingAccount(billing.context)
+  const canManage =
+    billing.context.legacyFallback ||
+    canManageBilling(billing.context.tenant?.role ?? null)
   const currentCreditsPlan = Number(stripeAccount?.credits_plan || 0)
   const creditsUsed = Number(stripeAccount?.credits_used || 0)
   const creditsRemaining = Number(stripeAccount?.credits_remaining || 0)
@@ -118,7 +121,7 @@ export async function GET(request: Request) {
           checkout_url: null,
         }
 
-        if (!result.selected && price?.id) {
+        if (canManage && !result.selected && price?.id) {
           result.checkout_url = appendBillingScopeParams(
             `${billingHost}/api/billing/checkout?price_id=${price.id}`,
             billing.context
@@ -153,7 +156,7 @@ export async function GET(request: Request) {
       })
     )
 
-    if (stripeAccount?.customer_id) {
+    if (canManage && stripeAccount?.customer_id) {
       const now = new Date()
       const currentMonth = now.getMonth() + 1
       const currentYear = now.getFullYear()
@@ -259,7 +262,10 @@ export async function GET(request: Request) {
     items,
     customer,
     payments,
-    portal: `${billingHost}/api/billing/portal`,
+    portal: canManage ? `${billingHost}/api/billing/portal` : null,
+    permissions: {
+      can_manage_billing: canManage,
+    },
     billing_context: {
       customer_id: stripeAccount?.customer_id || null,
       organization_id: billing.context.organizationId,

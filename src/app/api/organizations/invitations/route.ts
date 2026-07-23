@@ -1,7 +1,7 @@
 import crypto from "crypto"
 
 import {
-  canManageOrganization,
+  canManageWorkspace,
   errorJson,
   json,
   readJsonBody,
@@ -40,6 +40,20 @@ function isInviteSendCoolingDown(updatedAt?: string | null) {
   }
 
   return Date.now() - new Date(updatedAt).getTime() < inviteResendCooldownMs
+}
+
+function invitationWithDerivedStatus<
+  T extends { status?: string | null; expires_at?: string | null },
+>(invitation: T) {
+  if (
+    invitation.status === "pending" &&
+    invitation.expires_at &&
+    new Date(invitation.expires_at).getTime() < Date.now()
+  ) {
+    return { ...invitation, status: "expired" }
+  }
+
+  return invitation
 }
 
 function isAlreadyRegisteredAuthError(message?: string) {
@@ -133,7 +147,7 @@ async function deliverSupabaseInviteEmail(args: SendSupabaseInviteEmailArgs) {
 }
 
 export async function GET(request: Request) {
-  const tenant = await resolveTenantContext(request)
+  const tenant = await resolveTenantContext(request, { requireWorkspace: true })
   if (!tenant.ok) {
     return errorJson(tenant.error, tenant.status)
   }
@@ -143,25 +157,26 @@ export async function GET(request: Request) {
     return errorJson("Organization access required", 403)
   }
 
-  if (!canManageOrganization(context.role)) {
-    return errorJson("Only owners and admins can manage invitations", 403)
+  if (!context.workspaceId) {
+    return errorJson("Workspace access required", 403)
   }
 
   const { data, error } = await supabase
     .from("organization_invitations")
     .select(invitationSelect)
     .eq("organization_id", context.organizationId)
+    .contains("workspace_ids", [context.workspaceId])
     .order("created_at", { ascending: false })
 
   if (error) {
     return errorJson(error.message)
   }
 
-  return json(data || [])
+  return json((data || []).map(invitationWithDerivedStatus))
 }
 
 export async function POST(request: Request) {
-  const tenant = await resolveTenantContext(request)
+  const tenant = await resolveTenantContext(request, { requireWorkspace: true })
   if (!tenant.ok) {
     return errorJson(tenant.error, tenant.status)
   }
@@ -171,7 +186,11 @@ export async function POST(request: Request) {
     return errorJson("Organization access required", 403)
   }
 
-  if (!canManageOrganization(context.role)) {
+  if (!context.workspaceId) {
+    return errorJson("Workspace access required", 403)
+  }
+
+  if (!canManageWorkspace(context.role)) {
     return errorJson("Only owners and admins can manage invitations", 403)
   }
 
@@ -179,7 +198,10 @@ export async function POST(request: Request) {
   const email =
     typeof body.email === "string" ? body.email.trim().toLowerCase() : ""
   const role = body.role || "member"
-  const workspaceIds = normalizeWorkspaceIds(body.workspace_ids)
+  const requestedWorkspaceIds = normalizeWorkspaceIds(body.workspace_ids)
+  const workspaceIds = requestedWorkspaceIds.length
+    ? requestedWorkspaceIds
+    : [context.workspaceId]
 
   if (!email) {
     return errorJson("email must be a string.", 400)
@@ -191,7 +213,6 @@ export async function POST(request: Request) {
 
   const resolvedWorkspaceIds = await resolveTeamWorkspaceIds({
     organizationId: context.organizationId,
-    role,
     supabase,
     workspaceIds,
   })
@@ -206,7 +227,9 @@ export async function POST(request: Request) {
       .select(invitationSelect)
       .eq("organization_id", context.organizationId)
       .eq("email", email)
-      .eq("status", "pending")
+      .in("status", ["pending", "expired"])
+      .order("updated_at", { ascending: false })
+      .limit(1)
       .maybeSingle()
 
   if (existingInvitationError) {
@@ -245,6 +268,7 @@ export async function POST(request: Request) {
         token_hash: hashToken(token),
         invited_by_user_id: context.user?.id,
         expires_at: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString(),
+        status: "pending",
       })
       .eq("id", existingInvitation.id)
       .select(invitationSelect)
@@ -367,7 +391,7 @@ export async function POST(request: Request) {
 }
 
 export async function PATCH(request: Request) {
-  const tenant = await resolveTenantContext(request)
+  const tenant = await resolveTenantContext(request, { requireWorkspace: true })
   if (!tenant.ok) {
     return errorJson(tenant.error, tenant.status)
   }
@@ -377,7 +401,11 @@ export async function PATCH(request: Request) {
     return errorJson("Organization access required", 403)
   }
 
-  if (!canManageOrganization(context.role)) {
+  if (!context.workspaceId) {
+    return errorJson("Workspace access required", 403)
+  }
+
+  if (!canManageWorkspace(context.role)) {
     return errorJson("Only owners and admins can manage invitations", 403)
   }
 
@@ -396,7 +424,8 @@ export async function PATCH(request: Request) {
       .select(invitationSelect)
       .eq("organization_id", context.organizationId)
       .eq("id", id)
-      .eq("status", "pending")
+      .in("status", ["pending", "expired"])
+      .contains("workspace_ids", [context.workspaceId])
       .single()
 
     if (invitationError || !invitation) {
@@ -410,7 +439,6 @@ export async function PATCH(request: Request) {
     const workspaceIds = normalizeWorkspaceIds(invitation.workspace_ids)
     const resolvedWorkspaceIds = await resolveTeamWorkspaceIds({
       organizationId: context.organizationId,
-      role,
       supabase,
       workspaceIds,
     })
@@ -444,11 +472,12 @@ export async function PATCH(request: Request) {
         workspace_ids: resolvedWorkspaceIds.workspaceIds,
         invited_by_user_id: context.user?.id,
         expires_at: expiresAt,
+        status: "pending",
         updated_at: new Date().toISOString(),
       })
       .eq("organization_id", context.organizationId)
       .eq("id", id)
-      .eq("status", "pending")
+      .in("status", ["pending", "expired"])
       .select(invitationSelect)
       .single()
 
@@ -488,7 +517,8 @@ export async function PATCH(request: Request) {
     .update({ status: "revoked" })
     .eq("organization_id", context.organizationId)
     .eq("id", id)
-    .eq("status", "pending")
+    .in("status", ["pending", "expired"])
+    .contains("workspace_ids", [context.workspaceId])
     .select(invitationSelect)
     .single()
 

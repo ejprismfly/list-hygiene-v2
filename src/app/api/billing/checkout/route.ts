@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server"
 
-import { errorJson } from "@/lib/api/tenant"
+import { canManageBilling, errorJson } from "@/lib/api/tenant"
 import { ensureScopedStripeCustomer } from "@/lib/billing/customer"
 import { appHost, getStripeClient } from "@/lib/billing/stripe"
 import { getBillingContext } from "@/lib/billing/scope"
@@ -25,6 +25,13 @@ export async function GET(request: Request) {
   )
   if (!billing.ok) {
     return errorJson(billing.error, billing.status)
+  }
+
+  if (
+    !billing.context.legacyFallback &&
+    !canManageBilling(billing.context.tenant?.role ?? null)
+  ) {
+    return errorJson("Only owners and admins can manage billing", 403)
   }
 
   const { user, organizationId, workspaceId } = billing.context

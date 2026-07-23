@@ -52,8 +52,28 @@ export function canManageOrganization(role: OrganizationRole | null) {
   return role === "owner" || role === "admin"
 }
 
-export function canManageIntegrations(role: OrganizationRole | null) {
+export function canManageWorkspace(role: OrganizationRole | null) {
+  return role === "owner" || role === "admin"
+}
+
+export function canOwnWorkspace(role: OrganizationRole | null) {
+  return role === "owner"
+}
+
+export function canManageBilling(role: OrganizationRole | null) {
+  return role === "owner" || role === "admin"
+}
+
+export function canCreateIntegrations(role: OrganizationRole | null) {
+  return role === "owner" || role === "admin"
+}
+
+export function canUpdateIntegrations(role: OrganizationRole | null) {
   return role === "owner" || role === "admin" || role === "member"
+}
+
+export function canDeleteIntegrations(role: OrganizationRole | null) {
+  return role === "owner" || role === "admin"
 }
 
 export async function getCurrentUser() {
@@ -388,46 +408,79 @@ export async function resolveTenantContext(
   }
 
   const organizationId = String(membership.organization_id)
-  const role = membership.role as OrganizationRole
-  let allowedWorkspaceIds: string[] = []
-
-  if (canManageOrganization(role)) {
-    const { data: workspaces, error } = await supabase
-      .from("workspaces")
-      .select("id, is_default, created_at")
-      .eq("organization_id", organizationId)
-      .is("archived_at", null)
-      .order("is_default", { ascending: false })
-      .order("created_at", { ascending: true })
-
-    if (error) {
-      return { ok: false, status: 500, error: error.message }
-    }
-
-    allowedWorkspaceIds = (workspaces || []).map((workspace) =>
-      String(workspace.id)
-    )
-  } else {
-    const { data: workspaceMemberships, error } = await supabase
+  const organizationRole = membership.role as OrganizationRole
+  const { data: workspaceMemberships, error: workspaceMembershipError } =
+    await supabase
       .from("workspace_members")
-      .select("workspace_id")
+      .select("workspace_id, role, created_at")
       .eq("organization_id", organizationId)
       .eq("user_id", user.id)
 
-    if (error) {
-      return { ok: false, status: 500, error: error.message }
-    }
-
-    allowedWorkspaceIds = (workspaceMemberships || []).map((row) =>
-      String(row.workspace_id)
-    )
+  if (workspaceMembershipError) {
+    return { ok: false, status: 500, error: workspaceMembershipError.message }
   }
+
+  const workspaceRoleById = new Map<string, OrganizationRole>()
+  ;(workspaceMemberships || []).forEach((row) => {
+    if (row.workspace_id) {
+      workspaceRoleById.set(
+        String(row.workspace_id),
+        row.role as OrganizationRole
+      )
+    }
+  })
+
+  let workspaceQuery = supabase
+    .from("workspaces")
+    .select("id, is_default, created_at")
+    .eq("organization_id", organizationId)
+    .is("archived_at", null)
+    .order("is_default", { ascending: false })
+    .order("created_at", { ascending: true })
+
+  const membershipWorkspaceIds = Array.from(workspaceRoleById.keys())
+  const useOrganizationRoleFallback =
+    !membershipWorkspaceIds.length && canManageOrganization(organizationRole)
+
+  if (membershipWorkspaceIds.length) {
+    workspaceQuery = workspaceQuery.in("id", membershipWorkspaceIds)
+  } else if (!useOrganizationRoleFallback) {
+    workspaceQuery = workspaceQuery.in("id", ["00000000-0000-0000-0000-000000000000"])
+  }
+
+  const { data: activeWorkspaces, error: activeWorkspaceError } =
+    await workspaceQuery
+
+  if (activeWorkspaceError) {
+    return { ok: false, status: 500, error: activeWorkspaceError.message }
+  }
+
+  if (useOrganizationRoleFallback) {
+    ;(activeWorkspaces || []).forEach((workspace) => {
+      workspaceRoleById.set(String(workspace.id), organizationRole)
+    })
+  }
+
+  const allowedWorkspaceIds = (activeWorkspaces || []).map((workspace) =>
+    String(workspace.id)
+  )
 
   if (requestedWorkspaceId && !allowedWorkspaceIds.includes(requestedWorkspaceId)) {
     return { ok: false, status: 403, error: "Workspace access denied" }
   }
 
-  const workspaceId = requestedWorkspaceId || allowedWorkspaceIds[0] || null
+  const defaultWorkspaceId = (activeWorkspaces || []).find(
+    (workspace) => workspace.is_default
+  )?.id
+  const workspaceId =
+    requestedWorkspaceId ||
+    (defaultWorkspaceId ? String(defaultWorkspaceId) : null) ||
+    allowedWorkspaceIds[0] ||
+    null
+  const role = workspaceId
+    ? workspaceRoleById.get(String(workspaceId)) || organizationRole
+    : organizationRole
+
   if (options.requireWorkspace && !workspaceId) {
     return { ok: false, status: 403, error: "Workspace access required" }
   }

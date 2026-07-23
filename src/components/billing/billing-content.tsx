@@ -76,7 +76,10 @@ type BillingResponse = {
     exp_year: string
     is_default: boolean
   }[]
-  portal: string
+  portal: string | null
+  permissions?: {
+    can_manage_billing?: boolean
+  }
   billing_context?: {
     customer_id?: string | null
     organization_id?: string | null
@@ -110,6 +113,9 @@ const emptyBilling: BillingResponse = {
   customer: {},
   payments: [],
   portal: "/api/billing/portal",
+  permissions: {
+    can_manage_billing: false,
+  },
 }
 
 function formatUsageCount(value: number) {
@@ -307,11 +313,21 @@ export function BillingContent({ email }: BillingContentProps) {
   }
 
   function openPortal() {
+    if (!billing.permissions?.can_manage_billing) {
+      setStatusMessage("Only owners and admins can manage billing.")
+      return
+    }
+
     setOpeningPortal(true)
     openBillingRoute(billing.portal, "/api/billing/portal")
   }
 
   function selectPlan(plan: BillingPlanRow) {
+    if (!billing.permissions?.can_manage_billing) {
+      setStatusMessage("Only owners and admins can manage billing.")
+      return
+    }
+
     if (plan.checkout_url) {
       setCheckingOutPlanId(plan.id)
       trackPlanChangeStarted({
@@ -333,6 +349,7 @@ export function BillingContent({ email }: BillingContentProps) {
   const hasPlanRows = planRows.length > 0
   const isEnterprisePlanRange = activePlanRange === "enterprise"
   const paymentMethod = billing.payments[0]
+  const canManageBilling = Boolean(billing.permissions?.can_manage_billing)
 
   return (
     <>
@@ -343,81 +360,89 @@ export function BillingContent({ email }: BillingContentProps) {
       />
       <div className="grid gap-8 md:gap-12">
         <section className="grid gap-8">
-        <h1 className="text-2xl font-semibold tracking-normal sm:text-3xl">
-          Your Plan
-        </h1>
-        <Card className="w-full max-w-xl">
-          <CardHeader>
-            <CardTitle>
+          <h1 className="text-2xl font-semibold tracking-normal sm:text-3xl">
+            Your Plan
+          </h1>
+          <Card className="w-full max-w-xl">
+            <CardHeader>
+              <CardTitle>
+                {loading ? (
+                  <Skeleton className="h-7 w-48" />
+                ) : (
+                  <>Current Plan: {billing.account.current_plan}</>
+                )}
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="grid gap-5">
               {loading ? (
-                <Skeleton className="h-7 w-48" />
+                <>
+                  <UsageProgressSkeleton />
+                  <UsageProgressSkeleton />
+                  <Skeleton className="h-3 w-32" />
+                </>
               ) : (
-                <>Current Plan: {billing.account.current_plan}</>
+                <>
+                  {trialActive && (
+                    <UsageProgressRow
+                      label="Trial Usage"
+                      percent={trialUsagePercent}
+                      total={billing.account.trial_plan}
+                      used={billing.account.trial_used}
+                    />
+                  )}
+                  <UsageProgressRow
+                    label="Plan Usage"
+                    percent={planUsagePercent}
+                    total={billing.account.credits_plan}
+                    used={billing.account.credits_used}
+                  />
+                  {resetDate && resetDate !== "-" && (
+                    <p className="text-xs text-muted-foreground">
+                      Resets {resetDate}
+                    </p>
+                  )}
+                  {showOverage && (
+                    <UsageProgressRow
+                      info="Overage credits are used after plan credits are exhausted."
+                      label="Overage Usage"
+                      percent={overageUsagePercent}
+                      total={overageTotal}
+                      used={billing.account.overage_used}
+                    />
+                  )}
+                </>
               )}
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="grid gap-5">
-            {loading ? (
-              <>
-                <UsageProgressSkeleton />
-                <UsageProgressSkeleton />
-                <Skeleton className="h-3 w-32" />
-              </>
-            ) : (
-              <>
-                {trialActive && (
-                  <UsageProgressRow
-                    label="Trial Usage"
-                    percent={trialUsagePercent}
-                    total={billing.account.trial_plan}
-                    used={billing.account.trial_used}
-                  />
-                )}
-                <UsageProgressRow
-                  label="Plan Usage"
-                  percent={planUsagePercent}
-                  total={billing.account.credits_plan}
-                  used={billing.account.credits_used}
-                />
-                {resetDate && resetDate !== "-" && (
-                  <p className="text-xs text-muted-foreground">
-                    Resets {resetDate}
-                  </p>
-                )}
-                {showOverage && (
-                  <UsageProgressRow
-                    info="Overage credits are used after plan credits are exhausted."
-                    label="Overage Usage"
-                    percent={overageUsagePercent}
-                    total={overageTotal}
-                    used={billing.account.overage_used}
-                  />
-                )}
-              </>
-            )}
-            <div className="grid gap-2 text-sm">
-              <div className="flex items-center justify-between">
-                <span>Monthly total:</span>
-                {loading ? (
-                  <Skeleton className="h-4 w-12" />
-                ) : (
-                  <span>{billing.account.total}</span>
-                )}
+              <div className="grid gap-2 text-sm">
+                <div className="flex items-center justify-between">
+                  <span>Monthly total:</span>
+                  {loading ? (
+                    <Skeleton className="h-4 w-12" />
+                  ) : (
+                    <span>{billing.account.total}</span>
+                  )}
+                </div>
+                <div className="flex items-center justify-between">
+                  <span>Next Invoice date:</span>
+                  {loading ? (
+                    <Skeleton className="h-4 w-24" />
+                  ) : (
+                    <span>{billing.account.invoice_date}</span>
+                  )}
+                </div>
               </div>
-              <div className="flex items-center justify-between">
-                <span>Next Invoice date:</span>
-                {loading ? (
-                  <Skeleton className="h-4 w-24" />
-                ) : (
-                  <span>{billing.account.invoice_date}</span>
-                )}
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      </section>
+            </CardContent>
+          </Card>
+        </section>
 
-      <section className="grid gap-6">
+        {statusMessage && (
+          <Alert>
+            <AlertTitle>Billing</AlertTitle>
+            <AlertDescription>{statusMessage}</AlertDescription>
+          </Alert>
+        )}
+
+        {(loading || canManageBilling) && (
+          <section className="grid gap-6">
         <div className="grid gap-4 sm:flex sm:items-start sm:justify-between">
           <div className="grid gap-1">
             <h2 className="text-2xl font-semibold tracking-normal sm:text-3xl">
@@ -436,13 +461,6 @@ export function BillingContent({ email }: BillingContentProps) {
             Manage
           </Button>
         </div>
-
-        {statusMessage && (
-          <Alert>
-            <AlertTitle>Billing</AlertTitle>
-            <AlertDescription>{statusMessage}</AlertDescription>
-          </Alert>
-        )}
 
         <Tabs value={activePlanRange} onValueChange={setActivePlanRange}>
           <TabsList className="h-auto w-full flex-wrap justify-start sm:w-fit">
@@ -508,6 +526,7 @@ export function BillingContent({ email }: BillingContentProps) {
                           type="button"
                           className="w-full md:w-32"
                           disabled={
+                            !canManageBilling ||
                             plan.selected ||
                             openingPortal ||
                             Boolean(checkingOutPlanId)
@@ -549,9 +568,11 @@ export function BillingContent({ email }: BillingContentProps) {
             </Table>
           </CardContent>
         </Card>
-      </section>
+          </section>
+        )}
 
-      <section className="grid gap-6">
+        {(loading || canManageBilling) && (
+          <section className="grid gap-6">
         <div className="grid gap-3 sm:flex sm:items-center sm:justify-between">
           <h2 className="text-2xl font-semibold tracking-normal sm:text-3xl">
             Billing Contact
@@ -592,7 +613,8 @@ export function BillingContent({ email }: BillingContentProps) {
           </CardContent>
         </Card>
         <Separator />
-      </section>
+          </section>
+        )}
       </div>
     </>
   )

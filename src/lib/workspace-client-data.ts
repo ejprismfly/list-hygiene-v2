@@ -10,6 +10,7 @@ export type WorkspaceOption = {
   id: string
   organization_id: string
   name: string
+  role?: "owner" | "admin" | "member" | null
   is_default?: boolean | null
   has_connected_account?: boolean
   has_active_billing?: boolean

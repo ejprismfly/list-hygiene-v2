@@ -42,6 +42,7 @@ import {
 } from "@/components/ui/table"
 import { Skeleton } from "@/components/ui/skeleton"
 import { startKlaviyoOAuth } from "@/lib/klaviyo-oauth"
+import { useWorkspacePermissions } from "@/lib/use-workspace-permissions"
 import { invalidateWorkspaceClientData } from "@/lib/workspace-client-data"
 
 type SettingsContentProps = {
@@ -151,6 +152,7 @@ export function SettingsContent({ connected = false }: SettingsContentProps) {
     useState("")
   const [connectingKlaviyo, setConnectingKlaviyo] = useState(false)
   const [deletingConnection, setDeletingConnection] = useState(false)
+  const workspacePermissions = useWorkspacePermissions()
   const hasConnections = connections.length > 0
   const deleteConnectionName = connectionToDelete
     ? connectionDisplayName(connectionToDelete)
@@ -196,6 +198,11 @@ export function SettingsContent({ connected = false }: SettingsContentProps) {
   }, [connected])
 
   async function addKlaviyoConnection() {
+    if (!workspacePermissions.canCreateIntegrations) {
+      setStatusMessage("Only owners and admins can add integrations.")
+      return
+    }
+
     setConnectingKlaviyo(true)
     setStatusMessage("")
     try {
@@ -214,6 +221,11 @@ export function SettingsContent({ connected = false }: SettingsContentProps) {
   }
 
   function openDeleteConnectionDialog(connection: KlaviyoConnection) {
+    if (!workspacePermissions.canDeleteIntegrations) {
+      setStatusMessage("Only owners and admins can delete integrations.")
+      return
+    }
+
     setConnectionToDelete(connection)
     setDeleteConnectionConfirmation("")
     setDeleteConnectionDialogOpen(true)
@@ -362,12 +374,14 @@ export function SettingsContent({ connected = false }: SettingsContentProps) {
                       >
                         Edit
                       </DropdownMenuLinkItem>
-                      <DropdownMenuItem
-                        className="text-destructive data-highlighted:bg-destructive/10 data-highlighted:text-destructive"
-                        onClick={() => openDeleteConnectionDialog(connection)}
-                      >
-                        Delete
-                      </DropdownMenuItem>
+                      {workspacePermissions.canDeleteIntegrations && (
+                        <DropdownMenuItem
+                          className="text-destructive data-highlighted:bg-destructive/10 data-highlighted:text-destructive"
+                          onClick={() => openDeleteConnectionDialog(connection)}
+                        >
+                          Delete
+                        </DropdownMenuItem>
+                      )}
                     </DropdownMenuContent>
                   </DropdownMenu>
                 </TableCell>
@@ -379,6 +393,7 @@ export function SettingsContent({ connected = false }: SettingsContentProps) {
         <p className="text-lg text-muted-foreground">No connections</p>
       )}
 
+      {workspacePermissions.canCreateIntegrations && (
       <div className="grid w-full gap-4 sm:w-fit">
         <Dialog>
           <DialogTrigger render={<Button className="w-full sm:w-fit" />}>
@@ -451,7 +466,9 @@ export function SettingsContent({ connected = false }: SettingsContentProps) {
           </DialogContent>
         </Dialog>
       </div>
+      )}
 
+      {workspacePermissions.canDeleteIntegrations && (
       <Dialog
         open={deleteConnectionDialogOpen}
         onOpenChange={(open) => {
@@ -509,6 +526,7 @@ export function SettingsContent({ connected = false }: SettingsContentProps) {
           </div>
         </DialogContent>
       </Dialog>
+      )}
     </div>
   )
 }

@@ -44,6 +44,7 @@ import {
 import { Separator } from "@/components/ui/separator"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Switch } from "@/components/ui/switch"
+import { useWorkspacePermissions } from "@/lib/use-workspace-permissions"
 
 type SegmentOption = {
   id: string
@@ -142,6 +143,7 @@ export function ConfigureConnectionContent() {
   const [removeDialogOpen, setRemoveDialogOpen] = useState(false)
   const [removeConfirmation, setRemoveConfirmation] = useState("")
   const [removed, setRemoved] = useState(false)
+  const workspacePermissions = useWorkspacePermissions()
 
   useEffect(() => {
     if (!accountId) {
@@ -353,6 +355,11 @@ export function ConfigureConnectionContent() {
 
   async function removeConnection() {
     if (!accountId || removed || !removeConfirmationMatches) {
+      return
+    }
+
+    if (!workspacePermissions.canDeleteIntegrations) {
+      setStatusMessage("Only owners and admins can delete integrations.")
       return
     }
 
@@ -633,20 +640,23 @@ export function ConfigureConnectionContent() {
           {saving && <Loader2 className="size-4 animate-spin" />}
           Save
         </Button>
-        <Button
-          type="button"
-          variant="destructive"
-          disabled={accountLoading || removing || removed}
-          onClick={() => {
-            setRemoveConfirmation("")
-            setRemoveDialogOpen(true)
-          }}
-        >
-          <Trash2 className="size-4" />
-          Delete connection
-        </Button>
+        {workspacePermissions.canDeleteIntegrations && (
+          <Button
+            type="button"
+            variant="destructive"
+            disabled={accountLoading || removing || removed}
+            onClick={() => {
+              setRemoveConfirmation("")
+              setRemoveDialogOpen(true)
+            }}
+          >
+            <Trash2 className="size-4" />
+            Delete connection
+          </Button>
+        )}
       </div>
 
+      {workspacePermissions.canDeleteIntegrations && (
       <Dialog
         open={removeDialogOpen}
         onOpenChange={(open) => {
@@ -697,6 +707,7 @@ export function ConfigureConnectionContent() {
           </div>
         </DialogContent>
       </Dialog>
+      )}
 
       <p className="text-sm text-muted-foreground">
         Having any issues? Contact{" "}

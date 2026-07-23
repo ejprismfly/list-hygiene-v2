@@ -1,4 +1,4 @@
-import { errorJson, json } from "@/lib/api/tenant"
+import { canManageBilling, errorJson, json } from "@/lib/api/tenant"
 import { appHost, getStripeClient } from "@/lib/billing/stripe"
 import {
   appendBillingScopeParams,
@@ -48,6 +48,9 @@ export async function GET(request: Request) {
 
   const billingHost = appHost(request)
   const stripeAccount = getScopedBillingAccount(billing.context)
+  const canManage =
+    billing.context.legacyFallback ||
+    canManageBilling(billing.context.tenant?.role ?? null)
   const currentCreditsPlan = Number(stripeAccount?.credits_plan || 0)
   const stripe = getStripeClient()
   const { data: products } = await stripe.products.list({ active: true })
@@ -80,7 +83,7 @@ export async function GET(request: Request) {
         prices,
         selected,
         checkout_url:
-          selected || !prices[0]?.id
+          !canManage || selected || !prices[0]?.id
             ? null
             : appendBillingScopeParams(
                 `${billingHost}/api/billing/checkout?price_id=${prices[0].id}`,

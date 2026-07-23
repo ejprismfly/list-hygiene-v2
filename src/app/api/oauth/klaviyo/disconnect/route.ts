@@ -1,6 +1,5 @@
 import {
-  canManageIntegrations,
-  canManageOrganization,
+  canDeleteIntegrations,
   errorJson,
   json,
   readJsonBody,
@@ -24,22 +23,20 @@ function applyAccountScope<T>(query: ScopedQuery<T>, context: TenantContext) {
   let scoped = query.eq("organization_id", context.organizationId)
   if (context.workspaceId) {
     scoped = scoped.eq("workspace_id", context.workspaceId)
-  } else if (!canManageOrganization(context.role)) {
-    scoped = scoped.in("workspace_id", context.allowedWorkspaceIds)
   }
 
   return scoped
 }
 
 export async function POST(request: Request) {
-  const tenant = await resolveTenantContext(request)
+  const tenant = await resolveTenantContext(request, { requireWorkspace: true })
   if (!tenant.ok) {
     return errorJson(tenant.error, tenant.status)
   }
 
   const { context, supabase } = tenant
-  if (!canManageIntegrations(context.role)) {
-    return errorJson("Workspace access is required to manage integrations", 403)
+  if (!canDeleteIntegrations(context.role)) {
+    return errorJson("Only owners and admins can delete integrations", 403)
   }
 
   const body = await readJsonBody(request)

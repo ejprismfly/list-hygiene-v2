@@ -18,6 +18,7 @@ For the current live database, use the additive production SQL from the v1/core 
 /root/list-hygiene/list-hygiene-core/sql/20260707_workspace_archiving.sql
 /root/list-hygiene/list-hygiene-core/sql/20260709_workspace_billing.sql
 /root/list-hygiene/list-hygiene-v2/docs/migration/sql/20260721_trial_credit_redemptions.sql
+/root/list-hygiene/list-hygiene-v2/docs/migration/sql/20260723_workspace_roles.sql
 /root/list-hygiene/list-hygiene-core/sql/20260709_workspace_report_tables.sql
 ```
 
@@ -34,6 +35,11 @@ workspaces
 workspace_members
 organization_invitations
 ```
+
+`workspace_members` should also have exactly one `owner` per active workspace.
+The `20260723_workspace_roles.sql` migration backfills the owner from
+`workspaces.created_by_user_id` when possible, otherwise from the earliest
+workspace member, and then adds the one-owner unique index.
 
 These existing v1 tables should have nullable tenant columns:
 
@@ -102,7 +108,8 @@ shape during side-by-side testing.
 2. Existing user gets a default organization/workspace if missing.
 3. Workspace create, switch, rename, archive/delete.
 4. Workspace invite sends a Supabase Auth email; the invitee accepts into the selected workspace as admin/member.
-5. Klaviyo OAuth creates an active connection with `organization_id` and `workspace_id`.
-6. Dashboard API changes when `workspace_id` changes.
-7. Billing page loads and returns workspace billing context.
-8. V1 remains usable on the current live hostname after the same user tests v2.
+5. Workspace Owner can transfer ownership to an existing workspace Admin after password confirmation.
+6. Klaviyo OAuth creates an active connection with `organization_id` and `workspace_id`.
+7. Dashboard API changes when `workspace_id` changes.
+8. Billing page loads and returns workspace billing context.
+9. V1 remains usable on the current live hostname after the same user tests v2.

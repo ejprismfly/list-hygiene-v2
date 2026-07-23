@@ -1,9 +1,11 @@
 "use client"
 
-import { useEffect, useMemo, useState, useTransition } from "react"
+import { useEffect, useState, useTransition } from "react"
 import { createPortal } from "react-dom"
 import {
   Copy,
+  Crown,
+  KeyRound,
   Loader2,
   Plus,
   Send,
@@ -192,6 +194,10 @@ export function WorkspaceSwitcher({
     useState(false)
   const [invitationToCancel, setInvitationToCancel] =
     useState<WorkspaceInvitation | null>(null)
+  const [transferDialogOpen, setTransferDialogOpen] = useState(false)
+  const [transferOwnerUserId, setTransferOwnerUserId] = useState("")
+  const [transferPassword, setTransferPassword] = useState("")
+  const [transferringOwnership, setTransferringOwnership] = useState(false)
   const [creatingWorkspace, setCreatingWorkspace] = useState(false)
   const [savingWorkspaceName, setSavingWorkspaceName] = useState(false)
   const [invitingMember, setInvitingMember] = useState(false)
@@ -215,15 +221,20 @@ export function WorkspaceSwitcher({
     member.workspace_ids.includes(selectedId || "")
   )
   const selectedInvitations = invitations.filter((invitation) =>
-    invitation.status === "pending" &&
+    (invitation.status === "pending" || invitation.status === "expired") &&
     invitation.workspace_ids.includes(selectedId || "")
   )
-  const managerEnabled = canManage(selectedOrganization?.role)
+  const managerEnabled = canManage(selectedWorkspace?.role)
+  const ownerEnabled = selectedWorkspace?.role === "owner"
+  const selectedOwner = selectedMembers.find((member) => member.role === "owner")
+  const ownershipTransferCandidates = selectedMembers.filter(
+    (member) => member.role === "admin" && member.status === "active"
+  )
   const workspaceArchiveBlocked =
     Boolean(selectedWorkspace?.has_connected_account) ||
     Boolean(selectedWorkspace?.has_active_billing)
-  const workspaceArchiveBlockedReason = !managerEnabled
-    ? "Only owners and admins can delete workspaces."
+  const workspaceArchiveBlockedReason = !ownerEnabled
+    ? "Only workspace owners can delete workspaces."
     : selectedWorkspace?.has_active_billing
       ? "Cancel active billing before deleting this workspace."
       : selectedWorkspace?.has_connected_account
@@ -235,11 +246,9 @@ export function WorkspaceSwitcher({
   const memberRemovalName =
     memberToRemove?.email || memberToRemove?.name || "this member"
   const memberRemovalBlockedReason =
-    memberToRemove?.role === "admin"
-      ? "Admins have organization-wide access. Change this user to member before removing workspace access."
-      : memberToRemove?.role === "owner"
-        ? "Owners cannot be removed from workspace access."
-        : ""
+    memberToRemove?.role === "owner"
+      ? "Transfer ownership before removing the workspace owner."
+      : ""
   const invitationCancelName = invitationToCancel?.email || "this invitation"
 
   useEffect(() => {
@@ -376,6 +385,11 @@ export function WorkspaceSwitcher({
 
   async function createWorkspace() {
     const name = draftName.trim()
+    if (!managerEnabled) {
+      setMessage("Only owners and admins can create workspaces.")
+      return
+    }
+
     if (!organizationId || !name) {
       setMessage("Workspace name is required.")
       return
@@ -410,6 +424,11 @@ export function WorkspaceSwitcher({
 
   async function saveWorkspaceName() {
     if (!organizationId || !selectedWorkspace) {
+      return
+    }
+
+    if (!managerEnabled) {
+      setMessage("Only owners and admins can update workspace settings.")
       return
     }
 
@@ -454,7 +473,7 @@ export function WorkspaceSwitcher({
       !organizationId ||
       !selectedWorkspace ||
       !archiveConfirmationMatches ||
-      !managerEnabled ||
+      !ownerEnabled ||
       workspaceArchiveBlocked
     ) {
       return
@@ -503,6 +522,12 @@ export function WorkspaceSwitcher({
     const email = inviteEmail.trim()
     setInviteStatusMessage("")
     setInviteStatusIsError(false)
+
+    if (!managerEnabled) {
+      setInviteStatusMessage("Only owners and admins can invite members.")
+      setInviteStatusIsError(true)
+      return
+    }
 
     if (!organizationId || !selectedWorkspace || !email) {
       setInviteStatusMessage("Member email is required.")
@@ -641,6 +666,12 @@ export function WorkspaceSwitcher({
   }
 
   async function resendInvitation(invitation: WorkspaceInvitation) {
+    if (!managerEnabled) {
+      setInviteStatusMessage("Only owners and admins can resend invites.")
+      setInviteStatusIsError(true)
+      return
+    }
+
     if (!organizationId || resendingInvitationId) {
       return
     }
@@ -685,7 +716,12 @@ export function WorkspaceSwitcher({
   }
 
   async function updateMemberRole(member: WorkspaceMember, role: "admin" | "member") {
-    if (!organizationId || member.role === role || updatingMemberUserId) {
+    if (
+      !managerEnabled ||
+      !organizationId ||
+      member.role === role ||
+      updatingMemberUserId
+    ) {
       return
     }
 
@@ -697,7 +733,6 @@ export function WorkspaceSwitcher({
         body: JSON.stringify({
           user_id: member.user_id,
           role,
-          workspace_ids: member.workspace_ids,
         }),
       })
 
@@ -720,12 +755,16 @@ export function WorkspaceSwitcher({
   }
 
   function openRemoveMemberDialog(member: WorkspaceMember) {
+    if (!managerEnabled) {
+      return
+    }
+
     setMemberToRemove(member)
     setMemberRemovalDialogOpen(true)
   }
 
   async function removeMember() {
-    if (!organizationId || !memberToRemove) {
+    if (!managerEnabled || !organizationId || !memberToRemove) {
       return
     }
 
@@ -780,12 +819,16 @@ export function WorkspaceSwitcher({
   }
 
   function openCancelInvitationDialog(invitation: WorkspaceInvitation) {
+    if (!managerEnabled) {
+      return
+    }
+
     setInvitationToCancel(invitation)
     setInvitationCancelDialogOpen(true)
   }
 
   async function cancelInvitation() {
-    if (!organizationId || !invitationToCancel) {
+    if (!managerEnabled || !organizationId || !invitationToCancel) {
       return
     }
 
@@ -819,10 +862,65 @@ export function WorkspaceSwitcher({
     }
   }
 
-  const activeRows = useMemo(() => [...selectedMembers, ...selectedInvitations], [
-    selectedMembers,
-    selectedInvitations,
-  ])
+  async function transferOwnership() {
+    if (
+      !ownerEnabled ||
+      !organizationId ||
+      !selectedId ||
+      !transferOwnerUserId ||
+      !transferPassword
+    ) {
+      return
+    }
+
+    setTransferringOwnership(true)
+    setMessage("")
+    try {
+      const response = await fetch("/api/workspaces/ownership", {
+        method: "POST",
+        headers: headersFor(organizationId, selectedId),
+        body: JSON.stringify({
+          new_owner_user_id: transferOwnerUserId,
+          password: transferPassword,
+        }),
+      })
+      const data = await response.json()
+      if (!response.ok) {
+        setMessage(data.error || "Unable to transfer ownership.")
+        return
+      }
+
+      setMembers((current) =>
+        current.map((member) => {
+          if (member.user_id === data.owner_user_id) {
+            return { ...member, role: "owner" }
+          }
+          if (member.user_id === data.previous_owner_user_id) {
+            return { ...member, role: "admin" }
+          }
+          return member
+        })
+      )
+      setWorkspaces((current) =>
+        current.map((workspace) =>
+          workspace.id === data.workspace_id
+            ? { ...workspace, role: "admin" }
+            : workspace
+        )
+      )
+      invalidateWorkspaceClientData(organizationId)
+      setTransferDialogOpen(false)
+      setTransferOwnerUserId("")
+      setTransferPassword("")
+      setMessage("Workspace ownership transferred.")
+    } catch {
+      setMessage("Unable to transfer ownership.")
+    } finally {
+      setTransferringOwnership(false)
+    }
+  }
+
+  const activeRows = [...selectedMembers, ...selectedInvitations]
   const workspaceOptionsLoading =
     organizationsLoading || Boolean(organizationId && workspacesLoading)
   const workspaceSelectLabel =
@@ -894,7 +992,9 @@ export function WorkspaceSwitcher({
               <DialogHeader>
                 <DialogTitle>Manage workspace</DialogTitle>
                 <DialogDescription>
-                  Edit the current workspace, manage team access, or create another workspace.
+                  {managerEnabled
+                    ? "Edit the current workspace, manage team access, or create another workspace."
+                    : "View workspace settings and team access."}
                 </DialogDescription>
               </DialogHeader>
 
@@ -910,71 +1010,203 @@ export function WorkspaceSwitcher({
                         onChange={(event) => setEditName(event.target.value)}
                         placeholder="Workspace name"
                       />
-                      <Button
-                        type="button"
-                        disabled={!managerEnabled || savingWorkspaceName}
-                        onClick={saveWorkspaceName}
-                      >
-                        {savingWorkspaceName && (
-                          <Loader2 className="size-4 animate-spin" />
-                        )}
-                        Save
-                      </Button>
+                      {managerEnabled && (
+                        <Button
+                          type="button"
+                          disabled={savingWorkspaceName}
+                          onClick={saveWorkspaceName}
+                        >
+                          {savingWorkspaceName && (
+                            <Loader2 className="size-4 animate-spin" />
+                          )}
+                          Save
+                        </Button>
+                      )}
                     </div>
                   </div>
                 </section>
 
-                <section className="grid gap-3 rounded-lg border p-3">
-                  <div className="grid gap-2 sm:grid-cols-[1fr_9rem_auto] sm:items-end">
-                    <div className="grid gap-2">
-                      <Label htmlFor="member-email">Email</Label>
-                      <Input
-                        id="member-email"
-                        type="email"
-                        value={inviteEmail}
-                        disabled={!managerEnabled || invitingMember}
-                        aria-describedby={
-                          inviteStatusMessage ? "member-email-feedback" : undefined
-                        }
-                        onChange={(event) => {
-                          setInviteEmail(event.target.value)
-                          setInviteStatusMessage("")
-                          setInviteStatusIsError(false)
+                {ownerEnabled && (
+                  <section className="grid gap-3 rounded-lg border p-3">
+                    <div className="grid gap-3 sm:flex sm:items-center sm:justify-between">
+                      <div className="grid gap-1">
+                        <div className="flex items-center gap-2">
+                          <Crown className="size-4" />
+                          <h2 className="font-medium">Workspace owner</h2>
+                        </div>
+                        <p className="text-sm text-muted-foreground">
+                          {selectedOwner?.email ||
+                            selectedOwner?.name ||
+                            "Current owner"}
+                        </p>
+                      </div>
+                      <Dialog
+                        open={transferDialogOpen}
+                        onOpenChange={(open) => {
+                          setTransferDialogOpen(open)
+                          if (!open) {
+                            setTransferOwnerUserId("")
+                            setTransferPassword("")
+                          }
                         }}
-                        placeholder="member@example.com"
-                      />
-                    </div>
-                    <div className="grid gap-2">
-                      <Label>Role</Label>
-                      <Select
-                        value={inviteRole}
-                        disabled={!managerEnabled || invitingMember}
-                        onValueChange={(value) =>
-                          setInviteRole(value === "admin" ? "admin" : "member")
-                        }
                       >
-                        <SelectTrigger className="w-full">
-                          <SelectValue>{inviteRole}</SelectValue>
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="member">member</SelectItem>
-                          <SelectItem value="admin">admin</SelectItem>
-                        </SelectContent>
-                      </Select>
+                        <DialogTrigger
+                          render={
+                            <Button
+                              type="button"
+                              variant="outline"
+                              disabled={!ownershipTransferCandidates.length}
+                              onClick={() =>
+                                setTransferOwnerUserId(
+                                  ownershipTransferCandidates[0]?.user_id || ""
+                                )
+                              }
+                            />
+                          }
+                        >
+                          <KeyRound className="size-4" />
+                          Transfer ownership
+                        </DialogTrigger>
+                        <DialogContent className="sm:max-w-md">
+                          <DialogHeader>
+                            <DialogTitle>Transfer ownership</DialogTitle>
+                            <DialogDescription>
+                              Choose an existing workspace admin and confirm
+                              your password. You will become an admin.
+                            </DialogDescription>
+                          </DialogHeader>
+                          <div className="grid gap-4">
+                            <div className="grid gap-2">
+                              <Label>New owner</Label>
+                              <Select
+                                value={transferOwnerUserId}
+                                disabled={transferringOwnership}
+                                onValueChange={(value) =>
+                                  setTransferOwnerUserId(value || "")
+                                }
+                              >
+                                <SelectTrigger className="w-full">
+                                  <SelectValue placeholder="Select admin" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {ownershipTransferCandidates.map((member) => (
+                                    <SelectItem
+                                      key={member.user_id}
+                                      value={member.user_id}
+                                    >
+                                      {member.email ||
+                                        member.name ||
+                                        member.user_id}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </div>
+                            <div className="grid gap-2">
+                              <Label htmlFor="transfer-owner-password">
+                                Confirm password
+                              </Label>
+                              <Input
+                                id="transfer-owner-password"
+                                type="password"
+                                value={transferPassword}
+                                disabled={transferringOwnership}
+                                onChange={(event) =>
+                                  setTransferPassword(event.target.value)
+                                }
+                              />
+                            </div>
+                          </div>
+                          <div className="grid gap-2 sm:flex sm:justify-end">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              disabled={transferringOwnership}
+                              onClick={() => setTransferDialogOpen(false)}
+                            >
+                              Cancel
+                            </Button>
+                            <Button
+                              type="button"
+                              disabled={
+                                !transferOwnerUserId ||
+                                !transferPassword ||
+                                transferringOwnership
+                              }
+                              onClick={transferOwnership}
+                            >
+                              {transferringOwnership && (
+                                <Loader2 className="size-4 animate-spin" />
+                              )}
+                              Transfer
+                            </Button>
+                          </div>
+                        </DialogContent>
+                      </Dialog>
                     </div>
-                    <Button
-                      type="button"
-                      disabled={!managerEnabled || invitingMember}
-                      onClick={inviteMember}
-                    >
-                      {invitingMember ? (
-                        <Loader2 className="size-4 animate-spin" />
-                      ) : (
-                        <UserPlus className="size-4" />
-                      )}
-                      Invite
-                    </Button>
-                  </div>
+                    {!ownershipTransferCandidates.length && (
+                      <p className="text-sm text-muted-foreground">
+                        Add an admin before transferring ownership.
+                      </p>
+                    )}
+                  </section>
+                )}
+
+                <section className="grid gap-3 rounded-lg border p-3">
+                  {managerEnabled && (
+                    <div className="grid gap-2 sm:grid-cols-[1fr_9rem_auto] sm:items-end">
+                      <div className="grid gap-2">
+                        <Label htmlFor="member-email">Email</Label>
+                        <Input
+                          id="member-email"
+                          type="email"
+                          value={inviteEmail}
+                          disabled={invitingMember}
+                          aria-describedby={
+                            inviteStatusMessage
+                              ? "member-email-feedback"
+                              : undefined
+                          }
+                          onChange={(event) => {
+                            setInviteEmail(event.target.value)
+                            setInviteStatusMessage("")
+                            setInviteStatusIsError(false)
+                          }}
+                          placeholder="member@example.com"
+                        />
+                      </div>
+                      <div className="grid gap-2">
+                        <Label>Role</Label>
+                        <Select
+                          value={inviteRole}
+                          disabled={invitingMember}
+                          onValueChange={(value) =>
+                            setInviteRole(value === "admin" ? "admin" : "member")
+                          }
+                        >
+                          <SelectTrigger className="w-full">
+                            <SelectValue>{inviteRole}</SelectValue>
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="member">member</SelectItem>
+                            <SelectItem value="admin">admin</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <Button
+                        type="button"
+                        disabled={invitingMember}
+                        onClick={inviteMember}
+                      >
+                        {invitingMember ? (
+                          <Loader2 className="size-4 animate-spin" />
+                        ) : (
+                          <UserPlus className="size-4" />
+                        )}
+                        Invite
+                      </Button>
+                    </div>
+                  )}
                   {inviteStatusMessage && (
                     <p
                       id="member-email-feedback"
@@ -1082,8 +1314,8 @@ export function WorkspaceSwitcher({
                                 <span className="text-sm text-muted-foreground md:hidden">
                                   Role
                                 </span>
-                                {isInvitation ? (
-                                  role
+                                {isInvitation || !managerEnabled ? (
+                                  <Badge variant="secondary">{role}</Badge>
                                 ) : row.role === "owner" ? (
                                   <Badge variant="secondary">owner</Badge>
                                 ) : (
@@ -1120,58 +1352,58 @@ export function WorkspaceSwitcher({
                                 )}
                               </TableCell>
                               <TableCell className="p-0 text-right md:table-cell md:p-2">
-                                <div className="inline-flex items-center justify-end gap-1">
-                                  {isInvitation ? (
+                                {managerEnabled && (
+                                  <div className="inline-flex items-center justify-end gap-1">
+                                    {isInvitation ? (
+                                      <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="icon"
+                                        disabled={
+                                          Boolean(resendingInvitationId) ||
+                                          teamActionSubmitting
+                                        }
+                                        aria-label="Resend invite"
+                                        title="Resend invite"
+                                        onClick={() => resendInvitation(row)}
+                                      >
+                                        {resendingInvitationId === row.id ? (
+                                          <Loader2 className="size-4 animate-spin" />
+                                        ) : (
+                                          <Send className="size-4" />
+                                        )}
+                                      </Button>
+                                    ) : null}
                                     <Button
                                       type="button"
                                       variant="ghost"
                                       size="icon"
                                       disabled={
-                                        !managerEnabled ||
-                                        Boolean(resendingInvitationId) ||
-                                        teamActionSubmitting
+                                        teamActionSubmitting ||
+                                        (isInvitation &&
+                                          resendingInvitationId === row.id) ||
+                                        (!isInvitation && row.role === "owner")
                                       }
-                                      aria-label="Resend invite"
-                                      title="Resend invite"
-                                      onClick={() => resendInvitation(row)}
+                                      aria-label={
+                                        isInvitation
+                                          ? "Cancel invite"
+                                          : "Remove member"
+                                      }
+                                      title={
+                                        isInvitation
+                                          ? "Cancel invite"
+                                          : "Remove member"
+                                      }
+                                      onClick={() =>
+                                        isInvitation
+                                          ? openCancelInvitationDialog(row)
+                                          : openRemoveMemberDialog(row)
+                                      }
                                     >
-                                      {resendingInvitationId === row.id ? (
-                                        <Loader2 className="size-4 animate-spin" />
-                                      ) : (
-                                        <Send className="size-4" />
-                                      )}
+                                      <UserMinus className="size-4" />
                                     </Button>
-                                  ) : null}
-                                  <Button
-                                    type="button"
-                                    variant="ghost"
-                                    size="icon"
-                                    disabled={
-                                      !managerEnabled ||
-                                      teamActionSubmitting ||
-                                      (isInvitation &&
-                                        resendingInvitationId === row.id) ||
-                                      (!isInvitation && row.role === "owner")
-                                    }
-                                    aria-label={
-                                      isInvitation
-                                        ? "Cancel invite"
-                                        : "Remove member"
-                                    }
-                                    title={
-                                      isInvitation
-                                        ? "Cancel invite"
-                                        : "Remove member"
-                                    }
-                                    onClick={() =>
-                                      isInvitation
-                                        ? openCancelInvitationDialog(row)
-                                        : openRemoveMemberDialog(row)
-                                    }
-                                  >
-                                    <UserMinus className="size-4" />
-                                  </Button>
-                                </div>
+                                  </div>
+                                )}
                               </TableCell>
                             </TableRow>
                           )
@@ -1276,6 +1508,7 @@ export function WorkspaceSwitcher({
                   </Dialog>
                 </section>
 
+                {managerEnabled && (
                 <div className="grid gap-2 border-t pt-4 sm:flex sm:justify-end">
                   <Dialog
                     open={createDialogOpen}
@@ -1322,6 +1555,7 @@ export function WorkspaceSwitcher({
                     </DialogContent>
                   </Dialog>
                 </div>
+                )}
 
                 <section className="grid gap-4 rounded-lg border border-destructive/40 p-4">
                   <div className="grid gap-1">
@@ -1347,7 +1581,7 @@ export function WorkspaceSwitcher({
                         </p>
                       </div>
                       <div className="grid gap-2 sm:flex sm:justify-end">
-                        {selectedWorkspace.has_active_billing && (
+                        {managerEnabled && selectedWorkspace.has_active_billing && (
                           <a
                             href="/api/billing/portal"
                             className={buttonVariants({
@@ -1381,7 +1615,8 @@ export function WorkspaceSwitcher({
                               </DialogDescription>
                             </DialogHeader>
                             <div className="grid gap-2 sm:flex sm:justify-end">
-                              {selectedWorkspace.has_active_billing && (
+                              {managerEnabled &&
+                                selectedWorkspace.has_active_billing && (
                                 <a
                                   href="/api/billing/portal"
                                   className={buttonVariants({

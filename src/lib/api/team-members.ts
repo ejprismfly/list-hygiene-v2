@@ -63,36 +63,17 @@ function preserveHighestRole(
 
 export async function resolveTeamWorkspaceIds({
   organizationId,
-  role,
   supabase,
   workspaceIds,
 }: {
   organizationId: string
-  role: OrganizationRole
   supabase: SupabaseClient
   workspaceIds: string[]
 }) {
-  if (role === "owner" || role === "admin") {
-    const { data, error } = await supabase
-      .from("workspaces")
-      .select("id")
-      .eq("organization_id", organizationId)
-      .is("archived_at", null)
-
-    if (error) {
-      return { ok: false as const, error: error.message }
-    }
-
-    return {
-      ok: true as const,
-      workspaceIds: (data || []).map((workspace) => String(workspace.id)),
-    }
-  }
-
   if (!workspaceIds.length) {
     return {
       ok: false as const,
-      error: "Members must have at least one workspace.",
+      error: "Team members must have at least one workspace.",
     }
   }
 
@@ -182,13 +163,12 @@ export async function addExistingUserToTeam({
     return { ok: false as const, error: existingMemberError.message }
   }
 
-  const effectiveRole = preserveHighestRole(
+  const organizationRole = preserveHighestRole(
     existingMember?.role as OrganizationRole | null | undefined,
     role
   )
   const resolvedWorkspaceIds = await resolveTeamWorkspaceIds({
     organizationId,
-    role: effectiveRole,
     supabase,
     workspaceIds,
   })
@@ -203,7 +183,7 @@ export async function addExistingUserToTeam({
       {
         organization_id: organizationId,
         user_id: profile.user_id,
-        role: effectiveRole,
+        role: organizationRole,
         status: "active",
         invited_by_user_id: invitedByUserId,
       },
@@ -224,7 +204,7 @@ export async function addExistingUserToTeam({
           organization_id: organizationId,
           workspace_id: workspaceId,
           user_id: profile.user_id,
-          role: effectiveRole,
+          role,
         })),
         { onConflict: "workspace_id,user_id" }
       )
@@ -274,7 +254,7 @@ export async function addExistingUserToTeam({
   const { data: workspaceMemberships, error: workspaceLookupError } =
     await supabase
       .from("workspace_members")
-      .select("workspace_id")
+      .select("workspace_id, role")
       .eq("organization_id", organizationId)
       .eq("user_id", profile.user_id)
 
@@ -286,6 +266,7 @@ export async function addExistingUserToTeam({
     ok: true as const,
     member: {
       ...member,
+      role,
       email: profile.email,
       name: profile.name,
       workspace_ids: (workspaceMemberships || []).map((row) =>

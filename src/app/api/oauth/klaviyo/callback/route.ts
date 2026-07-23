@@ -1,4 +1,9 @@
-import { getCurrentUser, getDataClient, resolveTenantContext } from "@/lib/api/tenant"
+import {
+  canCreateIntegrations,
+  getCurrentUser,
+  getDataClient,
+  resolveTenantContext,
+} from "@/lib/api/tenant"
 import {
   createStripeCustomer,
   getOrCreateStripeCustomerByEmail,
@@ -276,8 +281,15 @@ export async function GET(request: Request) {
     return htmlMessage("failed")
   }
 
-  const tenant = await resolveTenantContext(request)
-  const tenantContext = tenant.ok && !tenant.context.legacyFallback ? tenant.context : null
+  const tenant = await resolveTenantContext(request, { requireWorkspace: true })
+  if (!tenant.ok) {
+    return htmlMessage("failed")
+  }
+
+  const tenantContext = !tenant.context.legacyFallback ? tenant.context : null
+  if (tenantContext && !canCreateIntegrations(tenantContext.role)) {
+    return htmlMessage("failed")
+  }
   const tenantFields =
     tenantContext?.organizationId
       ? {

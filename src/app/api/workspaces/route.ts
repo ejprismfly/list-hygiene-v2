@@ -1,5 +1,7 @@
 import {
+  canManageWorkspace,
   canManageOrganization,
+  canOwnWorkspace,
   errorJson,
   getCurrentUser,
   getRequestStringParam,
@@ -26,6 +28,7 @@ type WorkspaceRow = {
   is_default: boolean
   archived_at: string | null
   created_at: string
+  role: OrganizationRole
   has_connected_account: boolean
   has_active_billing: boolean
   member_count: number
@@ -37,6 +40,7 @@ type DirectWorkspaceContext = {
   organizationId: string
   role: OrganizationRole
   allowedWorkspaceIds: string[]
+  roleByWorkspaceId: Map<string, OrganizationRole>
 }
 
 async function resolveDirectWorkspaceContext(
@@ -54,6 +58,7 @@ async function resolveDirectWorkspaceContext(
     request,
     "organization_id"
   )
+  const requestedWorkspaceId = getRequestStringParam(request, "workspace_id")
 
   let memberships = await queryRows<{
     organization_id: string
@@ -103,31 +108,69 @@ async function resolveDirectWorkspaceContext(
   }
 
   const organizationId = membership.organization_id
-  const role = membership.role
-  const allowedWorkspaceIds = canManageOrganization(role)
-    ? (
-        await queryRows<{ id: string }>(
-          `
-            select id::text
-            from public.workspaces
-            where organization_id = $1::uuid
-              and archived_at is null
-            order by is_default desc, created_at asc
-          `,
-          [organizationId]
-        )
-      ).map((workspace) => workspace.id)
-    : (
-        await queryRows<{ workspace_id: string }>(
-          `
-            select workspace_id::text
-            from public.workspace_members
-            where organization_id = $1::uuid
-              and user_id = $2::uuid
-          `,
-          [organizationId, user.id]
-        )
-      ).map((workspace) => workspace.workspace_id)
+  const organizationRole = membership.role
+  let workspaceMemberships = await queryRows<{
+    workspace_id: string
+    role: OrganizationRole
+    is_default: boolean
+    created_at: string
+  }>(
+    `
+      select
+        wm.workspace_id::text,
+        wm.role,
+        w.is_default,
+        w.created_at::text
+      from public.workspace_members wm
+      join public.workspaces w on w.id = wm.workspace_id
+      where wm.organization_id = $1::uuid
+        and wm.user_id = $2::uuid
+        and w.archived_at is null
+      order by w.is_default desc, w.created_at asc
+    `,
+    [organizationId, user.id]
+  )
+
+  if (!workspaceMemberships.length && canManageOrganization(organizationRole)) {
+    workspaceMemberships = await queryRows<{
+      workspace_id: string
+      role: OrganizationRole
+      is_default: boolean
+      created_at: string
+    }>(
+      `
+        select
+          w.id::text as workspace_id,
+          $2::text as role,
+          w.is_default,
+          w.created_at::text
+        from public.workspaces w
+        where w.organization_id = $1::uuid
+          and w.archived_at is null
+        order by w.is_default desc, w.created_at asc
+      `,
+      [organizationId, organizationRole]
+    )
+  }
+
+  const roleByWorkspaceId = new Map<string, OrganizationRole>(
+    workspaceMemberships.map((workspace) => [
+      workspace.workspace_id,
+      workspace.role,
+    ])
+  )
+  const allowedWorkspaceIds = workspaceMemberships.map(
+    (workspace) => workspace.workspace_id
+  )
+
+  if (requestedWorkspaceId && !allowedWorkspaceIds.includes(requestedWorkspaceId)) {
+    return { ok: false, status: 403, error: "Workspace access denied" }
+  }
+
+  const activeWorkspaceId = requestedWorkspaceId || allowedWorkspaceIds[0] || null
+  const role = activeWorkspaceId
+    ? roleByWorkspaceId.get(activeWorkspaceId) || organizationRole
+    : organizationRole
 
   return {
     ok: true,
@@ -137,12 +180,13 @@ async function resolveDirectWorkspaceContext(
       organizationId,
       role,
       allowedWorkspaceIds,
+      roleByWorkspaceId,
     },
   }
 }
 
 async function listDirectWorkspaces(context: DirectWorkspaceContext) {
-  if (!canManageOrganization(context.role) && !context.allowedWorkspaceIds.length) {
+  if (!context.allowedWorkspaceIds.length) {
     return []
   }
 
@@ -156,6 +200,7 @@ async function listDirectWorkspaces(context: DirectWorkspaceContext) {
         w.is_default,
         w.archived_at::text,
         w.created_at::text,
+        coalesce(wm.role, $4::text) as role,
         exists (
           select 1
           from public.klaviyo_accounts ka
@@ -181,18 +226,19 @@ async function listDirectWorkspaces(context: DirectWorkspaceContext) {
           where wm.workspace_id = w.id
         ) as member_count
       from public.workspaces w
+      left join public.workspace_members wm
+        on wm.workspace_id = w.id
+       and wm.user_id = $2::uuid
       where w.organization_id = $1::uuid
         and w.archived_at is null
-        and (
-          $2::boolean
-          or w.id = any($3::uuid[])
-        )
+        and w.id = any($3::uuid[])
       order by w.is_default desc, w.created_at asc
     `,
     [
       context.organizationId,
-      canManageOrganization(context.role),
+      context.userId,
       context.allowedWorkspaceIds,
+      context.role,
     ]
   )
 }
@@ -213,7 +259,7 @@ async function directPOST(request: Request) {
   }
 
   const { context } = resolved
-  if (!canManageOrganization(context.role)) {
+  if (!canManageWorkspace(context.role)) {
     return errorJson("Only owners and admins can create workspaces", 403)
   }
 
@@ -252,6 +298,7 @@ async function directPOST(request: Request) {
         is_default,
         archived_at::text,
         created_at::text,
+        'owner'::text as role,
         false as has_connected_account,
         false as has_active_billing,
         1 as member_count
@@ -277,21 +324,29 @@ async function directPOST(request: Request) {
         user_id,
         role
       )
-      select
+      values (
         $1::uuid,
         $2::uuid,
-        om.user_id,
-        om.role
-      from public.organization_members om
-      where om.organization_id = $1::uuid
-        and om.status = 'active'
-        and om.role in ('owner', 'admin')
+        $3::uuid,
+        'owner'
+      )
       on conflict (workspace_id, user_id) do update
-        set role = excluded.role,
+        set role = 'owner',
             updated_at = now()
       returning user_id::text
     `,
-    [context.organizationId, workspace.id]
+    [context.organizationId, workspace.id, context.userId]
+  )
+
+  await queryRows(
+    `
+      update public.organization_members
+      set role = 'owner',
+          updated_at = now()
+      where organization_id = $1::uuid
+        and user_id = $2::uuid
+    `,
+    [context.organizationId, context.userId]
   )
 
   return json(
@@ -307,14 +362,15 @@ async function directPATCH(request: Request) {
   }
 
   const { context } = resolved
-  if (!canManageOrganization(context.role)) {
-    return errorJson("Only owners and admins can update workspaces", 403)
-  }
-
   const body = await readJsonBody(request)
   const id = typeof body.id === "string" ? body.id : ""
   if (!id) {
     return errorJson("id must be a string.", 400)
+  }
+
+  const targetRole = context.roleByWorkspaceId.get(id)
+  if (!canManageWorkspace(targetRole || null)) {
+    return errorJson("Only owners and admins can update workspaces", 403)
   }
 
   const name =
@@ -370,6 +426,7 @@ async function directPATCH(request: Request) {
         is_default,
         archived_at::text,
         created_at::text,
+        $5::text as role,
         exists (
           select 1
           from public.klaviyo_accounts ka
@@ -395,7 +452,7 @@ async function directPATCH(request: Request) {
           where wm.workspace_id = workspaces.id
         ) as member_count
     `,
-    [context.organizationId, id, name || null, isDefault ?? null]
+    [context.organizationId, id, name || null, isDefault ?? null, targetRole]
   )
 
   if (!workspace) {
@@ -412,14 +469,15 @@ async function directDELETE(request: Request) {
   }
 
   const { context } = resolved
-  if (!canManageOrganization(context.role)) {
-    return errorJson("Only owners and admins can archive workspaces", 403)
-  }
-
   const body = await readJsonBody(request)
   const id = typeof body.id === "string" ? body.id : ""
   if (!id) {
     return errorJson("id must be a string.", 400)
+  }
+
+  const targetRole = context.roleByWorkspaceId.get(id)
+  if (!canOwnWorkspace(targetRole || null)) {
+    return errorJson("Only workspace owners can archive workspaces", 403)
   }
 
   const workspace = await queryOne<{
@@ -496,6 +554,7 @@ async function directDELETE(request: Request) {
         is_default,
         archived_at::text,
         created_at::text,
+        'owner'::text as role,
         false as has_connected_account,
         false as has_active_billing,
         (
@@ -551,20 +610,40 @@ export async function GET(request: Request) {
     return errorJson("Organization access required", 403)
   }
 
-  let query = supabase
+  if (!context.allowedWorkspaceIds.length) {
+    return json([])
+  }
+
+  const { data: workspaceMemberships, error: workspaceMembershipError } =
+    await supabase
+      .from("workspace_members")
+      .select("workspace_id, role")
+      .eq("organization_id", context.organizationId)
+      .eq("user_id", context.user?.id)
+      .in("workspace_id", context.allowedWorkspaceIds)
+
+  if (workspaceMembershipError) {
+    return errorJson(workspaceMembershipError.message)
+  }
+
+  const roleByWorkspaceId = new Map<string, OrganizationRole>()
+  ;(workspaceMemberships || []).forEach((membership) => {
+    if (membership.workspace_id) {
+      roleByWorkspaceId.set(
+        String(membership.workspace_id),
+        membership.role as OrganizationRole
+      )
+    }
+  })
+
+  const query = supabase
     .from("workspaces")
     .select(workspaceSelect)
     .eq("organization_id", context.organizationId)
     .is("archived_at", null)
+    .in("id", context.allowedWorkspaceIds)
     .order("is_default", { ascending: false })
     .order("created_at", { ascending: true })
-
-  if (!canManageOrganization(context.role)) {
-    if (!context.allowedWorkspaceIds.length) {
-      return json([])
-    }
-    query = query.in("id", context.allowedWorkspaceIds)
-  }
 
   const { data, error } = await query
   if (error) {
@@ -629,6 +708,7 @@ export async function GET(request: Request) {
   return json(
     (data || []).map((workspace) => ({
       ...workspace,
+      role: roleByWorkspaceId.get(String(workspace.id)) || context.role,
       has_connected_account: connectedCounts.get(String(workspace.id)) || false,
       has_active_billing:
         activeBillingCounts.get(String(workspace.id)) || false,
@@ -642,9 +722,7 @@ export async function POST(request: Request) {
     return directPOST(request)
   }
 
-  const tenant = await resolveTenantContext(request, {
-    ignoreWorkspaceScope: true,
-  })
+  const tenant = await resolveTenantContext(request)
   if (!tenant.ok) {
     return errorJson(tenant.error, tenant.status)
   }
@@ -654,7 +732,7 @@ export async function POST(request: Request) {
     return errorJson("Organization access required", 403)
   }
 
-  if (!canManageOrganization(context.role)) {
+  if (!canManageWorkspace(context.role)) {
     return errorJson("Only owners and admins can create workspaces", 403)
   }
 
@@ -680,41 +758,35 @@ export async function POST(request: Request) {
     return errorJson(error?.message || "Unable to create workspace")
   }
 
-  const { data: organizationManagers, error: managerError } = await supabase
+  const { error: workspaceMemberError } = await supabase
+    .from("workspace_members")
+    .upsert(
+      {
+        organization_id: context.organizationId,
+        workspace_id: workspace.id,
+        user_id: context.user?.id,
+        role: "owner",
+      },
+      { onConflict: "workspace_id,user_id" }
+    )
+
+  if (workspaceMemberError) {
+    return errorJson(workspaceMemberError.message)
+  }
+
+  await supabase
     .from("organization_members")
-    .select("user_id, role")
+    .update({ role: "owner" })
     .eq("organization_id", context.organizationId)
-    .eq("status", "active")
-    .in("role", ["owner", "admin"])
-
-  if (managerError) {
-    return errorJson(managerError.message)
-  }
-
-  if (organizationManagers?.length) {
-    const { error: workspaceMemberError } = await supabase
-      .from("workspace_members")
-      .upsert(
-        organizationManagers.map((member) => ({
-          organization_id: context.organizationId,
-          workspace_id: workspace.id,
-          user_id: member.user_id,
-          role: member.role,
-        })),
-        { onConflict: "workspace_id,user_id" }
-      )
-
-    if (workspaceMemberError) {
-      return errorJson(workspaceMemberError.message)
-    }
-  }
+    .eq("user_id", context.user?.id)
 
   return json(
     {
       ...workspace,
+      role: "owner",
       has_connected_account: false,
       has_active_billing: false,
-      member_count: organizationManagers?.length || 0,
+      member_count: 1,
     },
     { status: 201 }
   )
@@ -725,9 +797,7 @@ export async function PATCH(request: Request) {
     return directPATCH(request)
   }
 
-  const tenant = await resolveTenantContext(request, {
-    ignoreWorkspaceScope: true,
-  })
+  const tenant = await resolveTenantContext(request)
   if (!tenant.ok) {
     return errorJson(tenant.error, tenant.status)
   }
@@ -737,14 +807,28 @@ export async function PATCH(request: Request) {
     return errorJson("Organization access required", 403)
   }
 
-  if (!canManageOrganization(context.role)) {
-    return errorJson("Only owners and admins can update workspaces", 403)
-  }
-
   const body = await readJsonBody(request)
   const id = typeof body.id === "string" ? body.id : ""
   if (!id) {
     return errorJson("id must be a string.", 400)
+  }
+
+  const { data: targetMembership, error: targetMembershipError } =
+    await supabase
+      .from("workspace_members")
+      .select("role")
+      .eq("organization_id", context.organizationId)
+      .eq("workspace_id", id)
+      .eq("user_id", context.user?.id)
+      .maybeSingle()
+
+  if (targetMembershipError) {
+    return errorJson(targetMembershipError.message)
+  }
+
+  const targetRole = targetMembership?.role as OrganizationRole | undefined
+  if (!canManageWorkspace(targetRole || null)) {
+    return errorJson("Only owners and admins can update workspaces", 403)
   }
 
   const updates: Record<string, unknown> = {}
@@ -788,7 +872,7 @@ export async function PATCH(request: Request) {
     return errorJson(error?.message || "Workspace not found", 404)
   }
 
-  return json(data)
+  return json({ ...data, role: targetRole })
 }
 
 export async function DELETE(request: Request) {
@@ -796,9 +880,7 @@ export async function DELETE(request: Request) {
     return directDELETE(request)
   }
 
-  const tenant = await resolveTenantContext(request, {
-    ignoreWorkspaceScope: true,
-  })
+  const tenant = await resolveTenantContext(request)
   if (!tenant.ok) {
     return errorJson(tenant.error, tenant.status)
   }
@@ -808,14 +890,27 @@ export async function DELETE(request: Request) {
     return errorJson("Organization access required", 403)
   }
 
-  if (!canManageOrganization(context.role)) {
-    return errorJson("Only owners and admins can archive workspaces", 403)
-  }
-
   const body = await readJsonBody(request)
   const id = typeof body.id === "string" ? body.id : ""
   if (!id) {
     return errorJson("id must be a string.", 400)
+  }
+
+  const { data: targetMembership, error: targetMembershipError } =
+    await supabase
+      .from("workspace_members")
+      .select("role")
+      .eq("organization_id", context.organizationId)
+      .eq("workspace_id", id)
+      .eq("user_id", context.user?.id)
+      .maybeSingle()
+
+  if (targetMembershipError) {
+    return errorJson(targetMembershipError.message)
+  }
+
+  if (!canOwnWorkspace((targetMembership?.role as OrganizationRole) || null)) {
+    return errorJson("Only workspace owners can archive workspaces", 403)
   }
 
   const { data: workspace, error: workspaceError } = await supabase

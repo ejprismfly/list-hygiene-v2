@@ -182,7 +182,7 @@ export function WorkspaceRequiredGate() {
           </div>
           {!managerEnabled && (
             <p className="text-sm text-muted-foreground">
-              Only organization owners and admins can create workspaces.
+              Only owners and admins can create workspaces.
             </p>
           )}
           {message && <p className="text-sm text-muted-foreground">{message}</p>}
