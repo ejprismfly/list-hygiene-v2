@@ -6,7 +6,9 @@ import { AlertCircle, CheckCircle2, Loader2, UserPlus } from "lucide-react"
 
 import { AuthSuccessState } from "@/components/auth/auth-form-shell"
 import { Button, buttonVariants } from "@/components/ui/button"
+import { createClient } from "@/lib/supabase/client"
 import {
+  clearWorkspaceClientState,
   serializeClientCookie,
   writeWorkspaceSelection,
   WORKSPACE_ID_COOKIE,
@@ -16,6 +18,7 @@ import {
 type InviteAcceptanceProps = {
   token: string
   userEmail: string | null
+  loginAgainAfterAccept?: boolean
 }
 
 type AcceptInviteResponse = {
@@ -41,7 +44,21 @@ function persistAcceptedWorkspace(data: AcceptInviteResponse) {
   document.cookie = serializeClientCookie(WORKSPACE_ID_COOKIE, workspaceId)
 }
 
-export function InviteAcceptance({ token, userEmail }: InviteAcceptanceProps) {
+async function clearInviteSession() {
+  try {
+    await createClient().auth.signOut()
+  } catch {
+    // The invite has already been accepted; still clear local workspace state.
+  }
+
+  clearWorkspaceClientState(window.localStorage)
+}
+
+export function InviteAcceptance({
+  token,
+  userEmail,
+  loginAgainAfterAccept = false,
+}: InviteAcceptanceProps) {
   const [status, setStatus] = useState<AcceptStatus>(
     token && userEmail ? "loading" : "idle"
   )
@@ -82,9 +99,18 @@ export function InviteAcceptance({ token, userEmail }: InviteAcceptanceProps) {
           return
         }
 
-        persistAcceptedWorkspace(data)
+        if (loginAgainAfterAccept) {
+          await clearInviteSession()
+        } else {
+          persistAcceptedWorkspace(data)
+        }
+
         setStatus("success")
-        setMessage("Your workspace access is ready.")
+        setMessage(
+          loginAgainAfterAccept
+            ? "Your password is set and your invite has been accepted. Log in again to open the workspace."
+            : "Your workspace access is ready."
+        )
       } catch {
         if (!cancelled) {
           setStatus("error")
@@ -98,7 +124,7 @@ export function InviteAcceptance({ token, userEmail }: InviteAcceptanceProps) {
     return () => {
       cancelled = true
     }
-  }, [token, userEmail])
+  }, [loginAgainAfterAccept, token, userEmail])
 
   if (!token) {
     return (
@@ -160,8 +186,17 @@ export function InviteAcceptance({ token, userEmail }: InviteAcceptanceProps) {
         title="Invite Accepted"
         description={<p>{message}</p>}
         footer={
-          <Link href="/dashboard" className={buttonVariants({ size: "sm" })}>
-            Go to dashboard
+          <Link
+            href={
+              loginAgainAfterAccept
+                ? `/login?${new URLSearchParams({
+                    next: "/dashboard",
+                  }).toString()}`
+                : "/dashboard"
+            }
+            className={buttonVariants({ size: "sm" })}
+          >
+            {loginAgainAfterAccept ? "Log in again" : "Go to dashboard"}
           </Link>
         }
       />

@@ -53,6 +53,21 @@ function getNextPath(formData: FormData) {
   return safeNextPath(getFormString(formData, "next"))
 }
 
+function addInviteLoginAgainFlag(path: string) {
+  if (!path.startsWith("/invite")) {
+    return path
+  }
+
+  try {
+    const url = new URL(path, "https://listhygiene.local")
+    url.searchParams.set("login_again", "1")
+
+    return `${url.pathname}${url.search}`
+  } catch {
+    return path
+  }
+}
+
 function buildAuthCallbackUrl(origin: string, nextPath: string, type?: string) {
   const url = new URL("/auth/callback", origin)
   if (nextPath !== "/dashboard") {
@@ -387,7 +402,7 @@ export async function resetPasswordAction(
     }
   }
 
-  redirect(nextPath)
+  redirect(addInviteLoginAgainFlag(nextPath))
 }
 
 export async function signOutAction() {

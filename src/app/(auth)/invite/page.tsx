@@ -15,6 +15,11 @@ type InvitePageProps = {
 export default async function InvitePage({ searchParams }: InvitePageProps) {
   const params = await searchParams
   const token = Array.isArray(params?.token) ? params?.token[0] : params?.token
+  const loginAgainParam = Array.isArray(params?.login_again)
+    ? params?.login_again[0]
+    : params?.login_again
+  const loginAgainAfterAccept =
+    loginAgainParam === "1" || loginAgainParam === "true"
   let userEmail: string | null = null
 
   if (getSupabaseConfig()) {
@@ -22,5 +27,11 @@ export default async function InvitePage({ searchParams }: InvitePageProps) {
     userEmail = user?.email || null
   }
 
-  return <InviteAcceptance token={token || ""} userEmail={userEmail} />
+  return (
+    <InviteAcceptance
+      token={token || ""}
+      userEmail={userEmail}
+      loginAgainAfterAccept={loginAgainAfterAccept}
+    />
+  )
 }
