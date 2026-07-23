@@ -559,7 +559,6 @@ export function DashboardContent() {
   const removedPercent = removedChartTotal
     ? Math.min((emailsRemoved / removedChartTotal) * 100, 100)
     : 0
-  const animatedEmailsRemoved = useAnimatedNumber(emailsRemoved)
   const animatedRemovedPercent = useAnimatedNumber(removedPercent, 350)
   const removedChartData = [
     {
@@ -813,11 +812,6 @@ export function DashboardContent() {
 
           <Card>
             <CardContent className="flex min-h-80 flex-col justify-center gap-4">
-              <div className="grid gap-1">
-                <p className="text-3xl font-semibold tabular-nums">
-                  {formatNumber(animatedEmailsRemoved)}
-                </p>
-              </div>
               <ChartContainer
                 config={removedChartConfig}
                 className="mx-auto aspect-square h-[240px] w-full max-w-[280px]"
