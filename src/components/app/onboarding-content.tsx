@@ -12,8 +12,14 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
-import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import { Skeleton } from "@/components/ui/skeleton"
 import {
   openKlaviyoOAuthPopup,
@@ -21,7 +27,6 @@ import {
 } from "@/lib/klaviyo-oauth"
 import {
   ClientApiError,
-  invalidateWorkspaceClientData,
   loadOrganizations,
   loadWorkspaces,
   type OrganizationOption,
@@ -37,17 +42,6 @@ import {
 
 function canUseOnboarding(role?: string | null) {
   return role === "owner"
-}
-
-function headersFor(organizationId: string | null, workspaceId?: string | null) {
-  const headers = new Headers({ "Content-Type": "application/json" })
-  if (organizationId) {
-    headers.set("x-organization-id", organizationId)
-  }
-  if (workspaceId) {
-    headers.set("x-workspace-id", workspaceId)
-  }
-  return headers
 }
 
 function persistSelection(organizationId: string | null, workspaceId: string | null) {
@@ -78,10 +72,9 @@ export function OnboardingContent() {
   const [organization, setOrganization] = useState<OrganizationOption | null>(
     null
   )
+  const [workspaces, setWorkspaces] = useState<WorkspaceOption[]>([])
   const [workspace, setWorkspace] = useState<WorkspaceOption | null>(null)
-  const [workspaceName, setWorkspaceName] = useState("")
   const [workspaceLoading, setWorkspaceLoading] = useState(true)
-  const [savingWorkspace, setSavingWorkspace] = useState(false)
 
   useEffect(() => {
     function onMessage(event: MessageEvent) {
@@ -142,8 +135,8 @@ export function OnboardingContent() {
         workspaces[0] ||
         null
 
+      setWorkspaces(workspaces)
       setWorkspace(nextWorkspace)
-      setWorkspaceName(nextWorkspace?.name || "")
       persistSelection(nextOrganization.id, nextWorkspace?.id || null)
 
       if (!canUseOnboarding(nextOrganization.role)) {
@@ -170,55 +163,20 @@ export function OnboardingContent() {
     }
   }, [])
 
-  async function saveWorkspaceForOnboarding() {
-    const name = workspaceName.trim()
-
-    if (!organization) {
-      setStatusMessage("Unable to load organization.")
-      return null
+  function selectWorkspace(workspaceId: string | null) {
+    if (!workspaceId) {
+      return
     }
 
-    if (!canUseOnboarding(organization.role)) {
-      window.location.assign("/dashboard")
-      return null
+    const nextWorkspace =
+      workspaces.find((item) => item.id === workspaceId) || null
+
+    if (!organization || !nextWorkspace) {
+      return
     }
 
-    if (!name) {
-      setStatusMessage("Workspace name is required.")
-      return null
-    }
-
-    setSavingWorkspace(true)
-    try {
-      const response = await fetch("/api/workspaces", {
-        method: workspace ? "PATCH" : "POST",
-        cache: "no-store",
-        credentials: "same-origin",
-        headers: headersFor(organization.id, workspace?.id || null),
-        body: JSON.stringify(
-          workspace ? { id: workspace.id, name } : { name }
-        ),
-      })
-      const data = (await response.json()) as WorkspaceOption & {
-        error?: string
-      }
-
-      if (!response.ok) {
-        setStatusMessage(data.error || "Unable to save workspace name.")
-        return null
-      }
-
-      invalidateWorkspaceClientData(organization.id)
-      setWorkspace(data)
-      setWorkspaceName(data.name)
-      persistSelection(organization.id, data.id)
-      return data
-    } catch {
-      setStatusMessage("Unable to save workspace name.")
-      return null
-    } finally {
-      setSavingWorkspace(false)
-    }
+    setWorkspace(nextWorkspace)
+    persistSelection(organization.id, nextWorkspace.id)
   }
 
   async function connectKlaviyo() {
@@ -226,12 +184,25 @@ export function OnboardingContent() {
     setConnecting(true)
     const popup = openKlaviyoOAuthPopup()
     try {
-      const savedWorkspace = await saveWorkspaceForOnboarding()
-      if (!savedWorkspace) {
+      if (!organization) {
         popup?.close()
+        setStatusMessage("Unable to load organization.")
         return
       }
 
+      if (!canUseOnboarding(organization.role)) {
+        popup?.close()
+        window.location.assign("/dashboard")
+        return
+      }
+
+      if (!workspace) {
+        popup?.close()
+        setStatusMessage("Select a workspace to continue.")
+        return
+      }
+
+      persistSelection(organization.id, workspace.id)
       const started = await startKlaviyoOAuth({
         popup,
         onMissingClientId: () =>
@@ -267,7 +238,7 @@ export function OnboardingContent() {
           <CardHeader>
             <CardTitle>Workspace</CardTitle>
             <CardDescription>
-              Name the workspace where this Klaviyo connection and reports will live.
+              Choose the workspace where this Klaviyo connection and reports will live.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -278,15 +249,33 @@ export function OnboardingContent() {
               </div>
             ) : (
               <div className="grid gap-2">
-                <Label htmlFor="onboarding-workspace-name">Workspace name</Label>
-                <Input
-                  id="onboarding-workspace-name"
-                  value={workspaceName}
-                  onChange={(event) => setWorkspaceName(event.target.value)}
-                  placeholder="Workspace name"
-                  maxLength={80}
-                  disabled={connecting || savingWorkspace}
-                />
+                <Label htmlFor="onboarding-workspace-select">Workspace</Label>
+                <Select
+                  value={workspace?.id || ""}
+                  onValueChange={selectWorkspace}
+                  disabled={connecting || workspaces.length <= 1}
+                >
+                  <SelectTrigger
+                    id="onboarding-workspace-select"
+                    className="w-full"
+                  >
+                    <SelectValue>
+                      {workspace?.name || "Select workspace"}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    {workspaces.map((item) => (
+                      <SelectItem key={item.id} value={item.id}>
+                        {item.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {workspace && workspaces.length <= 1 ? (
+                  <p className="text-sm text-muted-foreground">
+                    {workspace.name} is selected as your default workspace.
+                  </p>
+                ) : null}
               </div>
             )}
           </CardContent>
@@ -294,16 +283,11 @@ export function OnboardingContent() {
         <div className="pt-4">
           <Button
             type="button"
-            disabled={
-              connecting ||
-              savingWorkspace ||
-              workspaceLoading ||
-              !workspaceName.trim()
-            }
+            disabled={connecting || workspaceLoading || !workspace}
             onClick={connectKlaviyo}
           >
             {connecting && <Loader2 className="size-4 animate-spin" />}
-            Save workspace and connect Klaviyo
+            Connect Klaviyo
           </Button>
         </div>
         {statusMessage && (
