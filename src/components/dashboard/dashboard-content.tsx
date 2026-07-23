@@ -814,7 +814,6 @@ export function DashboardContent() {
           <Card>
             <CardContent className="flex min-h-80 flex-col justify-center gap-4">
               <div className="grid gap-1">
-                <p className="text-sm text-muted-foreground">Emails Removed</p>
                 <p className="text-3xl font-semibold tabular-nums">
                   {formatNumber(animatedEmailsRemoved)}
                 </p>
