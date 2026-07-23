@@ -185,13 +185,22 @@ test("side-by-side deployment docs capture live database constraints", () => {
 
 test("side-by-side callbacks prefer the configured v2 host", () => {
   const authActions = read("src/app/(auth)/actions.ts")
+  const authCallback = read("src/app/auth/callback/route.ts")
   const invitationsRoute = read("src/app/api/organizations/invitations/route.ts")
   const klaviyoOAuth = read("src/lib/klaviyo-oauth.ts")
   const stripe = read("src/lib/billing/stripe.ts")
 
   assert.match(authActions, /NEXT_PUBLIC_APP_HOST\?\.replace\(\/\\\/\+\$\/, ""\)/)
   assert.match(authActions, /getOrigin\(configuredHost, headerList\.get\("origin"\), undefined/)
+  assert.match(authActions, /cfVisitor: headerList\.get\("cf-visitor"\)/)
   assert.match(authActions, /forwardedHost: headerList\.get\("x-forwarded-host"\)/)
+  assert.match(authCallback, /NEXT_PUBLIC_APP_HOST\?\.replace\(\/\\\/\+\$\/, ""\)/)
+  assert.match(authCallback, /getOrigin\(configuredHost, request\.headers\.get\("origin"\), request\.url/)
+  assert.match(authCallback, /cfVisitor: request\.headers\.get\("cf-visitor"\)/)
+  assert.match(authCallback, /forwardedHost: request\.headers\.get\("x-forwarded-host"\)/)
+  assert.match(authCallback, /return NextResponse\.redirect\(new URL\(path, getRequestOrigin\(request\)\)\)/)
+  assert.doesNotMatch(authCallback, /new URL\([^,]+, request\.url\)/)
+  assert.match(invitationsRoute, /cfVisitor: request\.headers\.get\("cf-visitor"\)/)
   assert.match(invitationsRoute, /forwardedHost: request\.headers\.get\("x-forwarded-host"\)/)
   assert.match(invitationsRoute, /forwardedProto: request\.headers\.get\("x-forwarded-proto"\)/)
   assert.match(invitationsRoute, /hostHeader: request\.headers\.get\("host"\)/)

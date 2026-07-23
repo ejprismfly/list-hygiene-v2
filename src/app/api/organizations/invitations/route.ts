@@ -53,6 +53,7 @@ const buildInvitationResponse = (request: Request, invitation: object, token: st
     invite_url: buildInviteUrl({
       requestUrl: request.url,
       originHeader: request.headers.get("origin"),
+      cfVisitor: request.headers.get("cf-visitor"),
       forwardedHost: request.headers.get("x-forwarded-host"),
       forwardedProto: request.headers.get("x-forwarded-proto"),
       hostHeader: request.headers.get("host"),
@@ -66,6 +67,7 @@ const buildInviteRedirectTo = (request: Request, token: string) => {
   return buildInviteAuthRedirectUrl({
     requestUrl: request.url,
     originHeader: request.headers.get("origin"),
+    cfVisitor: request.headers.get("cf-visitor"),
     forwardedHost: request.headers.get("x-forwarded-host"),
     forwardedProto: request.headers.get("x-forwarded-proto"),
     hostHeader: request.headers.get("host"),

@@ -42,6 +42,7 @@ async function getRequestOrigin() {
   const configuredHost = process.env.NEXT_PUBLIC_APP_HOST?.replace(/\/+$/, "")
 
   return getOrigin(configuredHost, headerList.get("origin"), undefined, {
+    cfVisitor: headerList.get("cf-visitor"),
     forwardedHost: headerList.get("x-forwarded-host"),
     forwardedProto: headerList.get("x-forwarded-proto"),
     hostHeader: headerList.get("host"),

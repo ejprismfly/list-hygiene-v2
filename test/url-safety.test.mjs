@@ -36,6 +36,16 @@ test("getOrigin prefers forwarded public host before internal request URL", () =
   )
 })
 
+test("getOrigin uses Cloudflare visitor scheme with public host", () => {
+  assert.equal(
+    getOrigin(null, null, "http://localhost:3000/auth/callback", {
+      cfVisitor: '{"scheme":"https"}',
+      hostHeader: "beta.listhygiene.com",
+    }),
+    "https://beta.listhygiene.com"
+  )
+})
+
 test("buildInviteUrl uses the active origin and encodes the token", () => {
   assert.equal(
     buildInviteUrl({

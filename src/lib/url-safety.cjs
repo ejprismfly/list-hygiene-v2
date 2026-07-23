@@ -37,6 +37,21 @@ function protocolFrom(value) {
   return protocol === "http" || protocol === "https" ? protocol : ""
 }
 
+function protocolFromCloudflareVisitor(value) {
+  if (typeof value !== "string" || !value.trim()) {
+    return ""
+  }
+
+  try {
+    const parsed = JSON.parse(value)
+    return protocolFrom(
+      parsed && typeof parsed.scheme === "string" ? parsed.scheme : ""
+    )
+  } catch {
+    return ""
+  }
+}
+
 function protocolFromUrl(value) {
   try {
     return new URL(value).protocol.replace(/:$/, "")
@@ -63,13 +78,18 @@ function hostOrigin(hostHeader, protocol) {
 
 function getOrigin(configuredHost, originHeader, requestUrl, options = {}) {
   const requestProtocol = protocolFromUrl(requestUrl)
+  const publicProtocol =
+    protocolFrom(options.forwardedProto) ||
+    protocolFromCloudflareVisitor(options.cfVisitor) ||
+    requestProtocol ||
+    "https"
   const forwardedOrigin = hostOrigin(
     options.forwardedHost,
-    protocolFrom(options.forwardedProto) || requestProtocol || "https"
+    publicProtocol
   )
   const hostHeaderOrigin = hostOrigin(
     options.hostHeader,
-    protocolFrom(options.forwardedProto) || requestProtocol || "https"
+    publicProtocol
   )
   const candidates = [
     urlOrigin(configuredHost),
@@ -92,12 +112,14 @@ function buildInviteUrl({
   requestUrl,
   token,
   configuredHost,
+  cfVisitor,
   forwardedHost,
   forwardedProto,
   hostHeader,
   originHeader,
 }) {
   const origin = getOrigin(configuredHost, originHeader, requestUrl, {
+    cfVisitor,
     forwardedHost,
     forwardedProto,
     hostHeader,
@@ -112,12 +134,14 @@ function buildInviteAuthRedirectUrl({
   requestUrl,
   token,
   configuredHost,
+  cfVisitor,
   forwardedHost,
   forwardedProto,
   hostHeader,
   originHeader,
 }) {
   const origin = getOrigin(configuredHost, originHeader, requestUrl, {
+    cfVisitor,
     forwardedHost,
     forwardedProto,
     hostHeader,

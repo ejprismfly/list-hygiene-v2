@@ -3,7 +3,7 @@ import type { EmailOtpType } from "@supabase/supabase-js"
 
 import { getSupabaseConfig } from "@/lib/supabase/env"
 import { createClient } from "@/lib/supabase/server"
-import { safeNextPath } from "@/lib/url-safety.cjs"
+import { getOrigin, safeNextPath } from "@/lib/url-safety.cjs"
 
 const emailOtpTypes = new Set([
   "signup",
@@ -18,6 +18,21 @@ function isEmailOtpType(type: string | null): type is EmailOtpType {
   return Boolean(type && emailOtpTypes.has(type))
 }
 
+function getRequestOrigin(request: NextRequest) {
+  const configuredHost = process.env.NEXT_PUBLIC_APP_HOST?.replace(/\/+$/, "")
+
+  return getOrigin(configuredHost, request.headers.get("origin"), request.url, {
+    cfVisitor: request.headers.get("cf-visitor"),
+    forwardedHost: request.headers.get("x-forwarded-host"),
+    forwardedProto: request.headers.get("x-forwarded-proto"),
+    hostHeader: request.headers.get("host"),
+  })
+}
+
+function redirectTo(request: NextRequest, path: string) {
+  return NextResponse.redirect(new URL(path, getRequestOrigin(request)))
+}
+
 export async function GET(request: NextRequest) {
   const requestUrl = new URL(request.url)
   const code = requestUrl.searchParams.get("code")
@@ -26,7 +41,7 @@ export async function GET(request: NextRequest) {
   const nextPath = safeNextPath(requestUrl.searchParams.get("next"))
 
   if (!getSupabaseConfig()) {
-    return NextResponse.redirect(new URL("/login", request.url))
+    return redirectTo(request, "/login")
   }
 
   const supabase = await createClient()
@@ -38,19 +53,19 @@ export async function GET(request: NextRequest) {
     })
 
     if (error) {
-      return NextResponse.redirect(new URL("/login", request.url))
+      return redirectTo(request, "/login")
     }
   } else if (code) {
     const { error } = await supabase.auth.exchangeCodeForSession(code)
 
     if (error) {
-      return NextResponse.redirect(new URL("/login", request.url))
+      return redirectTo(request, "/login")
     }
   }
 
   if (type === "recovery") {
-    return NextResponse.redirect(new URL("/reset-password", request.url))
+    return redirectTo(request, "/reset-password")
   }
 
-  return NextResponse.redirect(new URL(nextPath, request.url))
+  return redirectTo(request, nextPath)
 }
