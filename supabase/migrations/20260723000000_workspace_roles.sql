@@ -44,6 +44,7 @@ set
 with ranked_members as (
   select
     wm.id,
+    wm.role,
     row_number() over (
       partition by wm.workspace_id
       order by
@@ -54,21 +55,25 @@ with ranked_members as (
     ) as owner_rank
   from public.workspace_members wm
   join public.workspaces w on w.id = wm.workspace_id
+),
+target_roles as (
+  select
+    id,
+    case
+      when owner_rank = 1 then 'owner'
+      when role = 'owner' then 'admin'
+      else role
+    end as role
+  from ranked_members
+  where owner_rank = 1
+    or role = 'owner'
 )
 update public.workspace_members wm
-set
-  role = case
-    when ranked_members.owner_rank = 1 then 'owner'
-    when wm.role = 'owner' then 'admin'
-    else wm.role
-  end,
-  updated_at = now()
-from ranked_members
-where ranked_members.id = wm.id
-  and (
-    ranked_members.owner_rank = 1
-    or wm.role = 'owner'
-  );
+set role = target_roles.role,
+    updated_at = now()
+from target_roles
+where target_roles.id = wm.id
+  and wm.role is distinct from target_roles.role;
 
 create unique index if not exists workspace_members_one_owner_per_workspace_idx
   on public.workspace_members (workspace_id)
@@ -76,6 +81,32 @@ create unique index if not exists workspace_members_one_owner_per_workspace_idx
 
 create index if not exists workspace_members_workspace_role_idx
   on public.workspace_members (workspace_id, role);
+
+create or replace function public.organization_role(p_organization_id uuid)
+returns text
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select m.role
+  from public.organization_members m
+  where m.organization_id = p_organization_id
+    and m.user_id = auth.uid()
+    and m.status = 'active'
+  order by case m.role when 'owner' then 1 when 'admin' then 2 else 3 end
+  limit 1;
+$$;
+
+create or replace function public.can_manage_organization(p_organization_id uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select coalesce(public.organization_role(p_organization_id) in ('owner', 'admin'), false);
+$$;
 
 create or replace function public.workspace_role(p_workspace_id uuid)
 returns text
