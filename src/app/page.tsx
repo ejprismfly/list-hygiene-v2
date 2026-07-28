@@ -1,34 +1,5 @@
-import Link from "next/link";
-
-import { BrandLogo } from "@/components/app/brand-logo";
-import { buttonVariants } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { redirect } from "next/navigation"
 
 export default function Home() {
-  return (
-    <main className="flex min-h-svh items-center justify-center bg-muted/30 p-6">
-      <Card className="w-full max-w-sm">
-        <CardHeader>
-          <CardTitle>
-            <BrandLogo />
-          </CardTitle>
-          <CardDescription>Sign in or create an account to continue.</CardDescription>
-        </CardHeader>
-        <CardContent className="grid gap-2">
-          <Link href="/login" className={buttonVariants()}>
-            Sign in
-          </Link>
-          <Link href="/signup" className={buttonVariants({ variant: "outline" })}>
-            Create account
-          </Link>
-        </CardContent>
-      </Card>
-    </main>
-  );
+  redirect("/login")
 }
