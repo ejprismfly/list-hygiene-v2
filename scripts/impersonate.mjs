@@ -49,6 +49,20 @@ if (error) {
   process.exit(1)
 }
 
+const tokenHash = data.properties?.hashed_token
+const callbackUrl = tokenHash
+  ? `${appHost}/auth/callback?${new URLSearchParams({
+      token_hash: tokenHash,
+      type: "magiclink",
+      next: nextPath,
+    }).toString()}`
+  : null
+
 console.log(`\nImpersonation link for: ${email}`)
 console.log(`Redirects to: ${redirectTo}`)
+if (callbackUrl) {
+  console.log("\nOpen this link:")
+  console.log(`${callbackUrl}\n`)
+  console.log("Fallback Supabase action link:")
+}
 console.log(`\n${data.properties.action_link}\n`)
