@@ -8,6 +8,7 @@
     "start": "next start",
     "lint": "eslint",
     "test": "node --test",
+    "env:check": "node scripts/check-env.mjs",
     "impersonate": "node scripts/impersonate.mjs"
   },
   "dependencies": {
