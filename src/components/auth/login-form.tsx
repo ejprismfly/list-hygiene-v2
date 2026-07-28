@@ -10,6 +10,7 @@ import { Button, buttonVariants } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { PasswordInput } from "@/components/auth/password-input"
+import { clearPreviousUserClientData } from "@/lib/auth-client-state"
 import { AUTH_FORM_INITIAL_STATE } from "@/lib/auth-form"
 
 export function LoginForm({ nextPath = "/dashboard" }: { nextPath?: string }) {
@@ -40,7 +41,11 @@ export function LoginForm({ nextPath = "/dashboard" }: { nextPath?: string }) {
         </>
       }
     >
-      <form action={formAction} className="grid gap-4">
+      <form
+        action={formAction}
+        className="grid gap-4"
+        onSubmit={clearPreviousUserClientData}
+      >
         <input type="hidden" name="next" value={nextPath} />
         <div className="grid gap-2">
           <Label htmlFor="email">Email</Label>

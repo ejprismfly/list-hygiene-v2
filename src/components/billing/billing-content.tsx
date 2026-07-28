@@ -70,6 +70,7 @@ type BillingResponse = {
   }
   payments: {
     id: string
+    type?: string
     brand: string
     last4: string
     exp_month: string
@@ -132,6 +133,48 @@ function calculateUsagePercent(used: number, total: number) {
 
 function formatUsagePercent(value: number) {
   return `${value.toFixed(2)}%`
+}
+
+function formatPaymentMethodBrand(value: string | null | undefined) {
+  const label = String(value || "").replace(/_/g, " ").trim()
+
+  if (!label) {
+    return ""
+  }
+
+  return label
+    .split(" ")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ")
+}
+
+function formatPaymentMethodLabel(
+  paymentMethod: BillingResponse["payments"][number] | undefined
+) {
+  if (!paymentMethod) {
+    return "No payment method"
+  }
+
+  const brand =
+    formatPaymentMethodBrand(paymentMethod.brand) ||
+    formatPaymentMethodBrand(paymentMethod.type) ||
+    "Payment method"
+  const last4 = String(paymentMethod.last4 || "").trim()
+  const expMonth = String(paymentMethod.exp_month || "").trim()
+  const expYear = String(paymentMethod.exp_year || "").trim()
+  const details: string[] = []
+
+  if (expMonth && expYear) {
+    details.push(`Expires ${expMonth.padStart(2, "0")}/${expYear}`)
+  }
+
+  if (paymentMethod.is_default) {
+    details.push("Default")
+  }
+
+  const label = last4 ? `${brand} ending in ${last4}` : brand
+
+  return [label, ...details].join(" | ")
 }
 
 function UsageProgressRow({
@@ -604,9 +647,7 @@ export function BillingContent({ email }: BillingContentProps) {
                 <Skeleton className="h-4 w-40" />
               ) : (
                 <p className="text-sm text-muted-foreground">
-                  {paymentMethod
-                    ? `${paymentMethod.brand} ending in ${paymentMethod.last4}`
-                    : "No payment method"}
+                  {formatPaymentMethodLabel(paymentMethod)}
                 </p>
               )}
             </div>

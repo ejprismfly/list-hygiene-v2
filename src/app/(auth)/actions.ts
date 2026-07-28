@@ -80,6 +80,23 @@ function buildAuthCallbackUrl(origin: string, nextPath: string, type?: string) {
   return url.toString()
 }
 
+function isSupabaseAuthCookie(name: string) {
+  return name.startsWith("sb-") && name.includes("auth-token")
+}
+
+async function clearPreviousAuthCookies() {
+  const cookieStore = await cookies()
+
+  cookieStore.delete(WORKSPACE_ORGANIZATION_COOKIE)
+  cookieStore.delete(WORKSPACE_ID_COOKIE)
+
+  cookieStore.getAll().forEach((cookie) => {
+    if (isSupabaseAuthCookie(cookie.name)) {
+      cookieStore.delete(cookie.name)
+    }
+  })
+}
+
 function isAlreadyRegisteredAuthError(message?: string) {
   return /already (been )?registered|user already registered/i.test(message || "")
 }
@@ -110,6 +127,8 @@ export async function loginAction(
   if (!getSupabaseConfig()) {
     return missingConfigState
   }
+
+  await clearPreviousAuthCookies()
 
   const supabase = await createClient()
 
@@ -411,9 +430,7 @@ export async function signOutAction() {
     await supabase.auth.signOut()
   }
 
-  const cookieStore = await cookies()
-  cookieStore.delete(WORKSPACE_ORGANIZATION_COOKIE)
-  cookieStore.delete(WORKSPACE_ID_COOKIE)
+  await clearPreviousAuthCookies()
 
   redirect("/login")
 }
