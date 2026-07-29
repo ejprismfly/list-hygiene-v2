@@ -2,7 +2,11 @@ import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import Script from "next/script";
 
-import { GoogleTagManager } from "@/components/app/google-tag-manager";
+import { GoogleAnalyticsTag } from "@/components/app/google-analytics-tag";
+import {
+  GoogleTagManager,
+  GoogleTagManagerNoScript,
+} from "@/components/app/google-tag-manager";
 import { cn } from "@/lib/utils";
 
 import "./globals.css";
@@ -38,14 +42,17 @@ export default function RootLayout({
       className={cn("h-full antialiased", "font-sans", inter.variable)}
       suppressHydrationWarning
     >
-      <head />
+      <head>
+        <GoogleTagManager />
+      </head>
       <body className="min-h-full flex flex-col font-sans">
+        <GoogleTagManagerNoScript />
+        <GoogleAnalyticsTag />
         <Script
           id="list-hygiene-theme"
           strategy="beforeInteractive"
           dangerouslySetInnerHTML={{ __html: themeScript }}
         />
-        <GoogleTagManager />
         {children}
       </body>
     </html>

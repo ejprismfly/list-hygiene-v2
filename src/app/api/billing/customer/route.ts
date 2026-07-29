@@ -4,6 +4,14 @@ import {
 } from "@/lib/billing/scope"
 import { canManageBilling, errorJson, json } from "@/lib/api/tenant"
 import { ensureScopedStripeCustomer } from "@/lib/billing/customer"
+import { getStripeClient } from "@/lib/billing/stripe"
+
+type PaidSubscriptionPayload = {
+  transaction_id: string
+  transaction_value: number
+  transaction_currency: string
+  customer_email: string | null
+}
 
 const BILLING_CONTEXT_TIMEOUT_MS = 6000
 
@@ -26,7 +34,85 @@ async function withTimeout<T>(promise: Promise<T>, timeoutMs: number) {
   }
 }
 
+function getStripeObjectId(value: unknown) {
+  if (!value) {
+    return null
+  }
+
+  if (typeof value === "string") {
+    return value
+  }
+
+  if (typeof value === "object" && "id" in value) {
+    const id = (value as { id?: unknown }).id
+    return typeof id === "string" ? id : null
+  }
+
+  return null
+}
+
+function getInvoiceAmountPaid(value: unknown) {
+  if (!value || typeof value === "string" || typeof value !== "object") {
+    return null
+  }
+
+  const amountPaid = (value as { amount_paid?: unknown }).amount_paid
+  return typeof amountPaid === "number" ? amountPaid : null
+}
+
+async function getPaidSubscriptionPayload({
+  scopedCustomerId,
+  sessionId,
+}: {
+  scopedCustomerId?: string | null
+  sessionId?: string | null
+}): Promise<PaidSubscriptionPayload | null> {
+  if (!sessionId || !scopedCustomerId || !process.env.STRIPE_SECRET_KEY) {
+    return null
+  }
+
+  const stripe = getStripeClient()
+  const session = await stripe.checkout.sessions.retrieve(sessionId, {
+    expand: ["customer", "invoice", "subscription"],
+  })
+  const sessionCustomerId = getStripeObjectId(session.customer)
+
+  if (
+    session.mode !== "subscription" ||
+    session.payment_status !== "paid" ||
+    sessionCustomerId !== scopedCustomerId
+  ) {
+    return null
+  }
+
+  const amountPaidCents =
+    getInvoiceAmountPaid(session.invoice) ??
+    (typeof session.amount_total === "number" ? session.amount_total : null)
+  if (!amountPaidCents || amountPaidCents <= 0) {
+    return null
+  }
+
+  const transactionId = getStripeObjectId(session.subscription) || session.id
+  const stripeCustomer = session.customer
+  const customerEmail =
+    session.customer_details?.email ||
+    session.customer_email ||
+    (stripeCustomer && typeof stripeCustomer === "object" && !stripeCustomer.deleted
+      ? stripeCustomer.email
+      : null) ||
+    null
+
+  return {
+    transaction_id: transactionId,
+    transaction_value: Number((amountPaidCents / 100).toFixed(2)),
+    transaction_currency: (session.currency || "usd").toUpperCase(),
+    customer_email: customerEmail,
+  }
+}
+
 export async function GET(request: Request) {
+  const url = new URL(request.url)
+  const sessionId = url.searchParams.get("session_id")
   let billing: Awaited<ReturnType<typeof getBillingContext>>
   try {
     billing = await withTimeout(
@@ -50,6 +136,19 @@ export async function GET(request: Request) {
     canManageBilling(billing.context.tenant?.role ?? null)
   const stripeAccount = getScopedBillingAccount(billing.context)
   const fallbackAccount = stripeAccount ? null : billing.context.stripeAccount
+  const scopedCustomerId = stripeAccount?.customer_id || fallbackAccount?.customer_id || null
+  let paidSubscription: PaidSubscriptionPayload | null = null
+
+  if (canManage && sessionId) {
+    try {
+      paidSubscription = await getPaidSubscriptionPayload({
+        scopedCustomerId,
+        sessionId,
+      })
+    } catch (error) {
+      console.error("Paid subscription verification failed:", error)
+    }
+  }
 
   return json({
     customer_id: canManage ? stripeAccount?.customer_id || null : null,
@@ -66,6 +165,7 @@ export async function GET(request: Request) {
     permissions: {
       can_manage_billing: canManage,
     },
+    paid_subscription: paidSubscription,
   })
 }
 

@@ -1,6 +1,7 @@
 import {
   pushDataLayerEvent,
   pushDedupedDataLayerEvent,
+  pushDedupedRawDataLayerEvent,
   type DataLayerPayload,
 } from "@/lib/analytics"
 
@@ -19,6 +20,13 @@ type BillingPlanTrackingData = {
   checkout_url?: string | null
   display_credits?: string | null
   display_price?: string | null
+}
+
+export type PaidSubscriptionTrackingData = {
+  transaction_id: string
+  transaction_value: number
+  transaction_currency: string
+  customer_email?: string | null
 }
 
 function baseBillingPayload(context?: BillingTrackingContext | null) {
@@ -99,5 +107,18 @@ export function trackBillingReturn({
       ...(failureType ? { failure_type: failureType } : {}),
     },
     `${event}:${sessionId}`
+  )
+}
+
+export function trackPaidSubscription(data: PaidSubscriptionTrackingData) {
+  pushDedupedRawDataLayerEvent(
+    "paid_subscription",
+    {
+      transaction_id: data.transaction_id,
+      transaction_value: data.transaction_value,
+      transaction_currency: data.transaction_currency || "USD",
+      customer_email: data.customer_email || null,
+    },
+    `paid_subscription:${data.transaction_id}`
   )
 }
