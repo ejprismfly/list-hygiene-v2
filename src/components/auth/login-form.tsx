@@ -35,7 +35,11 @@ export function LoginForm({ nextPath = "/dashboard" }: { nextPath?: string }) {
           <span className="text-muted-foreground">New here?</span>
           <Link
             href={`/signup${authQuery}`}
-            className={buttonVariants({ variant: "link", size: "sm" })}
+            className={buttonVariants({
+              variant: "link",
+              size: "sm",
+              className: "text-foreground hover:text-muted-foreground",
+            })}
           >
             Sign up now!
           </Link>

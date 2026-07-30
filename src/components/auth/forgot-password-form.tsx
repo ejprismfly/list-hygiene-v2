@@ -39,7 +39,7 @@ export function ForgotPasswordForm() {
             Remember Password?{" "}
             <Link
               href="/login"
-              className="font-semibold underline-offset-4 hover:text-foreground hover:underline"
+              className="font-semibold text-foreground underline-offset-4 hover:text-muted-foreground hover:underline"
             >
               Login
             </Link>
@@ -59,7 +59,11 @@ export function ForgotPasswordForm() {
       footer={
         <Link
           href="/login"
-          className={buttonVariants({ variant: "link", size: "sm" })}
+          className={buttonVariants({
+            variant: "link",
+            size: "sm",
+            className: "text-foreground hover:text-muted-foreground",
+          })}
         >
           Back to Login
         </Link>

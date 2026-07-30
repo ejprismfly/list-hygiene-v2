@@ -39,7 +39,11 @@ export function ResetPasswordForm({
       footer={
         <Link
           href="/login"
-          className={buttonVariants({ variant: "link", size: "sm" })}
+          className={buttonVariants({
+            variant: "link",
+            size: "sm",
+            className: "text-foreground hover:text-muted-foreground",
+          })}
         >
           Back to Login
         </Link>
