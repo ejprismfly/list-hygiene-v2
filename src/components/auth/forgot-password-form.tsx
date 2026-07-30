@@ -1,6 +1,6 @@
 "use client"
 
-import { useActionState } from "react"
+import { useActionState, useEffect } from "react"
 import Link from "next/link"
 
 import { forgotPasswordAction } from "@/app/(auth)/actions"
@@ -10,12 +10,19 @@ import { Button, buttonVariants } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { AUTH_FORM_INITIAL_STATE } from "@/lib/auth-form"
+import { trackAuthEvent, TRACKING_EVENTS } from "@/lib/tracking-events"
 
 export function ForgotPasswordForm() {
   const [state, formAction, pending] = useActionState(
     forgotPasswordAction,
     AUTH_FORM_INITIAL_STATE
   )
+
+  useEffect(() => {
+    if (state.status === "success") {
+      trackAuthEvent(TRACKING_EVENTS.auth.passwordResetSent)
+    }
+  }, [state.status])
 
   if (state.status === "success") {
     return (
@@ -58,7 +65,13 @@ export function ForgotPasswordForm() {
         </Link>
       }
     >
-      <form action={formAction} className="grid gap-4">
+      <form
+        action={formAction}
+        className="grid gap-4"
+        onSubmit={() =>
+          trackAuthEvent(TRACKING_EVENTS.auth.passwordResetRequested)
+        }
+      >
         <div className="grid gap-2">
           <Label htmlFor="email">Email</Label>
           <Input

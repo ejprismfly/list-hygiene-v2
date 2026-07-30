@@ -19,7 +19,10 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { trackPlanChangeStarted } from "@/lib/billing-tracking"
+import {
+  trackBillingPortalOpened,
+  trackPlanChangeStarted,
+} from "@/lib/billing-tracking"
 
 type BillingContentProps = {
   email: string
@@ -362,6 +365,7 @@ export function BillingContent({ email }: BillingContentProps) {
     }
 
     setOpeningPortal(true)
+    trackBillingPortalOpened({ context: billing.billing_context || null })
     openBillingRoute(billing.portal, "/api/billing/portal")
   }
 

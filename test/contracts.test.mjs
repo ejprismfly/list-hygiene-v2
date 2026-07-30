@@ -629,6 +629,7 @@ test("browser billing GTM tracking only fires paid subscription after Stripe ver
   assert.match(analytics, /"email"/)
   assert.match(analytics, /"user_id"/)
   assert.match(billingTracking, /lh_plan_change_started/)
+  assert.match(billingTracking, /lh_billing_portal_opened/)
   assert.match(billingTracking, /lh_payment_success/)
   assert.match(billingTracking, /lh_payment_failed/)
   assert.match(billingTracking, /trackPaidSubscription/)
@@ -658,6 +659,92 @@ test("browser billing GTM tracking only fires paid subscription after Stripe ver
   assert.doesNotMatch(signupActions, /paid_subscription|dataLayer|trackPaidSubscription/)
   assert.doesNotMatch(billingTracking, /user_id|userEmail|user_email/)
   assert.doesNotMatch(returnTracker, /user_id|userEmail|user_email/)
+})
+
+test("trackable browser events cover auth workspace team and integrations", () => {
+  const trackingEvents = read("src/lib/tracking-events.ts")
+  const loginForm = read("src/components/auth/login-form.tsx")
+  const signupForm = read("src/components/auth/signup-form.tsx")
+  const forgotPasswordForm = read("src/components/auth/forgot-password-form.tsx")
+  const resetPasswordForm = read("src/components/auth/reset-password-form.tsx")
+  const inviteAcceptance = read("src/components/auth/invite-acceptance.tsx")
+  const onboardingContent = read("src/components/app/onboarding-content.tsx")
+  const workspaceSwitcher = read("src/components/app/workspace-switcher.tsx")
+  const workspaceGate = read("src/components/app/workspace-required-gate.tsx")
+  const settingsContent = read("src/components/settings/settings-content.tsx")
+  const connectionContent = read(
+    "src/components/settings/configure-connection-content.tsx"
+  )
+
+  for (const eventName of [
+    "lh_login_submitted",
+    "lh_signup_submitted",
+    "lh_signup_confirmation_sent",
+    "lh_signup_confirmation_resent",
+    "lh_password_reset_requested",
+    "lh_password_reset_sent",
+    "lh_password_update_submitted",
+    "lh_invite_accept_started",
+    "lh_invite_accept_succeeded",
+    "lh_invite_accept_failed",
+    "lh_klaviyo_oauth_started",
+    "lh_klaviyo_connected",
+    "lh_klaviyo_duplicate_blocked",
+    "lh_klaviyo_oauth_failed",
+    "lh_klaviyo_connection_updated",
+    "lh_klaviyo_segments_refreshed",
+    "lh_klaviyo_disconnected",
+    "lh_workspace_switch_started",
+    "lh_workspace_created",
+    "lh_workspace_updated",
+    "lh_workspace_delete_blocked",
+    "lh_workspace_deleted",
+    "lh_workspace_ownership_transferred",
+    "lh_team_member_added",
+    "lh_team_member_invited",
+    "lh_team_invite_resent",
+    "lh_team_invite_cancelled",
+    "lh_team_member_role_updated",
+    "lh_team_member_removed",
+  ]) {
+    assert.match(trackingEvents, new RegExp(eventName))
+  }
+
+  assert.match(trackingEvents, /event_category/)
+  assert.match(trackingEvents, /organization_id/)
+  assert.match(trackingEvents, /workspace_id/)
+  assert.match(trackingEvents, /provider: "klaviyo"/)
+  assert.match(loginForm, /TRACKING_EVENTS\.auth\.loginSubmitted/)
+  assert.match(signupForm, /TRACKING_EVENTS\.auth\.signupSubmitted/)
+  assert.match(signupForm, /TRACKING_EVENTS\.auth\.signupConfirmationSent/)
+  assert.match(signupForm, /TRACKING_EVENTS\.auth\.signupConfirmationResent/)
+  assert.match(forgotPasswordForm, /TRACKING_EVENTS\.auth\.passwordResetRequested/)
+  assert.match(forgotPasswordForm, /TRACKING_EVENTS\.auth\.passwordResetSent/)
+  assert.match(resetPasswordForm, /TRACKING_EVENTS\.auth\.passwordUpdateSubmitted/)
+  assert.match(inviteAcceptance, /TRACKING_EVENTS\.auth\.inviteAcceptStarted/)
+  assert.match(inviteAcceptance, /TRACKING_EVENTS\.auth\.inviteAcceptSucceeded/)
+  assert.match(inviteAcceptance, /TRACKING_EVENTS\.auth\.inviteAcceptFailed/)
+  assert.match(onboardingContent, /TRACKING_EVENTS\.integration\.klaviyoOauthStarted/)
+  assert.match(onboardingContent, /TRACKING_EVENTS\.integration\.klaviyoConnected/)
+  assert.match(settingsContent, /TRACKING_EVENTS\.integration\.klaviyoOauthStarted/)
+  assert.match(settingsContent, /TRACKING_EVENTS\.integration\.klaviyoDisconnected/)
+  assert.match(connectionContent, /TRACKING_EVENTS\.integration\.klaviyoConnectionUpdated/)
+  assert.match(connectionContent, /TRACKING_EVENTS\.integration\.klaviyoSegmentsRefreshed/)
+  assert.match(connectionContent, /TRACKING_EVENTS\.integration\.klaviyoDisconnected/)
+  assert.match(workspaceSwitcher, /TRACKING_EVENTS\.workspace\.switchStarted/)
+  assert.match(workspaceSwitcher, /TRACKING_EVENTS\.workspace\.created/)
+  assert.match(workspaceSwitcher, /TRACKING_EVENTS\.workspace\.updated/)
+  assert.match(workspaceSwitcher, /TRACKING_EVENTS\.workspace\.deleteBlocked/)
+  assert.match(workspaceSwitcher, /TRACKING_EVENTS\.workspace\.deleted/)
+  assert.match(workspaceSwitcher, /TRACKING_EVENTS\.workspace\.ownershipTransferred/)
+  assert.match(workspaceSwitcher, /TRACKING_EVENTS\.team\.memberAdded/)
+  assert.match(workspaceSwitcher, /TRACKING_EVENTS\.team\.memberInvited/)
+  assert.match(workspaceSwitcher, /TRACKING_EVENTS\.team\.inviteResent/)
+  assert.match(workspaceSwitcher, /TRACKING_EVENTS\.team\.inviteCancelled/)
+  assert.match(workspaceSwitcher, /TRACKING_EVENTS\.team\.memberRoleUpdated/)
+  assert.match(workspaceSwitcher, /TRACKING_EVENTS\.team\.memberRemoved/)
+  assert.match(workspaceGate, /TRACKING_EVENTS\.workspace\.created/)
+  assert.doesNotMatch(trackingEvents, /user_id|userEmail|user_email/)
 })
 
 test("billing plan card shows separate trial, plan, and overage usage states", () => {
@@ -1221,7 +1308,7 @@ test("login and logout clear previous user client state", () => {
   const profileContent = read("src/components/profile/profile-content.tsx")
 
   assert.match(loginForm, /clearPreviousUserClientData/)
-  assert.match(loginForm, /onSubmit=\{clearPreviousUserClientData\}/)
+  assert.match(loginForm, /onSubmit=\{\(\) => \{[\s\S]*clearPreviousUserClientData\(\)/)
   assert.match(logoutForm, /"use client"/)
   assert.match(logoutForm, /clearPreviousUserClientData/)
   assert.match(logoutForm, /onSubmit=\{clearPreviousUserClientData\}/)

@@ -12,6 +12,7 @@ import { Label } from "@/components/ui/label"
 import { PasswordInput } from "@/components/auth/password-input"
 import { clearPreviousUserClientData } from "@/lib/auth-client-state"
 import { AUTH_FORM_INITIAL_STATE } from "@/lib/auth-form"
+import { trackAuthEvent, TRACKING_EVENTS } from "@/lib/tracking-events"
 
 export function LoginForm({ nextPath = "/dashboard" }: { nextPath?: string }) {
   const [state, formAction, pending] = useActionState(
@@ -44,7 +45,12 @@ export function LoginForm({ nextPath = "/dashboard" }: { nextPath?: string }) {
       <form
         action={formAction}
         className="grid gap-4"
-        onSubmit={clearPreviousUserClientData}
+        onSubmit={() => {
+          clearPreviousUserClientData()
+          trackAuthEvent(TRACKING_EVENTS.auth.loginSubmitted, {
+            next_path: nextPath,
+          })
+        }}
       >
         <input type="hidden" name="next" value={nextPath} />
         <div className="grid gap-2">

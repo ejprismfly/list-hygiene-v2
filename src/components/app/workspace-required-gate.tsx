@@ -27,6 +27,7 @@ import {
   WORKSPACE_ID_COOKIE,
   WORKSPACE_ORGANIZATION_COOKIE,
 } from "@/lib/workspace-utils"
+import { trackWorkspaceEvent, TRACKING_EVENTS } from "@/lib/tracking-events"
 
 function canManage(role?: string | null) {
   return role === "owner" || role === "admin"
@@ -147,6 +148,17 @@ export function WorkspaceRequiredGate() {
 
     invalidateWorkspaceClientData(organization.id)
     persistSelection(organization.id, data.id)
+    trackWorkspaceEvent(
+      TRACKING_EVENTS.workspace.created,
+      {
+        organizationId: organization.id,
+        workspaceId: data.id,
+        role: data.role || organization.role,
+      },
+      {
+        source: "required_workspace_gate",
+      }
+    )
     setWorkspaceRequired(false)
     window.location.reload()
   }

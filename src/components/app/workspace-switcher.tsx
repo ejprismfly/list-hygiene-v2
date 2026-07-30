@@ -58,6 +58,12 @@ import {
   type OrganizationOption,
   type WorkspaceOption,
 } from "@/lib/workspace-client-data"
+import {
+  trackTeamEvent,
+  trackWorkspaceEvent,
+  TRACKING_EVENTS,
+  type TrackingScope,
+} from "@/lib/tracking-events"
 
 type WorkspaceSwitcherProps = {
   showOrganization?: boolean
@@ -251,6 +257,16 @@ export function WorkspaceSwitcher({
       : ""
   const invitationCancelName = invitationToCancel?.email || "this invitation"
 
+  function trackingScope(
+    workspace: WorkspaceOption | null | undefined = selectedWorkspace
+  ): TrackingScope {
+    return {
+      organizationId: organizationId || null,
+      workspaceId: workspace?.id || selectedId || null,
+      role: workspace?.role || null,
+    }
+  }
+
   useEffect(() => {
     let cancelled = false
 
@@ -377,6 +393,13 @@ export function WorkspaceSwitcher({
 
     setMessage("")
     setSwitchingWorkspaceName(workspaceLabel(nextWorkspace.name))
+    trackWorkspaceEvent(
+      TRACKING_EVENTS.workspace.switchStarted,
+      trackingScope(nextWorkspace),
+      {
+        previous_workspace_id: selectedId || null,
+      }
+    )
     persistSelection(organizationId, nextWorkspace.id)
     window.setTimeout(() => {
       window.location.reload()
@@ -415,6 +438,17 @@ export function WorkspaceSwitcher({
     setCreatingWorkspace(false)
     invalidateWorkspaceClientData(organizationId)
     setWorkspaces((current) => [...current, data])
+    trackWorkspaceEvent(
+      TRACKING_EVENTS.workspace.created,
+      {
+        organizationId,
+        workspaceId: data.id,
+        role: data.role || "owner",
+      },
+      {
+        workspace_count: workspaces.length + 1,
+      }
+    )
     setSwitchingWorkspaceName(workspaceLabel(data.name))
     persistSelection(organizationId, data.id)
     window.setTimeout(() => {
@@ -451,6 +485,13 @@ export function WorkspaceSwitcher({
           workspace.id === data.id ? { ...workspace, name: data.name } : workspace
         )
       )
+      trackWorkspaceEvent(
+        TRACKING_EVENTS.workspace.updated,
+        trackingScope(selectedWorkspace),
+        {
+          updated_field: "name",
+        }
+      )
       setMessage(`${workspaceLabel(data.name)} updated.`)
     } catch {
       setMessage("Unable to update workspace.")
@@ -461,6 +502,13 @@ export function WorkspaceSwitcher({
 
   function openArchiveWorkspaceDialog() {
     if (workspaceArchiveBlockedReason) {
+      trackWorkspaceEvent(
+        TRACKING_EVENTS.workspace.deleteBlocked,
+        trackingScope(selectedWorkspace),
+        {
+          blocked_reason: workspaceArchiveBlockedReason,
+        }
+      )
       setArchiveBlockedDialogOpen(true)
       return
     }
@@ -501,6 +549,13 @@ export function WorkspaceSwitcher({
       setArchiveDialogOpen(false)
       setArchiveConfirmation("")
       setManagerOpen(false)
+      trackWorkspaceEvent(
+        TRACKING_EVENTS.workspace.deleted,
+        trackingScope(selectedWorkspace),
+        {
+          remaining_workspace_count: Math.max(workspaces.length - 1, 0),
+        }
+      )
       setWorkspaces((current) =>
         current.filter((workspace) => workspace.id !== selectedWorkspace.id)
       )
@@ -550,11 +605,11 @@ export function WorkspaceSwitcher({
       const memberData = await memberResponse.json()
 
       if (memberResponse.ok) {
+        const nextMember = memberData as WorkspaceMember
         setInviteEmail("")
         setInviteRole("member")
         setLastInviteLink("")
         setMembers((current) => {
-          const nextMember = memberData as WorkspaceMember
           const existingIndex = current.findIndex(
             (member) => member.user_id === nextMember.user_id
           )
@@ -569,6 +624,10 @@ export function WorkspaceSwitcher({
         setInviteStatusMessage(
           `${email} added to ${workspaceLabel(selectedWorkspace.name)}.`
         )
+        trackTeamEvent(TRACKING_EVENTS.team.memberAdded, trackingScope(), {
+          member_role: nextMember.role,
+          delivery_type: "existing_user",
+        })
         return
       }
 
@@ -618,6 +677,10 @@ export function WorkspaceSwitcher({
         setInviteStatusMessage(
           `${email} added to ${workspaceLabel(selectedWorkspace.name)}.`
         )
+        trackTeamEvent(TRACKING_EVENTS.team.memberAdded, trackingScope(), {
+          member_role: nextMember.role,
+          delivery_type: data.email_delivery || "existing_user",
+        })
         return
       }
 
@@ -637,6 +700,12 @@ export function WorkspaceSwitcher({
         setInviteStatusMessage(
           `${email} invite link refreshed. Copy the link to send it manually.`
         )
+        trackTeamEvent(TRACKING_EVENTS.team.memberInvited, trackingScope(), {
+          invite_role: data.role,
+          delivery_type: data.email_delivery,
+          manual_link: true,
+          resent: Boolean(data.resent),
+        })
         return
       }
 
@@ -644,6 +713,12 @@ export function WorkspaceSwitcher({
       setInviteStatusMessage(
         `${email} ${inviteVerb} to ${workspaceLabel(selectedWorkspace.name)}.`
       )
+      trackTeamEvent(TRACKING_EVENTS.team.memberInvited, trackingScope(), {
+        invite_role: data.role,
+        delivery_type: data.email_delivery || "supabase_auth",
+        manual_link: false,
+        resent: Boolean(data.resent),
+      })
     } catch {
       setInviteStatusMessage("Unable to invite member.")
       setInviteStatusIsError(true)
@@ -707,6 +782,11 @@ export function WorkspaceSwitcher({
           ? `${invitation.email} invite link refreshed. Copy the link to send it manually.`
           : `${invitation.email} invite resent.`
       )
+      trackTeamEvent(TRACKING_EVENTS.team.inviteResent, trackingScope(), {
+        invite_role: data.role,
+        delivery_type: data.email_delivery || "supabase_auth",
+        manual_link: data.email_delivery === "manual_link",
+      })
     } catch {
       setInviteStatusMessage("Unable to resend invite.")
       setInviteStatusIsError(true)
@@ -747,6 +827,10 @@ export function WorkspaceSwitcher({
           item.user_id === member.user_id ? { ...item, role } : item
         )
       )
+      trackTeamEvent(TRACKING_EVENTS.team.memberRoleUpdated, trackingScope(), {
+        previous_role: member.role,
+        member_role: role,
+      })
     } catch {
       setMessage("Unable to update member.")
     } finally {
@@ -809,6 +893,10 @@ export function WorkspaceSwitcher({
           ? `${memberRemovalName} removed from the organization.`
           : `${memberRemovalName} removed from this workspace.`
       )
+      trackTeamEvent(TRACKING_EVENTS.team.memberRemoved, trackingScope(), {
+        member_role: memberToRemove.role,
+        organization_removed: Boolean(data.organization_removed),
+      })
       setMemberRemovalDialogOpen(false)
       setMemberToRemove(null)
     } catch {
@@ -853,6 +941,9 @@ export function WorkspaceSwitcher({
             : item
         )
       )
+      trackTeamEvent(TRACKING_EVENTS.team.inviteCancelled, trackingScope(), {
+        invite_role: invitationToCancel.role,
+      })
       setInvitationCancelDialogOpen(false)
       setInvitationToCancel(null)
     } catch {
@@ -913,6 +1004,14 @@ export function WorkspaceSwitcher({
       setTransferOwnerUserId("")
       setTransferPassword("")
       setMessage("Workspace ownership transferred.")
+      trackWorkspaceEvent(
+        TRACKING_EVENTS.workspace.ownershipTransferred,
+        trackingScope(selectedWorkspace),
+        {
+          previous_owner_role: "owner",
+          new_owner_previous_role: "admin",
+        }
+      )
     } catch {
       setMessage("Unable to transfer ownership.")
     } finally {

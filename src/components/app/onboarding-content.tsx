@@ -26,6 +26,11 @@ import {
   startKlaviyoOAuth,
 } from "@/lib/klaviyo-oauth"
 import {
+  trackIntegrationEvent,
+  TRACKING_EVENTS,
+  type TrackingScope,
+} from "@/lib/tracking-events"
+import {
   ClientApiError,
   loadOrganizations,
   loadWorkspaces,
@@ -66,6 +71,17 @@ function handleLoadError(error: unknown, fallback: string) {
   return fallback
 }
 
+function onboardingTrackingScope(
+  organization: OrganizationOption | null,
+  workspace: WorkspaceOption | null
+): TrackingScope {
+  return {
+    organizationId: organization?.id || null,
+    workspaceId: workspace?.id || null,
+    role: organization?.role || null,
+  }
+}
+
 export function OnboardingContent() {
   const [statusMessage, setStatusMessage] = useState("")
   const [connecting, setConnecting] = useState(false)
@@ -79,6 +95,11 @@ export function OnboardingContent() {
   useEffect(() => {
     function onMessage(event: MessageEvent) {
       if (event.data?.status === "connected") {
+        trackIntegrationEvent(
+          TRACKING_EVENTS.integration.klaviyoConnected,
+          onboardingTrackingScope(organization, workspace),
+          { source: "onboarding" }
+        )
         setStatusMessage("Klaviyo connected. Opening integration settings.")
         window.setTimeout(() => {
           window.location.assign("/settings?connected=1")
@@ -86,6 +107,11 @@ export function OnboardingContent() {
       }
 
       if (event.data?.status === "blocked") {
+        trackIntegrationEvent(
+          TRACKING_EVENTS.integration.klaviyoDuplicateBlocked,
+          onboardingTrackingScope(organization, workspace),
+          { source: "onboarding" }
+        )
         setStatusMessage("That Klaviyo account is already connected.")
         window.setTimeout(() => {
           window.location.assign("/settings")
@@ -93,13 +119,18 @@ export function OnboardingContent() {
       }
 
       if (event.data?.status === "failed") {
+        trackIntegrationEvent(
+          TRACKING_EVENTS.integration.klaviyoOauthFailed,
+          onboardingTrackingScope(organization, workspace),
+          { source: "onboarding" }
+        )
         setStatusMessage("Unable to connect Klaviyo. Please try again.")
       }
     }
 
     window.addEventListener("message", onMessage)
     return () => window.removeEventListener("message", onMessage)
-  }, [])
+  }, [organization, workspace])
 
   useEffect(() => {
     let cancelled = false
@@ -209,6 +240,11 @@ export function OnboardingContent() {
           setStatusMessage("Klaviyo client ID is not configured."),
       })
       if (started) {
+        trackIntegrationEvent(
+          TRACKING_EVENTS.integration.klaviyoOauthStarted,
+          onboardingTrackingScope(organization, workspace),
+          { source: "onboarding" }
+        )
         setStatusMessage("Opening Klaviyo authorization.")
       }
     } catch {

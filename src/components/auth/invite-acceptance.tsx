@@ -7,6 +7,7 @@ import { AlertCircle, CheckCircle2, Loader2, UserPlus } from "lucide-react"
 import { AuthSuccessState } from "@/components/auth/auth-form-shell"
 import { Button, buttonVariants } from "@/components/ui/button"
 import { createClient } from "@/lib/supabase/client"
+import { trackAuthEvent, TRACKING_EVENTS } from "@/lib/tracking-events"
 import {
   clearWorkspaceClientState,
   serializeClientCookie,
@@ -79,6 +80,9 @@ export function InviteAcceptance({
 
     async function acceptInvitation() {
       setStatus("loading")
+      trackAuthEvent(TRACKING_EVENTS.auth.inviteAcceptStarted, {
+        login_again_required: loginAgainAfterAccept,
+      })
       try {
         const response = await fetch("/api/organizations/invitations/accept", {
           method: "POST",
@@ -96,6 +100,9 @@ export function InviteAcceptance({
         if (!response.ok) {
           setStatus("error")
           setMessage(data.error || "Unable to accept this invitation.")
+          trackAuthEvent(TRACKING_EVENTS.auth.inviteAcceptFailed, {
+            error_status: response.status,
+          })
           return
         }
 
@@ -106,6 +113,16 @@ export function InviteAcceptance({
         }
 
         setStatus("success")
+        trackAuthEvent(TRACKING_EVENTS.auth.inviteAcceptSucceeded, {
+          login_again_required: loginAgainAfterAccept,
+          organization_id:
+            typeof data.organization_id === "string"
+              ? data.organization_id
+              : null,
+          workspace_count: Array.isArray(data.workspace_ids)
+            ? data.workspace_ids.length
+            : 0,
+        })
         setMessage(
           loginAgainAfterAccept
             ? "Your password is set and your invite has been accepted. Log in again to open the workspace."
@@ -115,6 +132,9 @@ export function InviteAcceptance({
         if (!cancelled) {
           setStatus("error")
           setMessage("Unable to accept this invitation right now.")
+          trackAuthEvent(TRACKING_EVENTS.auth.inviteAcceptFailed, {
+            error_status: 0,
+          })
         }
       }
     }

@@ -44,6 +44,7 @@ import {
 import { Separator } from "@/components/ui/separator"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Switch } from "@/components/ui/switch"
+import { trackIntegrationEvent, TRACKING_EVENTS } from "@/lib/tracking-events"
 import { useWorkspacePermissions } from "@/lib/use-workspace-permissions"
 
 type SegmentOption = {
@@ -306,6 +307,15 @@ export function ConfigureConnectionContent() {
       }
 
       setStatusMessage(`${connectionName || "Klaviyo"} settings saved.`)
+      trackIntegrationEvent(
+        TRACKING_EVENTS.integration.klaviyoConnectionUpdated,
+        null,
+        {
+          connection_id: accountId,
+          segment_id: selectedSegmentId || null,
+          source: "connection_settings",
+        }
+      )
     } finally {
       setSaving(false)
     }
@@ -344,6 +354,15 @@ export function ConfigureConnectionContent() {
         )
       )
       setStatusMessage("Segments refreshed.")
+      trackIntegrationEvent(
+        TRACKING_EVENTS.integration.klaviyoSegmentsRefreshed,
+        null,
+        {
+          connection_id: accountId,
+          segment_count: Array.isArray(data.segments) ? data.segments.length : 0,
+          source: "connection_settings",
+        }
+      )
     } finally {
       setRefreshing(false)
     }
@@ -381,6 +400,14 @@ export function ConfigureConnectionContent() {
       setRemoveDialogOpen(false)
       setRemoveConfirmation("")
       setStatusMessage("Klaviyo connection removed from this workspace.")
+      trackIntegrationEvent(
+        TRACKING_EVENTS.integration.klaviyoDisconnected,
+        null,
+        {
+          connection_id: accountId,
+          source: "connection_settings",
+        }
+      )
     } finally {
       setRemoving(false)
     }

@@ -42,6 +42,7 @@ import {
 } from "@/components/ui/table"
 import { Skeleton } from "@/components/ui/skeleton"
 import { startKlaviyoOAuth } from "@/lib/klaviyo-oauth"
+import { trackIntegrationEvent, TRACKING_EVENTS } from "@/lib/tracking-events"
 import { useWorkspacePermissions } from "@/lib/use-workspace-permissions"
 import { invalidateWorkspaceClientData } from "@/lib/workspace-client-data"
 
@@ -211,6 +212,11 @@ export function SettingsContent({ connected = false }: SettingsContentProps) {
           setStatusMessage("Klaviyo client ID is not configured."),
       })
       if (started) {
+        trackIntegrationEvent(
+          TRACKING_EVENTS.integration.klaviyoOauthStarted,
+          null,
+          { source: "settings" }
+        )
         setStatusMessage("Opening Klaviyo authorization.")
       }
     } catch {
@@ -254,6 +260,14 @@ export function SettingsContent({ connected = false }: SettingsContentProps) {
       )
       setConnections(remainingConnections)
       setStatusMessage(`${connectionDisplayName(connectionToDelete)} deleted.`)
+      trackIntegrationEvent(
+        TRACKING_EVENTS.integration.klaviyoDisconnected,
+        null,
+        {
+          connection_id: connectionToDelete.id,
+          source: "settings",
+        }
+      )
       setDeleteConnectionDialogOpen(false)
       setConnectionToDelete(null)
       setDeleteConnectionConfirmation("")
@@ -266,6 +280,11 @@ export function SettingsContent({ connected = false }: SettingsContentProps) {
   useEffect(() => {
     function onMessage(event: MessageEvent) {
       if (event.data?.status === "connected") {
+        trackIntegrationEvent(
+          TRACKING_EVENTS.integration.klaviyoConnected,
+          null,
+          { source: "settings" }
+        )
         setStatusMessage("Klaviyo connection added.")
         setLoadingConnections(true)
         fetch("/api/oauth/klaviyo/accounts")
@@ -283,7 +302,19 @@ export function SettingsContent({ connected = false }: SettingsContentProps) {
           .finally(() => setLoadingConnections(false))
       }
       if (event.data?.status === "blocked") {
+        trackIntegrationEvent(
+          TRACKING_EVENTS.integration.klaviyoDuplicateBlocked,
+          null,
+          { source: "settings" }
+        )
         setStatusMessage("That Klaviyo account is already connected.")
+      }
+      if (event.data?.status === "failed") {
+        trackIntegrationEvent(
+          TRACKING_EVENTS.integration.klaviyoOauthFailed,
+          null,
+          { source: "settings" }
+        )
       }
     }
 

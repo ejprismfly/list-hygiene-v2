@@ -85,6 +85,16 @@ export function trackPlanChangeStarted({
   })
 }
 
+export function trackBillingPortalOpened({
+  context,
+}: {
+  context?: BillingTrackingContext | null
+}) {
+  pushDataLayerEvent("lh_billing_portal_opened", {
+    ...baseBillingPayload(context),
+  })
+}
+
 export function trackBillingReturn({
   context,
   failureType,

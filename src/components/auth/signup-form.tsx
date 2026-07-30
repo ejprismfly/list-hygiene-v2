@@ -1,6 +1,6 @@
 "use client"
 
-import { useActionState } from "react"
+import { useActionState, useEffect } from "react"
 import Link from "next/link"
 import { Loader2, Mail } from "lucide-react"
 
@@ -16,6 +16,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { PasswordInput } from "@/components/auth/password-input"
 import { AUTH_FORM_INITIAL_STATE } from "@/lib/auth-form"
+import { trackAuthEvent, TRACKING_EVENTS } from "@/lib/tracking-events"
 
 export function SignupForm({ nextPath = "/onboarding" }: { nextPath?: string }) {
   const [state, formAction, pending] = useActionState(
@@ -32,6 +33,22 @@ export function SignupForm({ nextPath = "/onboarding" }: { nextPath?: string }) 
       : `?${new URLSearchParams({ next: nextPath }).toString()}`
   const confirmationEmail = state.email || ""
   const confirmationNextPath = state.nextPath || nextPath
+
+  useEffect(() => {
+    if (state.status === "success") {
+      trackAuthEvent(TRACKING_EVENTS.auth.signupConfirmationSent, {
+        next_path: confirmationNextPath,
+      })
+    }
+  }, [confirmationNextPath, state.status])
+
+  useEffect(() => {
+    if (resendState.status === "success") {
+      trackAuthEvent(TRACKING_EVENTS.auth.signupConfirmationResent, {
+        next_path: resendState.nextPath || confirmationNextPath,
+      })
+    }
+  }, [confirmationNextPath, resendState.nextPath, resendState.status])
 
   if (state.status === "success") {
     return (
@@ -106,7 +123,15 @@ export function SignupForm({ nextPath = "/onboarding" }: { nextPath?: string }) 
         </>
       }
     >
-      <form action={formAction} className="grid gap-4">
+      <form
+        action={formAction}
+        className="grid gap-4"
+        onSubmit={() =>
+          trackAuthEvent(TRACKING_EVENTS.auth.signupSubmitted, {
+            next_path: nextPath,
+          })
+        }
+      >
         <input type="hidden" name="next" value={nextPath} />
         <div className="grid gap-2">
           <Label htmlFor="email">Email</Label>
