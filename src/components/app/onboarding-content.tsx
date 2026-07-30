@@ -30,6 +30,7 @@ import {
   TRACKING_EVENTS,
   type TrackingScope,
 } from "@/lib/tracking-events"
+import { SIGNUP_ONBOARDING_COOKIE } from "@/lib/onboarding"
 import {
   ClientApiError,
   loadOrganizations,
@@ -82,6 +83,10 @@ function onboardingTrackingScope(
   }
 }
 
+function clearSignupOnboardingMarker() {
+  document.cookie = `${SIGNUP_ONBOARDING_COOKIE}=; Path=/; Max-Age=0; SameSite=Lax`
+}
+
 export function OnboardingContent() {
   const [statusMessage, setStatusMessage] = useState("")
   const [connecting, setConnecting] = useState(false)
@@ -101,6 +106,7 @@ export function OnboardingContent() {
           { source: "onboarding" }
         )
         setStatusMessage("Klaviyo connected. Opening integration settings.")
+        clearSignupOnboardingMarker()
         window.setTimeout(() => {
           window.location.assign("/settings?connected=1")
         }, 600)
@@ -113,6 +119,7 @@ export function OnboardingContent() {
           { source: "onboarding" }
         )
         setStatusMessage("That Klaviyo account is already connected.")
+        clearSignupOnboardingMarker()
         window.setTimeout(() => {
           window.location.assign("/settings")
         }, 900)

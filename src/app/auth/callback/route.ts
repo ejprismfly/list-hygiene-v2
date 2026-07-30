@@ -1,6 +1,11 @@
 import { type NextRequest, NextResponse } from "next/server"
 import type { EmailOtpType } from "@supabase/supabase-js"
 
+import {
+  isOnboardingPath,
+  SIGNUP_ONBOARDING_COOKIE,
+  SIGNUP_ONBOARDING_COOKIE_MAX_AGE,
+} from "@/lib/onboarding"
 import { getSupabaseConfig } from "@/lib/supabase/env"
 import { createClient } from "@/lib/supabase/server"
 import { getOrigin, safeNextPath } from "@/lib/url-safety.cjs"
@@ -31,6 +36,20 @@ function getRequestOrigin(request: NextRequest) {
 
 function redirectTo(request: NextRequest, path: string) {
   return NextResponse.redirect(new URL(path, getRequestOrigin(request)))
+}
+
+function redirectAfterAuth(request: NextRequest, path: string, type: string | null) {
+  const response = redirectTo(request, path)
+
+  if (type === "signup" && isOnboardingPath(path)) {
+    response.cookies.set(SIGNUP_ONBOARDING_COOKIE, "1", {
+      maxAge: SIGNUP_ONBOARDING_COOKIE_MAX_AGE,
+      path: "/",
+      sameSite: "lax",
+    })
+  }
+
+  return response
 }
 
 function inviteFallbackCallbackPath(nextPath: string) {
@@ -91,5 +110,5 @@ export async function GET(request: NextRequest) {
     return redirectTo(request, "/reset-password")
   }
 
-  return redirectTo(request, nextPath)
+  return redirectAfterAuth(request, nextPath, type)
 }

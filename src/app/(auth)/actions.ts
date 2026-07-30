@@ -7,6 +7,11 @@ import type { Provider } from "@supabase/supabase-js"
 
 import type { AuthFormState } from "@/lib/auth-form"
 import { getFormString } from "@/lib/auth-form"
+import {
+  isOnboardingPath,
+  SIGNUP_ONBOARDING_COOKIE,
+  SIGNUP_ONBOARDING_COOKIE_MAX_AGE,
+} from "@/lib/onboarding"
 import { getSupabaseConfig } from "@/lib/supabase/env"
 import { createClient } from "@/lib/supabase/server"
 import { getOrigin, safeNextPath } from "@/lib/url-safety.cjs"
@@ -94,6 +99,19 @@ async function clearPreviousAuthCookies() {
     if (isSupabaseAuthCookie(cookie.name)) {
       cookieStore.delete(cookie.name)
     }
+  })
+}
+
+async function setSignupOnboardingCookie(nextPath: string) {
+  if (!isOnboardingPath(nextPath)) {
+    return
+  }
+
+  const cookieStore = await cookies()
+  cookieStore.set(SIGNUP_ONBOARDING_COOKIE, "1", {
+    maxAge: SIGNUP_ONBOARDING_COOKIE_MAX_AGE,
+    path: "/",
+    sameSite: "lax",
   })
 }
 
@@ -281,6 +299,7 @@ export async function signupAction(
   }
 
   if (shouldRedirect) {
+    await setSignupOnboardingCookie(nextPath)
     redirect(nextPath)
   }
 
