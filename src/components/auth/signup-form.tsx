@@ -130,11 +130,18 @@ export function SignupForm({ nextPath = "/onboarding" }: { nextPath?: string }) 
       <form
         action={formAction}
         className="grid gap-4"
-        onSubmit={() =>
+        onSubmit={(event) => {
+          const formData = new FormData(event.currentTarget)
+          const submittedEmail = formData.get("email")
+
           trackAuthEvent(TRACKING_EVENTS.auth.signupSubmitted, {
+            email:
+              typeof submittedEmail === "string"
+                ? submittedEmail.trim() || null
+                : null,
             next_path: nextPath,
           })
-        }
+        }}
       >
         <input type="hidden" name="next" value={nextPath} />
         <div className="grid gap-2">

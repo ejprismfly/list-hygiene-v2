@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import Script from "next/script";
 
+import { AuthEventTracker } from "@/components/app/auth-event-tracker";
 import { GoogleAnalyticsTag } from "@/components/app/google-analytics-tag";
 import {
   GoogleTagManager,
@@ -53,6 +54,7 @@ export default function RootLayout({
           strategy="beforeInteractive"
           dangerouslySetInnerHTML={{ __html: themeScript }}
         />
+        <AuthEventTracker />
         {children}
       </body>
     </html>

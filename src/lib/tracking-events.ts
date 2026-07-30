@@ -5,7 +5,8 @@ import { pushDataLayerEvent, type DataLayerPayload } from "@/lib/analytics"
 export const TRACKING_EVENTS = {
   auth: {
     loginSubmitted: "lh_login_submitted",
-    signupSubmitted: "lh_signup_submitted",
+    signupSubmitted: "signup_submitted",
+    signupVerified: "signup_verified",
     signupConfirmationSent: "lh_signup_confirmation_sent",
     signupConfirmationResent: "lh_signup_confirmation_resent",
     passwordResetRequested: "lh_password_reset_requested",
@@ -59,19 +60,36 @@ function scopePayload(scope?: TrackingScope | null) {
 function trackProductEvent(
   event: string,
   category: string,
-  payload: DataLayerPayload = {}
+  payload: DataLayerPayload = {},
+  options: { allowRestrictedPayloadKeys?: boolean } = {}
 ) {
-  pushDataLayerEvent(event, {
+  const eventPayload = {
     event_category: category,
     ...payload,
-  })
+  }
+
+  if (options.allowRestrictedPayloadKeys) {
+    window.dataLayer = window.dataLayer || []
+    window.dataLayer.push({
+      event,
+      app: "list_hygiene_v2",
+      ...eventPayload,
+    })
+    return
+  }
+
+  pushDataLayerEvent(event, eventPayload)
 }
 
 export function trackAuthEvent(
   event: (typeof TRACKING_EVENTS.auth)[keyof typeof TRACKING_EVENTS.auth],
   payload: DataLayerPayload = {}
 ) {
-  trackProductEvent(event, "auth", payload)
+  trackProductEvent(event, "auth", payload, {
+    allowRestrictedPayloadKeys:
+      event === TRACKING_EVENTS.auth.signupSubmitted ||
+      event === TRACKING_EVENTS.auth.signupVerified,
+  })
 }
 
 export function trackIntegrationEvent(

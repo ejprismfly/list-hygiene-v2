@@ -2,6 +2,12 @@ import { type NextRequest, NextResponse } from "next/server"
 import type { EmailOtpType } from "@supabase/supabase-js"
 
 import {
+  AUTH_ANALYTICS_COOKIE,
+  AUTH_ANALYTICS_COOKIE_MAX_AGE,
+  encodeAuthAnalyticsCookie,
+  SIGNUP_VERIFIED_EVENT,
+} from "@/lib/auth-analytics"
+import {
   isOnboardingPath,
   SIGNUP_ONBOARDING_COOKIE,
   SIGNUP_ONBOARDING_COOKIE_MAX_AGE,
@@ -38,7 +44,12 @@ function redirectTo(request: NextRequest, path: string) {
   return NextResponse.redirect(new URL(path, getRequestOrigin(request)))
 }
 
-function redirectAfterAuth(request: NextRequest, path: string, type: string | null) {
+function redirectAfterAuth(
+  request: NextRequest,
+  path: string,
+  type: string | null,
+  options: { signupVerifiedEmail?: string | null } = {}
+) {
   const response = redirectTo(request, path)
 
   if (type === "signup" && isOnboardingPath(path)) {
@@ -49,7 +60,35 @@ function redirectAfterAuth(request: NextRequest, path: string, type: string | nu
     })
   }
 
+  if (type === "signup" && options.signupVerifiedEmail) {
+    response.cookies.set(
+      AUTH_ANALYTICS_COOKIE,
+      encodeAuthAnalyticsCookie({
+        event: SIGNUP_VERIFIED_EVENT,
+        email: options.signupVerifiedEmail,
+      }),
+      {
+        maxAge: AUTH_ANALYTICS_COOKIE_MAX_AGE,
+        path: "/",
+        sameSite: "lax",
+      }
+    )
+  }
+
   return response
+}
+
+async function verifiedSignupEmail(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  email?: string | null
+) {
+  if (email) {
+    return email
+  }
+
+  const { data } = await supabase.auth.getUser()
+
+  return data.user?.email || null
 }
 
 function inviteFallbackCallbackPath(nextPath: string) {
@@ -75,6 +114,7 @@ export async function GET(request: NextRequest) {
   const type = requestUrl.searchParams.get("type")
   const tokenHash = requestUrl.searchParams.get("token_hash")
   const nextPath = safeNextPath(requestUrl.searchParams.get("next"))
+  let signupVerifiedEmail: string | null = null
 
   if (!getSupabaseConfig()) {
     return redirectTo(request, "/login")
@@ -83,7 +123,7 @@ export async function GET(request: NextRequest) {
   const supabase = await createClient()
 
   if (tokenHash && isEmailOtpType(type)) {
-    const { error } = await supabase.auth.verifyOtp({
+    const { data, error } = await supabase.auth.verifyOtp({
       token_hash: tokenHash,
       type,
     })
@@ -91,11 +131,25 @@ export async function GET(request: NextRequest) {
     if (error) {
       return redirectTo(request, "/login")
     }
+
+    if (type === "signup") {
+      signupVerifiedEmail = await verifiedSignupEmail(
+        supabase,
+        data.user?.email || data.session?.user.email
+      )
+    }
   } else if (code) {
-    const { error } = await supabase.auth.exchangeCodeForSession(code)
+    const { data, error } = await supabase.auth.exchangeCodeForSession(code)
 
     if (error) {
       return redirectTo(request, "/login")
+    }
+
+    if (type === "signup") {
+      signupVerifiedEmail = await verifiedSignupEmail(
+        supabase,
+        data.user?.email || data.session?.user.email
+      )
     }
   }
 
@@ -110,5 +164,5 @@ export async function GET(request: NextRequest) {
     return redirectTo(request, "/reset-password")
   }
 
-  return redirectAfterAuth(request, nextPath, type)
+  return redirectAfterAuth(request, nextPath, type, { signupVerifiedEmail })
 }

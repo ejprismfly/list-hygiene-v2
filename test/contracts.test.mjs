@@ -290,7 +290,7 @@ test("direct signup enters workspace onboarding while invites keep invite flow",
   assert.match(dashboardPage, /redirect\("\/onboarding"\)/)
   assert.match(authActions, /setSignupOnboardingCookie\(nextPath\)/)
   assert.match(authActions, /isOnboardingPath\(nextPath\)/)
-  assert.match(authCallback, /redirectAfterAuth\(request, nextPath, type\)/)
+  assert.match(authCallback, /redirectAfterAuth\(request, nextPath, type, \{ signupVerifiedEmail \}\)/)
   assert.match(authCallback, /type === "signup" && isOnboardingPath\(path\)/)
   assert.match(onboardingPage, /SIGNUP_ONBOARDING_COOKIE/)
   assert.match(onboardingPage, /hasSignupOnboardingMarker/)
@@ -696,6 +696,9 @@ test("trackable browser events cover auth workspace team and integrations", () =
   const forgotPasswordForm = read("src/components/auth/forgot-password-form.tsx")
   const resetPasswordForm = read("src/components/auth/reset-password-form.tsx")
   const inviteAcceptance = read("src/components/auth/invite-acceptance.tsx")
+  const rootLayout = read("src/app/layout.tsx")
+  const authCallback = read("src/app/auth/callback/route.ts")
+  const authEventTracker = read("src/components/app/auth-event-tracker.tsx")
   const onboardingContent = read("src/components/app/onboarding-content.tsx")
   const workspaceSwitcher = read("src/components/app/workspace-switcher.tsx")
   const workspaceGate = read("src/components/app/workspace-required-gate.tsx")
@@ -706,7 +709,8 @@ test("trackable browser events cover auth workspace team and integrations", () =
 
   for (const eventName of [
     "lh_login_submitted",
-    "lh_signup_submitted",
+    "signup_submitted",
+    "signup_verified",
     "lh_signup_confirmation_sent",
     "lh_signup_confirmation_resent",
     "lh_password_reset_requested",
@@ -744,8 +748,15 @@ test("trackable browser events cover auth workspace team and integrations", () =
   assert.match(trackingEvents, /provider: "klaviyo"/)
   assert.match(loginForm, /TRACKING_EVENTS\.auth\.loginSubmitted/)
   assert.match(signupForm, /TRACKING_EVENTS\.auth\.signupSubmitted/)
+  assert.match(signupForm, /new FormData\(event\.currentTarget\)/)
+  assert.match(signupForm, /email:/)
   assert.match(signupForm, /TRACKING_EVENTS\.auth\.signupConfirmationSent/)
   assert.match(signupForm, /TRACKING_EVENTS\.auth\.signupConfirmationResent/)
+  assert.match(rootLayout, /<AuthEventTracker \/>/)
+  assert.match(authCallback, /AUTH_ANALYTICS_COOKIE/)
+  assert.match(authCallback, /SIGNUP_VERIFIED_EVENT/)
+  assert.match(authEventTracker, /TRACKING_EVENTS\.auth\.signupVerified/)
+  assert.match(authEventTracker, /clearCookie\(AUTH_ANALYTICS_COOKIE\)/)
   assert.match(forgotPasswordForm, /TRACKING_EVENTS\.auth\.passwordResetRequested/)
   assert.match(forgotPasswordForm, /TRACKING_EVENTS\.auth\.passwordResetSent/)
   assert.match(resetPasswordForm, /TRACKING_EVENTS\.auth\.passwordUpdateSubmitted/)
