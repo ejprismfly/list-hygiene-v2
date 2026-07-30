@@ -83,7 +83,7 @@ export function SignupForm({ nextPath = "/onboarding" }: { nextPath?: string }) 
               className={buttonVariants({
                 variant: "link",
                 size: "sm",
-                className: "w-full text-foreground hover:text-muted-foreground",
+                className: "w-full !text-foreground hover:!text-muted-foreground",
               })}
             >
               Back to Login
@@ -93,7 +93,7 @@ export function SignupForm({ nextPath = "/onboarding" }: { nextPath?: string }) 
               className={buttonVariants({
                 variant: "link",
                 size: "sm",
-                className: "w-full text-foreground hover:text-muted-foreground",
+                className: "w-full !text-foreground hover:!text-muted-foreground",
               })}
             >
               Reset password
@@ -119,7 +119,7 @@ export function SignupForm({ nextPath = "/onboarding" }: { nextPath?: string }) 
             className={buttonVariants({
               variant: "link",
               size: "sm",
-              className: "text-foreground hover:text-muted-foreground",
+              className: "!text-foreground hover:!text-muted-foreground",
             })}
           >
             Sign In

@@ -38,7 +38,7 @@ export function LoginForm({ nextPath = "/dashboard" }: { nextPath?: string }) {
             className={buttonVariants({
               variant: "link",
               size: "sm",
-              className: "text-foreground hover:text-muted-foreground",
+              className: "!text-foreground hover:!text-muted-foreground",
             })}
           >
             Sign up now!
