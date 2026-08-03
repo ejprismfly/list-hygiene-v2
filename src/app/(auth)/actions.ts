@@ -6,6 +6,7 @@ import { redirect } from "next/navigation"
 import type { Provider } from "@supabase/supabase-js"
 
 import type { AuthFormState } from "@/lib/auth-form"
+import { normalizedEmail } from "@/lib/api/validation"
 import { getFormString } from "@/lib/auth-form"
 import {
   isOnboardingPath,
@@ -27,12 +28,20 @@ const missingConfigState: AuthFormState = {
 }
 
 function requireEmailAndPassword(email: string, password: string) {
-  if (!email || !password) {
+  if (!normalizedEmail(email)) {
+    return "Enter a valid email address."
+  }
+
+  if (!password) {
     return "Email and password are required."
   }
 
   if (password.length < 8) {
     return "Password must be at least 8 characters."
+  }
+
+  if (password.length > 128) {
+    return "Password must be 128 characters or less."
   }
 
   return null
@@ -176,8 +185,8 @@ export async function magicLinkAction(
   const email = getFormString(formData, "email")
   const nextPath = getNextPath(formData)
 
-  if (!email) {
-    return { status: "error", message: "Email is required." }
+  if (!normalizedEmail(email)) {
+    return { status: "error", message: "Enter a valid email address." }
   }
 
   if (!getSupabaseConfig()) {
@@ -318,8 +327,8 @@ export async function resendSignupConfirmationAction(
   const email = getFormString(formData, "email")
   const nextPath = getNextPath(formData)
 
-  if (!email) {
-    return { status: "error", message: "Email is required." }
+  if (!normalizedEmail(email)) {
+    return { status: "error", message: "Enter a valid email address." }
   }
 
   if (!getSupabaseConfig()) {
@@ -368,8 +377,8 @@ export async function forgotPasswordAction(
 ): Promise<AuthFormState> {
   const email = getFormString(formData, "email")
 
-  if (!email) {
-    return { status: "error", message: "Email is required." }
+  if (!normalizedEmail(email)) {
+    return { status: "error", message: "Enter a valid email address." }
   }
 
   if (!getSupabaseConfig()) {
@@ -415,6 +424,10 @@ export async function resetPasswordAction(
 
   if (password.length < 8) {
     return { status: "error", message: "Password must be at least 8 characters." }
+  }
+
+  if (password.length > 128) {
+    return { status: "error", message: "Password must be 128 characters or less." }
   }
 
   if (password !== confirmPassword) {

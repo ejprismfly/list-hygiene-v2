@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react"
 import { useSearchParams } from "next/navigation"
-import { CheckCircle2, Info, Loader2, Trash2 } from "lucide-react"
+import { AlertCircle, CheckCircle2, Info, Loader2, Trash2 } from "lucide-react"
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import {
@@ -137,6 +137,12 @@ export function ConfigureConnectionContent() {
   const [temporaryErrorRetries, setTemporaryErrorRetries] = useState("3")
   const [unexpectedErrorRetries, setUnexpectedErrorRetries] = useState("3")
   const [statusMessage, setStatusMessage] = useState("")
+  const [statusIsError, setStatusIsError] = useState(false)
+
+  function showStatus(message: string, isError = false) {
+    setStatusMessage(message)
+    setStatusIsError(isError)
+  }
   const [accountLoading, setAccountLoading] = useState(Boolean(accountId))
   const [saving, setSaving] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
@@ -159,7 +165,7 @@ export function ConfigureConnectionContent() {
         const response = await fetch(`/api/oauth/klaviyo/accounts?id=${accountId}`)
         if (!response.ok) {
           if (!cancelled) {
-            setStatusMessage("Unable to load Klaviyo connection.")
+            showStatus("Unable to load Klaviyo connection.", true)
           }
           return
         }
@@ -278,7 +284,7 @@ export function ConfigureConnectionContent() {
     }
 
     if (!accountId) {
-      setStatusMessage("Select a Klaviyo connection to edit.")
+      showStatus("Select a Klaviyo connection to edit.", true)
       return
     }
 
@@ -302,11 +308,11 @@ export function ConfigureConnectionContent() {
 
       if (!response.ok) {
         const data = await response.json()
-        setStatusMessage(data.error || "Unable to save Klaviyo settings.")
+        showStatus(data.error || "Unable to save Klaviyo settings.", true)
         return
       }
 
-      setStatusMessage(`${connectionName || "Klaviyo"} settings saved.`)
+      showStatus(`${connectionName || "Klaviyo"} settings saved.`)
       trackIntegrationEvent(
         TRACKING_EVENTS.integration.klaviyoConnectionUpdated,
         null,
@@ -316,6 +322,8 @@ export function ConfigureConnectionContent() {
           source: "connection_settings",
         }
       )
+    } catch {
+      showStatus("Unable to save Klaviyo settings. Check your connection and try again.", true)
     } finally {
       setSaving(false)
     }
@@ -335,7 +343,7 @@ export function ConfigureConnectionContent() {
       })
       const data = await response.json()
       if (!response.ok) {
-        setStatusMessage(data.error || "Unable to refresh segments.")
+        showStatus(data.error || "Unable to refresh segments.", true)
         return
       }
 
@@ -353,7 +361,7 @@ export function ConfigureConnectionContent() {
           current.filter((segment) => segment.id === selectedSegmentId)
         )
       )
-      setStatusMessage("Segments refreshed.")
+      showStatus("Segments refreshed.")
       trackIntegrationEvent(
         TRACKING_EVENTS.integration.klaviyoSegmentsRefreshed,
         null,
@@ -363,6 +371,8 @@ export function ConfigureConnectionContent() {
           source: "connection_settings",
         }
       )
+    } catch {
+      showStatus("Unable to refresh segments. Check your connection and try again.", true)
     } finally {
       setRefreshing(false)
     }
@@ -378,7 +388,7 @@ export function ConfigureConnectionContent() {
     }
 
     if (!workspacePermissions.canDeleteIntegrations) {
-      setStatusMessage("Only owners and admins can delete integrations.")
+      showStatus("Only owners and admins can delete integrations.", true)
       return
     }
 
@@ -392,14 +402,14 @@ export function ConfigureConnectionContent() {
 
       if (!response.ok) {
         const data = await response.json()
-        setStatusMessage(data.error || "Unable to remove Klaviyo connection.")
+        showStatus(data.error || "Unable to remove Klaviyo connection.", true)
         return
       }
 
       setRemoved(true)
       setRemoveDialogOpen(false)
       setRemoveConfirmation("")
-      setStatusMessage("Klaviyo connection removed from this workspace.")
+      showStatus("Klaviyo connection removed from this workspace.")
       trackIntegrationEvent(
         TRACKING_EVENTS.integration.klaviyoDisconnected,
         null,
@@ -408,6 +418,8 @@ export function ConfigureConnectionContent() {
           source: "connection_settings",
         }
       )
+    } catch {
+      showStatus("Unable to remove Klaviyo connection. Please try again.", true)
     } finally {
       setRemoving(false)
     }
@@ -506,9 +518,13 @@ export function ConfigureConnectionContent() {
       </Card>
 
       {(statusMessage || !accountId) && (
-        <Alert>
-          <CheckCircle2 className="size-4" />
-          <AlertTitle>Connection updated</AlertTitle>
+        <Alert variant={statusIsError ? "destructive" : "default"}>
+          {statusIsError ? (
+            <AlertCircle className="size-4" />
+          ) : (
+            <CheckCircle2 className="size-4" />
+          )}
+          <AlertTitle>{statusIsError ? "Connection problem" : "Connection updated"}</AlertTitle>
           <AlertDescription>
             {statusMessage || "Select a Klaviyo connection to edit."}
           </AlertDescription>

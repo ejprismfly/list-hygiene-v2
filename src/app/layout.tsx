@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
 import Script from "next/script";
+import "@fontsource-variable/inter";
 
 import { AuthEventTracker } from "@/components/app/auth-event-tracker";
 import { GoogleAnalyticsTag } from "@/components/app/google-analytics-tag";
@@ -8,11 +8,7 @@ import {
   GoogleTagManager,
   GoogleTagManagerNoScript,
 } from "@/components/app/google-tag-manager";
-import { cn } from "@/lib/utils";
-
 import "./globals.css";
-
-const inter = Inter({ subsets: ["latin"], variable: "--font-sans" });
 
 export const metadata: Metadata = {
   title: "List Hygiene",
@@ -40,7 +36,7 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={cn("h-full antialiased", "font-sans", inter.variable)}
+      className="h-full font-sans antialiased"
       suppressHydrationWarning
     >
       <head>

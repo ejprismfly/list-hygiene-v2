@@ -24,6 +24,11 @@ function getPool() {
   if (!pool) {
     pool = new Pool({
       connectionString,
+      application_name: "list-hygiene-v2",
+      connectionTimeoutMillis: 5_000,
+      idleTimeoutMillis: 30_000,
+      max: Math.max(1, Math.min(Number(process.env.DATABASE_POOL_MAX || 3), 5)),
+      statement_timeout: 15_000,
       ssl: connectionString.includes("localhost")
         ? undefined
         : { rejectUnauthorized: false },

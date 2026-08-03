@@ -22,6 +22,80 @@ type StripeAccountQuery = {
   }
 }
 
+function isMissingWebhookLedger(error: { code?: string; message?: string } | null) {
+  return (
+    error?.code === "42P01" ||
+    error?.code === "PGRST205" ||
+    /stripe_webhook_events.*(does not exist|schema cache)/i.test(error?.message || "")
+  )
+}
+
+async function claimWebhookEvent(
+  supabase: ReturnType<typeof createAdminClient>,
+  event: Stripe.Event
+) {
+  const { error } = await supabase.from("stripe_webhook_events").insert({
+    event_id: event.id,
+    event_type: event.type,
+    status: "processing",
+  })
+
+  if (!error) return true
+  if (isMissingWebhookLedger(error)) {
+    console.warn("Stripe webhook ledger is unavailable; processing without replay protection.")
+    return true
+  }
+  if (error.code !== "23505") {
+    throw new Error(error.message || "Unable to claim Stripe webhook event")
+  }
+
+  const { data: existing, error: lookupError } = await supabase
+    .from("stripe_webhook_events")
+    .select("status, attempts, updated_at")
+    .eq("event_id", event.id)
+    .maybeSingle()
+  if (lookupError) throw new Error(lookupError.message)
+  if (!existing || existing.status === "processed") return false
+
+  const staleProcessing =
+    existing.status === "processing" &&
+    Date.now() - new Date(existing.updated_at).getTime() > 5 * 60 * 1000
+  if (existing.status !== "failed" && !staleProcessing) return false
+
+  const { error: retryError } = await supabase
+    .from("stripe_webhook_events")
+    .update({
+      attempts: Number(existing.attempts || 1) + 1,
+      error_message: null,
+      status: "processing",
+      updated_at: new Date().toISOString(),
+    })
+    .eq("event_id", event.id)
+  if (retryError) throw new Error(retryError.message)
+  return true
+}
+
+async function finishWebhookEvent(
+  supabase: ReturnType<typeof createAdminClient>,
+  eventId: string,
+  error?: unknown
+) {
+  const errorMessage = error instanceof Error ? error.message : error ? String(error) : null
+  const { error: updateError } = await supabase
+    .from("stripe_webhook_events")
+    .update({
+      status: errorMessage ? "failed" : "processed",
+      error_message: errorMessage?.slice(0, 1000) || null,
+      processed_at: errorMessage ? null : new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    })
+    .eq("event_id", eventId)
+
+  if (updateError && !isMissingWebhookLedger(updateError)) {
+    console.error("Stripe webhook ledger update failed:", updateError)
+  }
+}
+
 async function setDefaultPaymentMethodFromCheckout(
   stripe: Stripe,
   session: Stripe.Checkout.Session
@@ -371,7 +445,19 @@ export async function POST(request: Request) {
 
   const supabase = createAdminClient()
 
-  switch (event.type) {
+  let shouldProcess: boolean
+  try {
+    shouldProcess = await claimWebhookEvent(supabase, event)
+  } catch (error) {
+    console.error("Stripe webhook claim failed:", error)
+    return NextResponse.json({ error: "Unable to claim webhook event" }, { status: 500 })
+  }
+  if (!shouldProcess) {
+    return NextResponse.json({ received: true, duplicate: true })
+  }
+
+  try {
+    switch (event.type) {
     case "checkout.session.completed":
       {
         const session = event.data.object as Stripe.Checkout.Session
@@ -439,9 +525,16 @@ export async function POST(request: Request) {
         supabase,
       })
       break
-    default:
-      break
+      default:
+        break
+    }
+  } catch (error) {
+    console.error(`Stripe webhook ${event.id} failed:`, error)
+    await finishWebhookEvent(supabase, event.id, error)
+    return NextResponse.json({ error: "Webhook processing failed" }, { status: 500 })
   }
+
+  await finishWebhookEvent(supabase, event.id)
 
   return NextResponse.json({ received: true })
 }

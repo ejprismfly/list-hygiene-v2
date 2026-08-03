@@ -36,11 +36,30 @@ type TrialReservation =
   | { eligible: true; redemptionId: string }
   | { eligible: false; reason: "platform_account_seen" | "user_redeemed" | "ledger_unavailable" }
 
-function htmlMessage(status: "connected" | "blocked" | "failed", id?: string) {
+type OAuthFailureReason =
+  | "access_denied"
+  | "configuration"
+  | "database"
+  | "invalid_state"
+  | "not_authenticated"
+  | "permissions"
+  | "provider"
+  | "workspace"
+
+function htmlMessage({
+  id,
+  reason,
+  status,
+  targetOrigin,
+}: {
+  id?: string
+  reason?: OAuthFailureReason
+  status: "connected" | "blocked" | "failed"
+  targetOrigin: string
+}) {
+  const payload = JSON.stringify({ status, ...(id ? { id } : {}), ...(reason ? { reason } : {}) })
   return new Response(
-    `<html><body><script>window.opener?.postMessage({ status: "${status}"${
-      id ? `, id: "${id}"` : ""
-    } }, "*"); window.close();</script><p>Authentication complete. You can close this window.</p></body></html>`,
+    `<html><body><script>window.opener?.postMessage(${payload}, ${JSON.stringify(targetOrigin)}); window.close();</script><p>Authentication complete. You can close this window.</p></body></html>`,
     { headers: { "Content-Type": "text/html" } }
   )
 }
@@ -267,28 +286,37 @@ async function recordTrialCreditHistory({
 export async function GET(request: Request) {
   const url = new URL(request.url)
   const code = url.searchParams.get("code")
+  const oauthError = url.searchParams.get("error")
+  const state = url.searchParams.get("state")
   const verifier = getCookie(request, "klaviyo_pkce_verifier")
+  const expectedState = getCookie(request, "klaviyo_oauth_state")
   const clientId = process.env.NEXT_PUBLIC_KLAVIYO_CLIENT_ID
   const clientSecret = process.env.KLAVIYO_CLIENT_SECRET
-  const appHost = process.env.NEXT_PUBLIC_APP_HOST || url.origin
+  const appHost = new URL(process.env.NEXT_PUBLIC_APP_HOST || url.origin).origin
 
+  if (oauthError) {
+    return htmlMessage({ status: "failed", reason: "access_denied", targetOrigin: appHost })
+  }
+  if (!state || !expectedState || state !== expectedState) {
+    return htmlMessage({ status: "failed", reason: "invalid_state", targetOrigin: appHost })
+  }
   if (!code || !verifier || !clientId || !clientSecret) {
-    return htmlMessage("failed")
+    return htmlMessage({ status: "failed", reason: "configuration", targetOrigin: appHost })
   }
 
   const user = await getCurrentUser()
   if (!user?.email) {
-    return htmlMessage("failed")
+    return htmlMessage({ status: "failed", reason: "not_authenticated", targetOrigin: appHost })
   }
 
   const tenant = await resolveTenantContext(request, { requireWorkspace: true })
   if (!tenant.ok) {
-    return htmlMessage("failed")
+    return htmlMessage({ status: "failed", reason: "workspace", targetOrigin: appHost })
   }
 
   const tenantContext = !tenant.context.legacyFallback ? tenant.context : null
   if (tenantContext && !canCreateIntegrations(tenantContext.role)) {
-    return htmlMessage("failed")
+    return htmlMessage({ status: "failed", reason: "permissions", targetOrigin: appHost })
   }
   const tenantFields =
     tenantContext?.organizationId
@@ -319,15 +347,22 @@ export async function GET(request: Request) {
   })
 
   const tokenJson = (await tokenResponse.json()) as KlaviyoToken
-  if (!tokenJson.access_token) {
-    return htmlMessage("failed")
+  if (!tokenResponse.ok || !tokenJson.access_token) {
+    return htmlMessage({ status: "failed", reason: "provider", targetOrigin: appHost })
   }
 
-  const accounts = await getKlaviyoAccounts(tokenJson.access_token)
-  const segments = await fetchKlaviyoSegments(tokenJson.access_token)
+  let accounts
+  let segments
+  try {
+    accounts = await getKlaviyoAccounts(tokenJson.access_token)
+    segments = await fetchKlaviyoSegments(tokenJson.access_token)
+  } catch (error) {
+    console.error("Klaviyo account discovery failed:", error)
+    return htmlMessage({ status: "failed", reason: "provider", targetOrigin: appHost })
+  }
   const [account] = accounts
   if (!account?.id) {
-    return htmlMessage("failed")
+    return htmlMessage({ status: "failed", reason: "provider", targetOrigin: appHost })
   }
 
   const supabase = await getDataClient()
@@ -340,7 +375,7 @@ export async function GET(request: Request) {
     .maybeSingle()
 
   if (existingActive) {
-    return htmlMessage("blocked")
+    return htmlMessage({ status: "blocked", targetOrigin: appHost })
   }
 
   const { data: newKlaviyoAccount, error } = await supabase
@@ -359,6 +394,7 @@ export async function GET(request: Request) {
       selected_segment: null,
       connection_name:
         account.attributes?.contact_information?.organization_name || "Klaviyo",
+      external_account_id: account.id,
       ...tenantFields,
     })
     .select("id")
@@ -366,7 +402,7 @@ export async function GET(request: Request) {
 
   if (error || !newKlaviyoAccount) {
     console.error("Klaviyo account insert error:", error)
-    return htmlMessage("failed")
+    return htmlMessage({ status: "failed", reason: "database", targetOrigin: appHost })
   }
 
   const trialReservation = await reserveTrialRedemption({
@@ -513,5 +549,5 @@ export async function GET(request: Request) {
     .update({ onboarded: true })
     .eq("user_id", user.id)
 
-  return htmlMessage("connected", newKlaviyoAccount.id)
+  return htmlMessage({ status: "connected", id: newKlaviyoAccount.id, targetOrigin: appHost })
 }

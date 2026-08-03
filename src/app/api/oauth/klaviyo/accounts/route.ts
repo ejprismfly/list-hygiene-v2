@@ -8,6 +8,7 @@ import {
 } from "@/lib/api/tenant"
 import { getStripeAccountForBilling } from "@/lib/billing/scope"
 import { getSegmentName, type KlaviyoSegment } from "@/lib/klaviyo-segments"
+import { boundedInteger, oneOfNumber } from "@/lib/api/validation"
 
 type KlaviyoStoredAccount = {
   id: string
@@ -101,8 +102,16 @@ export async function GET(request: Request) {
   const { context, supabase } = tenant
   const url = new URL(request.url)
   const id = url.searchParams.get("id")
-  const segmentSearch = url.searchParams.get("segment_search") || ""
-  const segmentLimit = Number(url.searchParams.get("segment_limit") || "10")
+  const segmentSearch = (url.searchParams.get("segment_search") || "").trim()
+  const segmentLimit = boundedInteger(url.searchParams.get("segment_limit"), {
+    fallback: 10,
+    min: 1,
+    max: 100,
+  })
+
+  if (segmentSearch.length > 100 || segmentLimit === null) {
+    return errorJson("Segment search or limit is invalid.", 400)
+  }
 
   const baseQuery = supabase
     .from("klaviyo_accounts")
@@ -196,6 +205,28 @@ export async function POST(request: Request) {
     return errorJson("Connection name must be 64 characters or less", 400)
   }
 
+  const fullMailboxRetries = oneOfNumber(
+    body.full_mailbox_retries,
+    [0, 6, 12, 24, 36]
+  )
+  const greylistedRetries = oneOfNumber(body.greylisted_retries, [0, 3, 6])
+  const unexpectedErrorRetries = oneOfNumber(
+    body.unexpected_error_retries,
+    [0, 3, 6]
+  )
+  const temporaryErrorRetries = oneOfNumber(
+    body.mail_server_temporary_error_retries,
+    [0, 3, 6]
+  )
+  if (
+    fullMailboxRetries === null ||
+    greylistedRetries === null ||
+    unexpectedErrorRetries === null ||
+    temporaryErrorRetries === null
+  ) {
+    return errorJson("One or more retry settings are invalid.", 400)
+  }
+
   type AccountSegments = { id: string; segments: KlaviyoSegment[] }
   const accountQuery = supabase
     .from("klaviyo_accounts")
@@ -224,12 +255,10 @@ export async function POST(request: Request) {
     .update({
       selected_segment: selectedSegment,
       fix_typos: Boolean(body.fix_typos),
-      full_mailbox_retries: Number(body.full_mailbox_retries || 0),
-      greylisted_retries: Number(body.greylisted_retries || 0),
-      unexpected_error_retries: Number(body.unexpected_error_retries || 0),
-      mail_server_temporary_error_retries: Number(
-        body.mail_server_temporary_error_retries || 0
-      ),
+      full_mailbox_retries: fullMailboxRetries,
+      greylisted_retries: greylistedRetries,
+      unexpected_error_retries: unexpectedErrorRetries,
+      mail_server_temporary_error_retries: temporaryErrorRetries,
       connection_name: connectionName,
     })
     .eq("id", id) as unknown as ScopedQuery<AccountSegments>

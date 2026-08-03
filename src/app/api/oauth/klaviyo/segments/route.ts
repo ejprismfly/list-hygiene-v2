@@ -12,6 +12,7 @@ import {
   sortAndMapSegments,
   type KlaviyoSegment,
 } from "@/lib/klaviyo-segments"
+import { boundedInteger } from "@/lib/api/validation"
 
 type SegmentAccount = {
   id: string
@@ -106,11 +107,19 @@ export async function GET(request: Request) {
   const { context, supabase } = tenant
   const url = new URL(request.url)
   const id = url.searchParams.get("id")
-  const search = url.searchParams.get("segment_search") || ""
-  const limit = Number(url.searchParams.get("segment_limit") || "10")
+  const search = (url.searchParams.get("segment_search") || "").trim()
+  const limit = boundedInteger(url.searchParams.get("segment_limit"), {
+    fallback: 10,
+    min: 1,
+    max: 100,
+  })
 
   if (!id) {
     return errorJson("account id must be a string", 400)
+  }
+
+  if (search.length > 100 || limit === null) {
+    return errorJson("Segment search or limit is invalid.", 400)
   }
 
   const accountQuery = supabase

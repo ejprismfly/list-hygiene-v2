@@ -8,6 +8,7 @@ import {
   resolveTenantContext,
   type OrganizationRole,
 } from "@/lib/api/tenant"
+import { normalizedEmail } from "@/lib/api/validation"
 import {
   addExistingUserToTeam,
   findTeamMemberProfileByEmail,
@@ -181,7 +182,7 @@ export async function POST(request: Request) {
   }
 
   const body = await readJsonBody(request)
-  const email = typeof body.email === "string" ? body.email.trim() : ""
+  const email = normalizedEmail(body.email)
   const role = body.role || "member"
   const workspaceIds = normalizeWorkspaceIds(body.workspace_ids).length
     ? normalizeWorkspaceIds(body.workspace_ids)
@@ -190,7 +191,7 @@ export async function POST(request: Request) {
       : []
 
   if (!email) {
-    return errorJson("email must be a string.", 400)
+    return errorJson("Enter a valid member email address.", 400)
   }
 
   if (!validManagedMemberRole(role)) {

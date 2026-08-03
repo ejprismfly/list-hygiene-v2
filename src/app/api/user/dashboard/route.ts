@@ -196,10 +196,10 @@ export async function GET(request: Request) {
         continue
       }
 
-      bucket.valid = Number(row.valid || 0)
-      bucket.invalid = Number(row.invalid || 0)
-      bucket.risky = Number(row.risky || 0)
-      bucket.restricted = Number(row.restricted || 0)
+      bucket.valid += Number(row.valid || 0)
+      bucket.invalid += Number(row.invalid || 0)
+      bucket.risky += Number(row.risky || 0)
+      bucket.restricted += Number(row.restricted || 0)
     }
 
     return buckets
@@ -246,7 +246,9 @@ export async function GET(request: Request) {
         continue
       }
 
-      existing.categories[category][String(row.key || "")] = Number(row.count || 0)
+      const key = String(row.key || "")
+      existing.categories[category][key] =
+        Number(existing.categories[category][key] || 0) + Number(row.count || 0)
       existing.sortIdx = Math.min(existing.sortIdx ?? 0, Number(row.sort_idx || 0))
     }
 
@@ -256,24 +258,36 @@ export async function GET(request: Request) {
   async function loadCurrentMonthReport(): Promise<CurrentMonthReport | null> {
     const { data, error } = await scopedCurrentMonthReportQuery()
       .order("updated_at", { ascending: false })
-      .limit(1)
-      .maybeSingle()
 
     if (error) {
       console.warn("Dashboard current month report lookup failed:", error.message)
       return null
     }
 
-    return data
-      ? {
-          total_count: Number(data.total_count || 0),
-          suppressed_count: Number(data.suppressed_count || 0),
-          valid_count: Number(data.valid_count || 0),
-          invalid_count: Number(data.invalid_count || 0),
-          risky_count: Number(data.risky_count || 0),
-          restricted_count: Number(data.restricted_count || 0),
-        }
-      : null
+    if (!data?.length) {
+      return null
+    }
+
+    return data.reduce<CurrentMonthReport>(
+      (total, row) => ({
+        total_count: Number(total.total_count || 0) + Number(row.total_count || 0),
+        suppressed_count:
+          Number(total.suppressed_count || 0) + Number(row.suppressed_count || 0),
+        valid_count: Number(total.valid_count || 0) + Number(row.valid_count || 0),
+        invalid_count: Number(total.invalid_count || 0) + Number(row.invalid_count || 0),
+        risky_count: Number(total.risky_count || 0) + Number(row.risky_count || 0),
+        restricted_count:
+          Number(total.restricted_count || 0) + Number(row.restricted_count || 0),
+      }),
+      {
+        total_count: 0,
+        suppressed_count: 0,
+        valid_count: 0,
+        invalid_count: 0,
+        risky_count: 0,
+        restricted_count: 0,
+      }
+    )
   }
 
   try {

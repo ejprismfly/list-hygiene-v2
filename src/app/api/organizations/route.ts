@@ -196,6 +196,7 @@ export async function POST(request: Request) {
     })
 
   if (memberError) {
+    await supabase.from("organizations").delete().eq("id", organizationId)
     return errorJson(memberError.message)
   }
 
@@ -212,6 +213,7 @@ export async function POST(request: Request) {
     .single()
 
   if (workspaceError || !workspace) {
+    await supabase.from("organizations").delete().eq("id", organizationId)
     return errorJson(workspaceError?.message || "Unable to create workspace")
   }
 
@@ -225,6 +227,7 @@ export async function POST(request: Request) {
     })
 
   if (workspaceMemberError) {
+    await supabase.from("organizations").delete().eq("id", organizationId)
     return errorJson(workspaceMemberError.message)
   }
 

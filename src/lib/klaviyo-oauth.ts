@@ -69,12 +69,20 @@ export async function startKlaviyoOAuth({
   }
 
   const verifier = randomString(64)
+  const state = randomString(48)
   const challenge = await codeChallenge(verifier)
   document.cookie = [
     `klaviyo_pkce_verifier=${verifier}`,
     "Path=/",
     `Max-Age=${10 * 60}`,
     "SameSite=Lax",
+  ].join("; ")
+  document.cookie = [
+    `klaviyo_oauth_state=${state}`,
+    "Path=/",
+    `Max-Age=${10 * 60}`,
+    "SameSite=Lax",
+    ...(window.location.protocol === "https:" ? ["Secure"] : []),
   ].join("; ")
 
   const appHost =
@@ -87,7 +95,7 @@ export async function startKlaviyoOAuth({
     "segments:read segments:write lists:read lists:write profiles:read profiles:write accounts:read subscriptions:write subscriptions:read"
   const authUrl = `https://www.klaviyo.com/oauth/authorize?response_type=code&client_id=${clientId}&redirect_uri=${redirectUri}&scope=${encodeURIComponent(
     scopes
-  )}&code_challenge_method=S256&code_challenge=${challenge}`
+  )}&code_challenge_method=S256&code_challenge=${challenge}&state=${encodeURIComponent(state)}`
 
   if (popup) {
     popup.location.href = authUrl

@@ -103,6 +103,25 @@ test("documented workspace roles SQL matches the Supabase migration source", () 
   assert.match(sql, /can_own_workspace/)
 })
 
+test("runtime hardening migration keeps billing and integrations additive", () => {
+  const sql = read("supabase/migrations/20260801000000_runtime_hardening.sql")
+
+  for (const snippet of [
+    "add column if not exists idempotency_key text",
+    "create table if not exists public.stripe_webhook_events",
+    "create or replace function public.charge_workspace_credit",
+    "for update",
+    "klaviyo_accounts_active_external_account_unique",
+    "klaviyo_accounts_full_mailbox_retries_check",
+    "grant execute on function public.charge_workspace_credit",
+  ]) {
+    assert.match(sql, new RegExp(snippet.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")))
+  }
+
+  assert.doesNotMatch(sql, /drop table/i)
+  assert.doesNotMatch(sql, /truncate table/i)
+})
+
 test("workspace/billing/integration API surface exists in v2 app router", () => {
   const requiredRoutes = [
     "src/app/api/organizations/route.ts",
@@ -1214,7 +1233,8 @@ test("shadcn preset colors stay applied", () => {
   assert.match(globals, /--primary: oklch\(0\.488 0\.243 264\.376\)/)
   assert.match(globals, /--chart-1: oklch\(0\.828 0\.111 230\.318\)/)
   assert.match(globals, /--sidebar-primary: oklch\(0\.546 0\.245 262\.881\)/)
-  assert.match(layout, /Inter\(\{ subsets: \["latin"\], variable: "--font-sans" \}\)/)
+  assert.match(layout, /import "@fontsource-variable\/inter"/)
+  assert.match(globals, /--font-sans: "Inter Variable"/)
 })
 
 test("theme mode switcher lives in profile as a button group", () => {

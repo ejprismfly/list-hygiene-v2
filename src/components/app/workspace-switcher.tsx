@@ -1097,6 +1097,12 @@ export function WorkspaceSwitcher({
                 </DialogDescription>
               </DialogHeader>
 
+              {message && (
+                <p role="status" className="text-sm text-muted-foreground">
+                  {message}
+                </p>
+              )}
+
               <div className="grid gap-6">
                 <section className="grid gap-3 rounded-lg border p-3">
                   <div className="grid gap-2">

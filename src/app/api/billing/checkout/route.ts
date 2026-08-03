@@ -52,7 +52,24 @@ export async function GET(request: Request) {
 
   const stripe = getStripeClient()
   const price = await stripe.prices.retrieve(priceId)
-  const credits = parseInt(price.metadata?.credits || "0", 10)
+  const product =
+    typeof price.product === "string"
+      ? await stripe.products.retrieve(price.product)
+      : price.product
+  if (
+    !price.active ||
+    price.type !== "recurring" ||
+    !product ||
+    product.deleted ||
+    !product.active ||
+    Number(product.metadata?.credits || price.metadata?.credits || 0) <= 0
+  ) {
+    return errorJson("The selected subscription plan is not available.", 400)
+  }
+  const credits = parseInt(
+    product.metadata?.credits || price.metadata?.credits || "0",
+    10
+  )
   const stripeMetadata = {
     user_id: user.id,
     user_email: user.email,

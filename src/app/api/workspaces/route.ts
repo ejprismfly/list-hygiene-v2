@@ -269,46 +269,64 @@ async function directPOST(request: Request) {
     return errorJson("name must be a string up to 80 characters.", 400)
   }
 
-  const activeWorkspace = await queryOne<{ count: number }>(
-    `
-      select count(*)::int
-      from public.workspaces
-      where organization_id = $1::uuid
-        and archived_at is null
-    `,
-    [context.organizationId]
-  )
-  const isDefault = Number(activeWorkspace?.count || 0) === 0
-
   const workspace = await queryOne<WorkspaceRow>(
     `
-      insert into public.workspaces (
-        organization_id,
-        name,
-        slug,
-        created_by_user_id,
-        is_default
+      with new_workspace as (
+        insert into public.workspaces (
+          organization_id,
+          name,
+          slug,
+          created_by_user_id,
+          is_default
+        )
+        values (
+          $1::uuid,
+          $2::text,
+          $3::text,
+          $4::uuid,
+          not exists (
+            select 1 from public.workspaces
+            where organization_id = $1::uuid and archived_at is null
+          )
+        )
+        returning *
+      ), seeded_member as (
+        insert into public.workspace_members (
+          organization_id,
+          workspace_id,
+          user_id,
+          role
+        )
+        select organization_id, id, $4::uuid, 'owner'
+        from new_workspace
+        on conflict (workspace_id, user_id) do update
+          set role = 'owner', updated_at = now()
+        returning workspace_id
+      ), promoted_member as (
+        update public.organization_members
+        set role = 'owner', updated_at = now()
+        where organization_id = $1::uuid and user_id = $4::uuid
+        returning user_id
       )
-      values ($1::uuid, $2::text, $3::text, $4::uuid, $5::boolean)
-      returning
-        id::text,
-        organization_id::text,
-        name,
-        slug,
-        is_default,
-        archived_at::text,
-        created_at::text,
+      select
+        workspace.id::text,
+        workspace.organization_id::text,
+        workspace.name,
+        workspace.slug,
+        workspace.is_default,
+        workspace.archived_at::text,
+        workspace.created_at::text,
         'owner'::text as role,
         false as has_connected_account,
         false as has_active_billing,
-        1 as member_count
+        (select count(*)::int from seeded_member) as member_count
+      from new_workspace workspace
     `,
     [
       context.organizationId,
       name,
       makeSlug(name, "workspace"),
       context.userId,
-      isDefault,
     ]
   )
 
@@ -316,41 +334,8 @@ async function directPOST(request: Request) {
     return errorJson("Unable to create workspace")
   }
 
-  const seededMembers = await queryRows<{ user_id: string }>(
-    `
-      insert into public.workspace_members (
-        organization_id,
-        workspace_id,
-        user_id,
-        role
-      )
-      values (
-        $1::uuid,
-        $2::uuid,
-        $3::uuid,
-        'owner'
-      )
-      on conflict (workspace_id, user_id) do update
-        set role = 'owner',
-            updated_at = now()
-      returning user_id::text
-    `,
-    [context.organizationId, workspace.id, context.userId]
-  )
-
-  await queryRows(
-    `
-      update public.organization_members
-      set role = 'owner',
-          updated_at = now()
-      where organization_id = $1::uuid
-        and user_id = $2::uuid
-    `,
-    [context.organizationId, context.userId]
-  )
-
   return json(
-    { ...workspace, member_count: seededMembers.length },
+    workspace,
     { status: 201 }
   )
 }
@@ -771,14 +756,28 @@ export async function POST(request: Request) {
     )
 
   if (workspaceMemberError) {
+    await supabase
+      .from("workspaces")
+      .delete()
+      .eq("organization_id", context.organizationId)
+      .eq("id", workspace.id)
     return errorJson(workspaceMemberError.message)
   }
 
-  await supabase
+  const { error: organizationRoleError } = await supabase
     .from("organization_members")
     .update({ role: "owner" })
     .eq("organization_id", context.organizationId)
     .eq("user_id", context.user?.id)
+
+  if (organizationRoleError) {
+    await supabase
+      .from("workspaces")
+      .delete()
+      .eq("organization_id", context.organizationId)
+      .eq("id", workspace.id)
+    return errorJson(organizationRoleError.message)
+  }
 
   return json(
     {
