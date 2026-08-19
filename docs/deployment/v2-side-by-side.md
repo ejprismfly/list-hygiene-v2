@@ -144,6 +144,37 @@ Existing v1 rows remain readable because v2 falls back to legacy user-scoped dat
 11. If testing v2 billing webhooks, point a Stripe webhook endpoint at `{NEXT_PUBLIC_APP_HOST}/api/billing/webhook` and use its own `STRIPE_WEBHOOK_SECRET`.
 12. Keep v1 deployed and serving the main hostname as rollback until v2 webhook handling and any remaining route aliases are fully verified.
 
+### Background Stripe Sync (same service)
+
+If you want the Stripe customer backfill to run on the same v2 service, use the built-in sync runner:
+
+```bash
+STRIPE_SYNC_SECRET=<same-secret-as-endpoint>
+STRIPE_SYNC_MODE=loop
+STRIPE_SYNC_INTERVAL_MS=900000
+STRIPE_SYNC_DRY_RUN=0
+STRIPE_SYNC_MAX_WORKSPACES=200
+STRIPE_SYNC_MAX_USERS_PER_WORKSPACE=200
+npm run cron:stripe-sync:loop
+```
+
+For a one-shot run:
+
+```bash
+STRIPE_SYNC_SECRET=<same-secret-as-endpoint>
+STRIPE_SYNC_DRY_RUN=1
+npm run cron:stripe-sync
+```
+
+Run-time options:
+- `STRIPE_SYNC_BASE_URL` (defaults to `NEXT_PUBLIC_APP_HOST` or `http://localhost:3000`)
+- `STRIPE_SYNC_ORGANIZATION_ID`
+- `STRIPE_SYNC_WORKSPACE_ID`
+- `STRIPE_SYNC_WORKSPACE_IDS` (JSON array string)
+- `STRIPE_SYNC_MAX_WORKSPACES`
+- `STRIPE_SYNC_MAX_USERS_PER_WORKSPACE`
+- `STRIPE_SYNC_WORKSPACE_OFFSET`
+
 ## Known Gaps Before Full Cutover
 
 - v2 includes a native Stripe webhook route, but do not switch live Stripe delivery from v1 until the v2 endpoint has been tested with signed events.
