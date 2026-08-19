@@ -21,12 +21,11 @@ with workspace_accounts as (
     user_id,
     workspace_id,
     customer_id,
-    updated_at,
     created_at,
     row_number() over (
       partition by user_id, workspace_id
       order by (case when customer_id is not null then 0 else 1 end) asc,
-        coalesce(updated_at, created_at) desc,
+        created_at desc,
         id desc
     ) as ranking
   from public.stripe_accounts
@@ -37,12 +36,11 @@ legacy_accounts as (
     id,
     user_id,
     customer_id,
-    updated_at,
     created_at,
     row_number() over (
       partition by user_id
       order by (case when customer_id is not null then 0 else 1 end) asc,
-        coalesce(updated_at, created_at) desc,
+        created_at desc,
         id desc
     ) as ranking
   from public.stripe_accounts
