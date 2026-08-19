@@ -8,11 +8,13 @@ import type { Provider } from "@supabase/supabase-js"
 import type { AuthFormState } from "@/lib/auth-form"
 import { normalizedEmail } from "@/lib/api/validation"
 import { getFormString } from "@/lib/auth-form"
+import { ensureStripeCustomerOnRegistration } from "@/lib/billing/customer"
 import {
   isOnboardingPath,
   SIGNUP_ONBOARDING_COOKIE,
   SIGNUP_ONBOARDING_COOKIE_MAX_AGE,
 } from "@/lib/onboarding"
+import { createAdminClient } from "@/lib/supabase/admin"
 import { getSupabaseConfig } from "@/lib/supabase/env"
 import { createClient } from "@/lib/supabase/server"
 import { getOrigin, safeNextPath } from "@/lib/url-safety.cjs"
@@ -300,6 +302,17 @@ export async function signupAction(
     }
 
     shouldRedirect = Boolean(data.session)
+    if (data.user) {
+      try {
+        const adminSupabase = createAdminClient()
+        await ensureStripeCustomerOnRegistration({
+          supabase: adminSupabase,
+          user: data.user,
+        })
+      } catch (error) {
+        console.error("Registration Stripe bootstrap failed:", error)
+      }
+    }
   } catch {
     return {
       status: "error",
