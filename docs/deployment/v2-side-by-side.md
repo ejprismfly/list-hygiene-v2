@@ -175,6 +175,18 @@ Run-time options:
 - `STRIPE_SYNC_MAX_USERS_PER_WORKSPACE`
 - `STRIPE_SYNC_WORKSPACE_OFFSET`
 
+If your deployment platform allows changing the service start command, you can also run both app + loop in one process tree:
+
+```bash
+npm run start:with-stripe-sync
+```
+
+This starts:
+- `npm run cron:stripe-sync:loop`
+- `npm start`
+
+in a single container and shuts the loop down when the app exits.
+
 ## Known Gaps Before Full Cutover
 
 - v2 includes a native Stripe webhook route, but do not switch live Stripe delivery from v1 until the v2 endpoint has been tested with signed events.

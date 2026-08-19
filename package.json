@@ -10,6 +10,7 @@
     "test": "node --test",
     "cron:stripe-sync": "node scripts/stripe-customer-sync.mjs",
     "cron:stripe-sync:loop": "STRIPE_SYNC_MODE=loop node scripts/stripe-customer-sync.mjs",
+    "start:with-stripe-sync": "./scripts/start-with-stripe-sync.sh",
     "env:check": "node scripts/check-env.mjs",
     "impersonate": "node scripts/impersonate.mjs"
   },
