@@ -164,8 +164,10 @@ async function listWorkspaceIds(params: {
   organizationId: string | null
   workspaceId: string | null
   maxWorkspaces: number
+  workspaceOffset: number
 }) {
-  const { supabase, organizationId, workspaceId, maxWorkspaces } = params
+  const { supabase, organizationId, workspaceId, maxWorkspaces, workspaceOffset } =
+    params
 
   let query = supabase
     .from("workspaces")
@@ -182,6 +184,7 @@ async function listWorkspaceIds(params: {
 
   const { data, error } = await query
     .order("created_at", { ascending: true })
+    .range(workspaceOffset, workspaceOffset + maxWorkspaces - 1)
     .limit(maxWorkspaces)
 
   if (error) {
@@ -328,6 +331,13 @@ export async function POST(request: Request) {
     (body as Record<string, unknown>).dry_run ||
       (body as Record<string, unknown>).dryRun
   )
+  const workspaceOffset = parseNumber(
+    (body as Record<string, unknown>).workspace_offset,
+    0,
+    0,
+    100000
+  )
+
   const maxWorkspaces = parseNumber(
     (body as Record<string, unknown>).max_workspaces,
     DEFAULT_MAX_WORKSPACE_LIMIT,
@@ -364,6 +374,7 @@ export async function POST(request: Request) {
         organizationId: requestedOrganizationId || null,
         workspaceId: requestedWorkspaceId,
         maxWorkspaces,
+        workspaceOffset,
       })
 
       if (!list.length) {
@@ -381,6 +392,7 @@ export async function POST(request: Request) {
         organizationId: requestedOrganizationId,
         workspaceId: null,
         maxWorkspaces,
+        workspaceOffset,
       })
       rows.forEach((row) => {
         if (!workspaceIds.length || workspaceIds.includes(row.workspaceId)) {
@@ -393,6 +405,7 @@ export async function POST(request: Request) {
         organizationId: null,
         workspaceId: null,
         maxWorkspaces,
+        workspaceOffset,
       })
       rows.forEach((row) => {
         if (!workspaceIds.length || workspaceIds.includes(row.workspaceId)) {
@@ -548,6 +561,11 @@ export async function POST(request: Request) {
         skipped,
         failed,
       },
+      has_more_workspaces: !requestedWorkspaceId && targets.length === maxWorkspaces,
+      next_workspace_offset:
+        !requestedWorkspaceId && targets.length === maxWorkspaces
+          ? workspaceOffset + maxWorkspaces
+          : null,
       results,
     })
   } catch (error) {
