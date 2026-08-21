@@ -545,7 +545,7 @@ test("auth pages follow the shadcn login-02 two-column composition", () => {
   assert.match(resetPasswordForm, /className="w-full"/)
 })
 
-test("page navigation avoids duplicate workspace bootstrap and remote auth checks", () => {
+test("page navigation avoids duplicate workspace bootstrap and insecure auth reads", () => {
   const appSession = read("src/lib/app-session.ts")
   const proxy = read("src/lib/supabase/proxy.ts")
   const tenant = read("src/lib/api/tenant.ts")
@@ -553,10 +553,11 @@ test("page navigation avoids duplicate workspace bootstrap and remote auth check
   const workspaceGate = read("src/components/app/workspace-required-gate.tsx")
   const workspaceSwitcher = read("src/components/app/workspace-switcher.tsx")
 
-  assert.match(appSession, /auth\.getSession\(\)/)
-  assert.doesNotMatch(appSession, /auth\.getUser\(\)/)
-  assert.match(proxy, /auth\.getSession\(\)/)
+  assert.match(appSession, /auth\.getUser\(\)/)
+  assert.doesNotMatch(appSession, /auth\.getSession\(\)/)
+  assert.match(proxy, /auth\.getClaims\(\)/)
   assert.doesNotMatch(proxy, /auth\.getUser\(\)/)
+  assert.doesNotMatch(proxy, /auth\.getSession\(\)/)
   assert.match(tenant, /auth\.getUser\(\)/)
   assert.match(workspaceClientData, /organizationCache\.pending/)
   assert.match(workspaceClientData, /workspaceCaches/)
@@ -1382,6 +1383,42 @@ test("login and logout clear previous user client state", () => {
   assert.doesNotMatch(desktopShell, /LogoutForm/)
   assert.doesNotMatch(mobileShell, /LogoutForm/)
   assert.match(profileContent, /<LogoutForm \/>/)
+})
+
+test("signup provisions a workspace before bootstrapping Stripe", () => {
+  const authActions = read("src/app/(auth)/actions.ts")
+  const organizationsRoute = read("src/app/api/organizations/route.ts")
+  const workspacesRoute = read("src/app/api/workspaces/route.ts")
+  const appSession = read("src/lib/app-session.ts")
+  const supabaseProxy = read("src/lib/supabase/proxy.ts")
+  const provisioningMigration = read(
+    "supabase/migrations/20260821000000_restore_default_tenant_provisioning.sql"
+  )
+
+  assert.match(
+    authActions,
+    /getOrCreateDefaultOrganization\([\s\S]*ensureStripeCustomerOnRegistration\(/
+  )
+  assert.match(organizationsRoute, /databaseError\.code !== "42883"/)
+  assert.match(organizationsRoute, /getOrCreateDefaultOrganization/)
+  assert.match(workspacesRoute, /databaseError\.code !== "42883"/)
+  assert.match(workspacesRoute, /getOrCreateDefaultOrganization/)
+  assert.match(appSession, /supabase\.auth\.getUser\(\)/)
+  assert.doesNotMatch(appSession, /supabase\.auth\.getSession\(\)/)
+  assert.match(supabaseProxy, /supabase\.auth\.getClaims\(\)/)
+  assert.doesNotMatch(supabaseProxy, /supabase\.auth\.getSession\(\)/)
+  assert.match(
+    provisioningMigration,
+    /create or replace function public\.ensure_default_organization_workspace/
+  )
+  assert.match(
+    provisioningMigration,
+    /create trigger on_auth_user_created_list_hygiene/
+  )
+  assert.doesNotMatch(
+    provisioningMigration,
+    /select public\.ensure_default_organization_workspace\(id, email/
+  )
 })
 
 test("nav profile entry lives at the bottom and menu items have tooltips", () => {

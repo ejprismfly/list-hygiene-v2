@@ -154,7 +154,7 @@ export function makeSlug(value: string, fallback: string) {
 
 export async function getOrCreateDefaultOrganization(
   supabase: SupabaseClient,
-  user: User
+  user: { id: string; email?: string | null }
 ): Promise<
   | {
       ok: true

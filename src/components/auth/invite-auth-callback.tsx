@@ -85,10 +85,10 @@ export function InviteAuthCallback() {
         }
       } else {
         const {
-          data: { session },
-        } = await supabase.auth.getSession()
+          data: { user },
+        } = await supabase.auth.getUser()
 
-        if (!session) {
+        if (!user) {
           throw new Error("Invite session is missing or expired.")
         }
       }

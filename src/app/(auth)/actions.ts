@@ -6,6 +6,9 @@ import { redirect } from "next/navigation"
 import type { Provider } from "@supabase/supabase-js"
 
 import type { AuthFormState } from "@/lib/auth-form"
+import {
+  getOrCreateDefaultOrganization,
+} from "@/lib/api/tenant"
 import { normalizedEmail } from "@/lib/api/validation"
 import { getFormString } from "@/lib/auth-form"
 import { ensureStripeCustomerOnRegistration } from "@/lib/billing/customer"
@@ -305,6 +308,15 @@ export async function signupAction(
     if (data.user) {
       try {
         const adminSupabase = createAdminClient()
+        const tenant = await getOrCreateDefaultOrganization(
+          adminSupabase,
+          data.user
+        )
+
+        if (!tenant.ok) {
+          throw new Error(tenant.error)
+        }
+
         await ensureStripeCustomerOnRegistration({
           supabase: adminSupabase,
           user: data.user,

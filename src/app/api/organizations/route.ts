@@ -47,10 +47,25 @@ async function getOrganizationsFromPostgres(user: {
   )
 
   if (!organizations.length) {
-    await queryRows(
-      "select public.ensure_default_organization_workspace($1::uuid, $2::text, '{}'::jsonb)",
-      [user.id, user.email || ""]
-    )
+    try {
+      await queryRows(
+        "select public.ensure_default_organization_workspace($1::uuid, $2::text, '{}'::jsonb)",
+        [user.id, user.email || ""]
+      )
+    } catch (error) {
+      const databaseError = error as { code?: string }
+      if (databaseError.code !== "42883") {
+        throw error
+      }
+
+      const created = await getOrCreateDefaultOrganization(
+        await getDataClient(),
+        user
+      )
+      if (!created.ok) {
+        throw new Error(created.error)
+      }
+    }
 
     organizations = await queryRows<OrganizationRow>(
       `
