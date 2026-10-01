@@ -58,8 +58,12 @@ Browser tests can use `AUTH_TEST_CHROMIUM` for an installed Chromium executable.
 
 Additive migrations `20261001001000`, `20261001002000`, and `20261001002500` were applied to `lhhgzyvqhhffqeaglrdp` with atomic migration history and checksum verification. The stricter RLS/grant migration has not been applied, and the candidate web code is not yet deployed.
 
-A real signup was submitted through the currently deployed public form to `efren+qatest1790850778245@prismfly.com`. It created an unconfirmed account and displayed the confirmation prompt without errors. Inbox receipt and the delivered confirmation link are still awaiting the inbox owner's response. This account is intentionally retained for that test; its password and cookie state are held privately outside the repository.
+A real signup was submitted through the currently deployed public form to `efren+qatest1790850778245@prismfly.com`. It created an unconfirmed account and displayed the confirmation prompt without errors. The inbox owner confirmed receipt and supplied the delivered link. The account was already confirmed when the test began, consistent with the link having been opened while copying. Reusing the delivered link did not establish a session. A subsequent live password login reached onboarding and authenticated `/api/user/info` returned the expected user. First-use delivery-link acceptance was not directly observed by the tester. This account is intentionally retained for invitation tests; its password and cookie state are held privately outside the repository.
 
 ## Remaining release evidence
 
-Real email delivery and acceptance, SMTP/template/allowlist inspection, and final production deployment/RLS enforcement remain release gates. The implementation and local tests must not be described as a completed live email audit until those checks pass.
+A candidate production build using the real provider passed generated-link signup confirmation, authenticated API access, confirmation-token reuse rejection, password login, recovery grants, raw-password preservation, global session revocation, old-cookie rejection and destination preservation. These generated-link tests do not prove email delivery. Browser routing required a fresh navigation after canonical redirects to avoid accidentally loading the current production UI; background-request teardown required explicit cleanup of disposable fixtures.
+
+The candidate invitation API returned 202 with `supabase_auth` delivery and pending status for a new controlled inbox alias. Inbox receipt, password setup and explicit acceptance are awaiting the inbox owner.
+
+Directly observed first-use email-link acceptance, recovery/invitation email flows, SMTP/template/allowlist inspection, and final production deployment/RLS enforcement remain release gates. The implementation and local tests must not be described as a completed live email audit until those checks pass.
