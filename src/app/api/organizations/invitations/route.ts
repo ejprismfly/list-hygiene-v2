@@ -87,7 +87,13 @@ async function mutate(request: Request, patch: boolean) {
       if (!found.rowCount) {
         const redirectTo = buildInviteAuthRedirectUrl({ configuredHost: process.env.NEXT_PUBLIC_APP_HOST, requestUrl: request.url, token })
         const { error } = await createAdminClient().auth.admin.inviteUserByEmail(recipient, { redirectTo })
-        if (error) throw new InvitationError("Unable to send invitation email. Please try again later.", 503)
+        if (error) {
+          console.warn("Invitation email delivery failed", { code: error.code, status: error.status })
+          if (error.status === 429) {
+            throw new InvitationError("The invitation email limit has been reached. Please try again later.", 429)
+          }
+          throw new InvitationError("Unable to send invitation email. Please try again later.", 503)
+        }
         emailDelivery = "supabase_auth"
       }
       const { token_hash: _hash, ...safe } = rows[0]
