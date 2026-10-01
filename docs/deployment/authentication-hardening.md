@@ -21,7 +21,7 @@ Candidate branch: `fix/authentication-hardening`. Baseline: `dfc13e03d2f1859e2af
 
 `AUTH_SECURITY_SECRET` may be set to a dedicated persistent random secret; otherwise HMAC identifiers use the existing service-role secret. Leave `AUTH_TRUST_PROXY` unset until ingress is confirmed to overwrite `cf-connecting-ip` and prevent direct origin access. Without this flag, a conservative shared ingress bucket plus independent recipient limits apply; client-provided forwarded headers cannot evade limits.
 
-Supabase management access is still needed to inspect SMTP, templates, URL allowlists, native Auth limits and password policy. The service-role key is insufficient to read those management settings. Preserve the password-only provider configuration and required email confirmation.
+Supabase management access verified the live project and configuration. Email confirmation is required, anonymous users are disabled, and the provider password minimum now matches the app’s eight characters. Branded subjects and content are published. Custom SMTP still requires the actual Mailgun SMTP password; management responses expose a secret fingerprint, which cannot be reused as a credential. Preserve the password-only app configuration and required email confirmation.
 
 ## Release sequence
 
@@ -58,7 +58,7 @@ Browser tests can use `AUTH_TEST_CHROMIUM` for an installed Chromium executable.
 
 The first release build exhausted the 2 GB deployment host's RAM and exited with code 137; kernel logs confirmed the build process was killed. The prior production app recovered and its real-account login/API check passed. Production builds now use Webpack with a 768 MB JavaScript heap, one worker, and Webpack memory optimizations. The host has a persistent 2 GB swap fallback. This build completed locally, and TypeScript, lint and the unit suite passed again. Verify the new deployment and runtime before enabling the security migration.
 
-Additive migrations `20261001001000`, `20261001002000`, and `20261001002500` were applied to `lhhgzyvqhhffqeaglrdp` with atomic migration history and checksum verification. The stricter RLS/grant migration has not been applied, and the candidate web code is not yet deployed.
+Additive migrations `20261001001000`, `20261001002000`, and `20261001002500` were applied to `lhhgzyvqhhffqeaglrdp` with atomic migration history and checksum verification. The compatible web release `e455782` is deployed (Next.js 16.3.6). Migration `20261001003000` was then applied transactionally with atomic checksum/history verification. All 24 public tables now enforce row security.
 
 A real signup was submitted through the currently deployed public form to `efren+qatest1790850778245@prismfly.com`. It created an unconfirmed account and displayed the confirmation prompt without errors. The inbox owner confirmed receipt and supplied the delivered link. The account was already confirmed when the test began, consistent with the link having been opened while copying. Reusing the delivered link did not establish a session. A subsequent live password login reached onboarding and authenticated `/api/user/info` returned the expected user. First-use delivery-link acceptance was not directly observed by the tester. This account is intentionally retained for invitation tests; its password and cookie state are held privately outside the repository.
 
@@ -72,4 +72,22 @@ Using a generated no-email recovery link for the invited account, password setup
 
 Further invitation sends are blocked by Supabase Auth: HTTP 429, `over_email_send_rate_limit`. The candidate API rolled back the invitation on delivery failure. It now reports provider throttling as HTTP 429 with a sanitized message and logs only provider code/status for diagnosis. Supabase management access is required to inspect SMTP and the effective email limit; the service-role key cannot inspect those settings.
 
-Directly observed first-use email-link acceptance, complete recovery/invitation email flows, SMTP/template/allowlist inspection, and final production deployment/RLS enforcement remain release gates. The implementation and local tests must not be described as a completed live email audit until those checks pass.
+Complete delivered-email signup/recovery/invitation flow evidence and custom SMTP remain outstanding. The deployed app and database protections have passed real-provider generated-link tests; these are distinct from email-delivery evidence. Do not describe the live email audit as complete until fresh delivered links and the production sender are verified.
+
+## Verified live release and operations
+
+The deployed App V2 configuration and all 15 Core/Reports applications target `lhhgzyvqhhffqeaglrdp`. The live database connection matches that project, and the retained controlled signup account is present. Project names alone were not used to choose the database. No other database was migrated or changed.
+
+Before the security change, a private schema/grant/policy/index snapshot was saved. Supabase reported today’s managed backup as completed at 08:15:59 UTC. The applied security migration changes access rules, grants and functions; it does not delete customer rows. Audit cleanup is limited to accounts and tenant records created by the audit. No queues were cleared or failed customer jobs replayed.
+
+Post-release checks passed: first-use generated confirmation, reuse rejection, real-provider login, recovery/password grants, global session revocation, old-cookie rejection, and destination preservation. Generated invitation setup required a fresh login; recipient membership remained absent until explicit acceptance, then exactly one membership was created. Existing-user invitations remained pending and supplied a manual link. Cross-origin cookie-authenticated mutations were rejected.
+
+After RLS was enabled, anonymous REST and privileged RPCs were denied; same-user and same-workspace reads worked; wrong-user/wrong-workspace reads returned no rows; revoked JWTs lost direct database access. A service-role read/write probe passed inside a rolled-back transaction. Authenticated user-info, workspace, organization, member, invitation, dashboard, integration, billing and billing-plan read APIs all returned 200.
+
+The Stripe partial indexes are valid and ready. The live release uses plain inserts plus unique-conflict recovery. A service-role transaction verified a successful insert and expected duplicate error 23505, then rolled back all probe writes. No 42P10 inference error occurred. Automatic approval review rejected a separate persistent Stripe customer-creation POST test, so it was replaced with this reversible database check; no external billing objects were created by it.
+
+The missing `period` queue consumer was added in Dokploy on the existing worker host, with one replica and a 256 MiB memory limit. All 14 used queues now have a registered worker, and all 15 applications have valid service-role access after RLS. Core and Reports logs show job completions and no new database authorization failures. Historical failed jobs remain available for review; these counts are not evidence of current failures.
+
+The listener’s stale Realtime connection was repaired by restarting only that service. Its subscription then succeeded, with no disconnects in the follow-up sample; polling catch-up and stable job IDs remain in place. The Core/Reports source branches adding explicit credential validation remain separate from the deployed worker sources; live credential validity was checked directly.
+
+Invitation password setup and explicit acceptance also passed again after RLS was enabled. The final queue sample showed a worker on every used queue, no new authorization errors, and active validation work with job completions. Listener Realtime subscription was restored and showed no disconnects in the follow-up sample. Historical failed jobs were retained.
