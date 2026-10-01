@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation"
 
 import { getSupabaseConfig } from "@/lib/supabase/env"
-import { createClient } from "@/lib/supabase/server"
+import { getVerifiedSession } from "@/lib/auth-session"
 
 export type AppUser = {
   id: string
@@ -11,6 +11,7 @@ export type AppUser = {
 
 export async function getAppUserOrRedirect(): Promise<AppUser> {
   if (!getSupabaseConfig()) {
+    if (process.env.NODE_ENV === "production") redirect("/login")
     return {
       id: "preview-user",
       email: "efren@prismfly.com",
@@ -18,10 +19,7 @@ export async function getAppUserOrRedirect(): Promise<AppUser> {
     }
   }
 
-  const supabase = await createClient()
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
+  const user = (await getVerifiedSession())?.user
 
   if (!user) {
     redirect("/login")

@@ -1,12 +1,10 @@
 import type { SupabaseClient, User } from "@supabase/supabase-js"
 
 import { createAdminClient } from "@/lib/supabase/admin"
-import { createClient } from "@/lib/supabase/server"
+import { getVerifiedSession } from "@/lib/auth-session"
 import {
   WORKSPACE_ID_COOKIE,
   WORKSPACE_ORGANIZATION_COOKIE,
-  buildDefaultOrganizationName,
-  buildDefaultOrganizationSlug,
 } from "@/lib/workspace-utils"
 
 export type OrganizationRole = "owner" | "admin" | "member"
@@ -41,11 +39,11 @@ export function isFromPlasmicStudio(request: Request) {
 }
 
 export function orgWorkspacesEnabled() {
-  return process.env.ORG_WORKSPACES_ENABLED !== "false"
+  return process.env.NODE_ENV === "production" || process.env.ORG_WORKSPACES_ENABLED !== "false"
 }
 
 export function orgContextRequired() {
-  return process.env.ORG_CONTEXT_REQUIRED === "true"
+  return process.env.NODE_ENV === "production" || process.env.ORG_CONTEXT_REQUIRED === "true"
 }
 
 export function canManageOrganization(role: OrganizationRole | null) {
@@ -77,12 +75,7 @@ export function canDeleteIntegrations(role: OrganizationRole | null) {
 }
 
 export async function getCurrentUser() {
-  const supabase = await createClient()
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
-
-  return user
+  return (await getVerifiedSession())?.user || null
 }
 
 export function getRequestStringParam(request: Request, name: string) {
@@ -117,7 +110,9 @@ export function getRequestStringParam(request: Request, name: string) {
   const cookies = cookieHeader.split(";").map((cookie) => cookie.trim())
   const cookie = cookies.find((value) => value.startsWith(`${cookieName}=`))
 
-  return cookie ? decodeURIComponent(cookie.slice(cookieName.length + 1)) : null
+  try {
+    return cookie ? decodeURIComponent(cookie.slice(cookieName.length + 1)) : null
+  } catch { return null }
 }
 
 export function hasTenantRequestScope(request: Request) {
@@ -132,11 +127,7 @@ export function shouldUseTenantContext(request: Request) {
 }
 
 export async function getDataClient() {
-  try {
-    return createAdminClient()
-  } catch {
-    return await createClient()
-  }
+  return createAdminClient()
 }
 
 function slugify(value: string) {
@@ -178,137 +169,21 @@ export async function getOrCreateDefaultOrganization(
     }
   | { ok: false; status: number; error: string }
 > {
-  const { data: profile } = await supabase
-    .from("user_details")
-    .select("name, email")
-    .eq("user_id", user.id)
-    .maybeSingle()
-
-  const { data: organization, error: organizationError } = await supabase
-    .from("organizations")
-    .upsert(
-      {
-        legacy_user_id: user.id,
-        owner_user_id: user.id,
-        name: buildDefaultOrganizationName({
-          profileName:
-            typeof profile?.name === "string" ? profile.name : undefined,
-          profileEmail:
-            typeof profile?.email === "string" ? profile.email : undefined,
-          userEmail: user.email,
-        }),
-        slug: buildDefaultOrganizationSlug(user.id),
-      },
-      { onConflict: "legacy_user_id" }
-    )
-    .select(selectOrganization)
-    .single()
-
-  if (organizationError || !organization) {
-    return {
-      ok: false,
-      status: 500,
-      error: organizationError?.message || "Unable to create organization",
-    }
-  }
-
-  const organizationId = String(organization.id)
-
-  const { error: memberError } = await supabase
-    .from("organization_members")
-    .upsert(
-      {
-        organization_id: organizationId,
-        user_id: user.id,
-        role: "owner",
-        status: "active",
-      },
-      { onConflict: "organization_id,user_id" }
-    )
-
-  if (memberError) {
-    return { ok: false, status: 500, error: memberError.message }
-  }
-
-  const { data: existingWorkspace, error: workspaceLookupError } =
-    await supabase
-      .from("workspaces")
-      .select(selectWorkspace)
-      .eq("organization_id", organizationId)
-      .eq("slug", "default")
-      .maybeSingle()
-
-  if (workspaceLookupError) {
-    return { ok: false, status: 500, error: workspaceLookupError.message }
-  }
-
-  let workspace = existingWorkspace
-  if (!workspace) {
-    const { data: createdWorkspace, error: workspaceError } = await supabase
-      .from("workspaces")
-      .insert({
-        organization_id: organizationId,
-        name: "Default Workspace",
-        slug: "default",
-        created_by_user_id: user.id,
-        legacy_user_id: user.id,
-        is_default: true,
-      })
-      .select(selectWorkspace)
-      .single()
-
-    if (workspaceError || !createdWorkspace) {
-      return {
-        ok: false,
-        status: 500,
-        error: workspaceError?.message || "Unable to create workspace",
-      }
-    }
-    workspace = createdWorkspace
-  }
-
-  const { error: workspaceMemberError } = await supabase
-    .from("workspace_members")
-    .upsert(
-      {
-        organization_id: organizationId,
-        workspace_id: String(workspace.id),
-        user_id: user.id,
-        role: "owner",
-      },
-      { onConflict: "workspace_id,user_id" }
-    )
-
-  if (workspaceMemberError) {
-    return { ok: false, status: 500, error: workspaceMemberError.message }
-  }
-
-  return {
-    ok: true,
-    organization: {
-      id: organizationId,
-      name: String(organization.name),
-      slug: typeof organization.slug === "string" ? organization.slug : null,
-      owner_user_id: String(organization.owner_user_id),
-      created_at: String(organization.created_at),
-      role: "owner",
-    },
-    workspace: {
-      id: String(workspace.id),
-      organization_id: String(workspace.organization_id),
-      name: String(workspace.name),
-      slug: typeof workspace.slug === "string" ? workspace.slug : null,
-      is_default:
-        typeof workspace.is_default === "boolean"
-          ? workspace.is_default
-          : null,
-      archived_at:
-        typeof workspace.archived_at === "string"
-          ? workspace.archived_at
-          : null,
-      created_at: String(workspace.created_at),
-    },
-  }
+  const { error: provisionError } = await supabase.rpc("ensure_default_organization_workspace", {
+    p_user_id: user.id, p_email: user.email || "", p_metadata: {},
+  })
+  if (provisionError) return { ok: false, status: 503, error: "Organization setup unavailable" }
+  const { data: organization, error } = await supabase.from("organizations")
+    .select(selectOrganization).eq("legacy_user_id", user.id).maybeSingle()
+  if (error || !organization) return { ok: false, status: 503, error: "Organization setup unavailable" }
+  const { data: membership, error: membershipError } = await supabase.from("organization_members")
+    .select("role,status").eq("organization_id", organization.id).eq("user_id", user.id).maybeSingle()
+  if (membershipError) return { ok: false, status: 503, error: "Organization access unavailable" }
+  if (membership?.status !== "active") return { ok: false, status: 403, error: "Organization access denied" }
+  const { data: workspace, error: workspaceError } = await supabase.from("workspaces")
+    .select(selectWorkspace).eq("organization_id", organization.id).eq("slug", "default").is("archived_at", null).maybeSingle()
+  if (workspaceError || !workspace) return { ok: false, status: 403, error: "Workspace access required" }
+  return { ok: true, organization: { ...organization, role: membership.role as OrganizationRole }, workspace }
 }
 
 export async function resolveTenantContext(
@@ -381,7 +256,7 @@ export async function resolveTenantContext(
       }
     }
 
-    return { ok: false, status: 500, error: membershipError.message }
+    return { ok: false, status: 503, error: "Organization access unavailable" }
   }
 
   if (!activeMemberships.length) {
@@ -396,7 +271,7 @@ export async function resolveTenantContext(
 
     activeMemberships.push({
       organization_id: created.organization.id,
-      role: "owner",
+      role: created.organization.role,
       status: "active",
       created_at: created.organization.created_at,
     })
@@ -440,7 +315,7 @@ export async function resolveTenantContext(
 
   const membershipWorkspaceIds = Array.from(workspaceRoleById.keys())
   const useOrganizationRoleFallback =
-    !membershipWorkspaceIds.length && canManageOrganization(organizationRole)
+    false
 
   if (membershipWorkspaceIds.length) {
     workspaceQuery = workspaceQuery.in("id", membershipWorkspaceIds)

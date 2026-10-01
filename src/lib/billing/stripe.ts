@@ -34,6 +34,28 @@ export async function createStripeCustomer(
   idempotencyKey?: string
 ) {
   const stripe = getStripeClient()
+  if (metadata.workspace_id) {
+    if (!/^[0-9a-f-]{36}$/i.test(metadata.workspace_id)) {
+      throw new Error("A valid workspace ID is required for customer creation.")
+    }
+    // Recover a prior Stripe create whose database write failed. The key below
+    // still protects concurrent first-time requests while search is catching up.
+    const existing = await stripe.customers.search({
+      query: `metadata['workspace_id']:'${metadata.workspace_id}'`,
+      limit: 2,
+    })
+    if (existing.data.length > 1) {
+      throw new Error("Multiple Stripe customers exist for this workspace; reconcile them before retrying.")
+    }
+    if (existing.data[0]) {
+      const customer = existing.data[0]
+      if (customer.metadata.organization_id && metadata.organization_id &&
+          customer.metadata.organization_id !== metadata.organization_id) {
+        throw new Error("Stripe customer organization does not match the workspace.")
+      }
+      return customer
+    }
+  }
   return await stripe.customers.create(
     { email, metadata },
     idempotencyKey ? { idempotencyKey } : undefined

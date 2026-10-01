@@ -1,3 +1,4 @@
+import { timingSafeEqual } from "node:crypto"
 import type { SupabaseClient } from "@supabase/supabase-js"
 
 import { createAdminClient } from "@/lib/supabase/admin"
@@ -156,7 +157,7 @@ function hasSyncAuth(request: Request) {
   const bearer = header.startsWith("Bearer ") ? header.slice(7).trim() : header
   const token = request.headers.get("x-stripe-sync-secret") || bearer
 
-  return Boolean(token && token === secret)
+  return Boolean(token && Buffer.byteLength(token) === Buffer.byteLength(secret) && timingSafeEqual(Buffer.from(token), Buffer.from(secret)))
 }
 
 async function listWorkspaceIds(params: {

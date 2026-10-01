@@ -40,3 +40,7 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Browser authentication test artifacts (may contain session data)
+/playwright-report
+/test-results

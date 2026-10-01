@@ -597,46 +597,6 @@ export function WorkspaceSwitcher({
       workspace_ids: [selectedWorkspace.id],
     }
     try {
-      const memberResponse = await fetch("/api/organizations/members", {
-        method: "POST",
-        headers: headersFor(organizationId, selectedId),
-        body: JSON.stringify(payload),
-      })
-      const memberData = await memberResponse.json()
-
-      if (memberResponse.ok) {
-        const nextMember = memberData as WorkspaceMember
-        setInviteEmail("")
-        setInviteRole("member")
-        setLastInviteLink("")
-        setMembers((current) => {
-          const existingIndex = current.findIndex(
-            (member) => member.user_id === nextMember.user_id
-          )
-          if (existingIndex === -1) {
-            return [nextMember, ...current]
-          }
-
-          return current.map((member, index) =>
-            index === existingIndex ? nextMember : member
-          )
-        })
-        setInviteStatusMessage(
-          `${email} added to ${workspaceLabel(selectedWorkspace.name)}.`
-        )
-        trackTeamEvent(TRACKING_EVENTS.team.memberAdded, trackingScope(), {
-          member_role: nextMember.role,
-          delivery_type: "existing_user",
-        })
-        return
-      }
-
-      if (memberResponse.status !== 404) {
-        setInviteStatusMessage(memberData.error || "Unable to add member.")
-        setInviteStatusIsError(true)
-        return
-      }
-
       const response = await fetch("/api/organizations/invitations", {
         method: "POST",
         headers: headersFor(organizationId, selectedId),
@@ -654,36 +614,6 @@ export function WorkspaceSwitcher({
 
       setInviteEmail("")
       setInviteRole("member")
-      if (data.member) {
-        const nextMember = data.member
-        setLastInviteLink("")
-        setMembers((current) => {
-          const existingIndex = current.findIndex(
-            (member) => member.user_id === nextMember.user_id
-          )
-          if (existingIndex === -1) {
-            return [nextMember, ...current]
-          }
-
-          return current.map((member, index) =>
-            index === existingIndex ? nextMember : member
-          )
-        })
-        setInvitations((current) =>
-          current.filter(
-            (invitation) => invitation.email.toLowerCase() !== email.toLowerCase()
-          )
-        )
-        setInviteStatusMessage(
-          `${email} added to ${workspaceLabel(selectedWorkspace.name)}.`
-        )
-        trackTeamEvent(TRACKING_EVENTS.team.memberAdded, trackingScope(), {
-          member_role: nextMember.role,
-          delivery_type: data.email_delivery || "existing_user",
-        })
-        return
-      }
-
       setLastInviteLink(data.invite_url || "")
       setInvitations((current) => {
         const invitation = data as WorkspaceInvitation

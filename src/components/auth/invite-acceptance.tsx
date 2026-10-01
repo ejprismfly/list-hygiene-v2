@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useMemo, useState } from "react"
 import Link from "next/link"
 import { AlertCircle, CheckCircle2, Loader2, UserPlus } from "lucide-react"
 
@@ -61,7 +61,7 @@ export function InviteAcceptance({
   loginAgainAfterAccept = false,
 }: InviteAcceptanceProps) {
   const [status, setStatus] = useState<AcceptStatus>(
-    token && userEmail ? "loading" : "idle"
+    "idle"
   )
   const [message, setMessage] = useState("")
   const invitePath = useMemo(() => {
@@ -71,14 +71,14 @@ export function InviteAcceptance({
     return new URLSearchParams({ next: invitePath }).toString()
   }, [invitePath])
 
-  useEffect(() => {
+  async function acceptInvitation() {
     if (!token || !userEmail) {
       return
     }
 
-    let cancelled = false
+    const cancelled = false
 
-    async function acceptInvitation() {
+
       setStatus("loading")
       trackAuthEvent(TRACKING_EVENTS.auth.inviteAcceptStarted, {
         login_again_required: loginAgainAfterAccept,
@@ -137,14 +137,7 @@ export function InviteAcceptance({
           })
         }
       }
-    }
-
-    acceptInvitation()
-
-    return () => {
-      cancelled = true
-    }
-  }, [loginAgainAfterAccept, token, userEmail])
+  }
 
   if (!token) {
     return (
@@ -187,6 +180,10 @@ export function InviteAcceptance({
         }
       />
     )
+  }
+
+  if (status === "idle") {
+    return <AuthSuccessState icon={<UserPlus className="size-12" />} title="Accept Invite" description={<p>Accept this workspace invitation as {userEmail}.</p>} footer={<Button onClick={acceptInvitation}>Accept invitation</Button>} />
   }
 
   if (status === "loading") {

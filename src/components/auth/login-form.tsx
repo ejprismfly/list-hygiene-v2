@@ -14,7 +14,7 @@ import { clearPreviousUserClientData } from "@/lib/auth-client-state"
 import { AUTH_FORM_INITIAL_STATE } from "@/lib/auth-form"
 import { trackAuthEvent, TRACKING_EVENTS } from "@/lib/tracking-events"
 
-export function LoginForm({ nextPath = "/dashboard" }: { nextPath?: string }) {
+export function LoginForm({ nextPath = "/dashboard", notice }: { nextPath?: string; notice?: string }) {
   const [state, formAction, pending] = useActionState(
     loginAction,
     AUTH_FORM_INITIAL_STATE
@@ -29,7 +29,7 @@ export function LoginForm({ nextPath = "/dashboard" }: { nextPath?: string }) {
       title="Login"
       loading={pending}
       loadingLabel="Logging in"
-      message={<AuthMessage state={state} />}
+      message={<AuthMessage state={state.status === "idle" && notice ? { status: "error", message: notice } : state} />}
       footer={
         <>
           <span className="text-muted-foreground">New here?</span>
@@ -73,13 +73,12 @@ export function LoginForm({ nextPath = "/dashboard" }: { nextPath?: string }) {
             id="password"
             name="password"
             autoComplete="current-password"
-            minLength={8}
             required
           />
         </div>
         <div className="flex justify-end">
           <Link
-            href="/forgot-password"
+            href={`/forgot-password?${new URLSearchParams({ next: nextPath })}`}
             className="text-sm font-semibold text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
           >
             Reset Password

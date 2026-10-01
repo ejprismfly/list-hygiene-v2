@@ -3,7 +3,7 @@ import { cookies } from "next/headers"
 
 import { requireSupabaseConfig } from "@/lib/supabase/env"
 
-export async function createClient() {
+export async function createClient(options: { writable?: boolean } = {}) {
   const cookieStore = await cookies()
   const { url, anonKey } = requireSupabaseConfig()
 
@@ -17,7 +17,8 @@ export async function createClient() {
           cookiesToSet.forEach(({ name, value, options }) => {
             cookieStore.set(name, value, options)
           })
-        } catch {
+        } catch (error) {
+          if (options.writable) throw error
           // Server Components cannot set cookies. Server Actions and Route
           // Handlers can, so this keeps read-only renders from failing.
         }

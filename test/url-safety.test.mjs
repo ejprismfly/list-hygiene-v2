@@ -80,3 +80,10 @@ test("buildInviteAuthRedirectUrl sends Supabase invite email through callback", 
     "https://beta.listhygiene.com/auth/invite-callback?next=%2Freset-password%3Fnext%3D%252Finvite%253Ftoken%253Dabc%252B123"
   )
 })
+
+test("safeNextPath rejects browser-normalized network redirects", () => {
+  for (const path of ["/\n/evil.example", "/\t/evil.example", "/%0a/evil.example", "/%5cevil.example", "/\r/evil.example", " /dashboard"]) {
+    assert.equal(safeNextPath(path), "/dashboard")
+  }
+  assert.equal(safeNextPath("/a/..//evil.example"), "/dashboard")
+})

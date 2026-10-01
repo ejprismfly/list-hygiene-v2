@@ -3,17 +3,20 @@ function safeNextPath(nextPath, fallback = "/dashboard") {
     return fallback
   }
 
-  const trimmed = nextPath.trim()
-  if (
-    !trimmed ||
-    !trimmed.startsWith("/") ||
-    trimmed.startsWith("//") ||
-    trimmed.includes("\\")
-  ) {
+  // URL parsers remove control characters before resolving network paths.
+  // Reject them before parsing, including encoded forms that may be decoded later.
+  if (/[\u0000-\u0020\u007f\\]/.test(nextPath) || /%(?:0[0-9a-f]|1[0-9a-f]|20|7f|5c)/i.test(nextPath)) {
     return fallback
   }
-
-  return trimmed
+  if (!nextPath.startsWith("/") || nextPath.startsWith("//")) return fallback
+  try {
+    const base = "https://listhygiene.local"
+    const parsed = new URL(nextPath, base)
+    if (parsed.origin !== base || parsed.pathname.startsWith("//")) return fallback
+    return `${parsed.pathname}${parsed.search}${parsed.hash}`
+  } catch {
+    return fallback
+  }
 }
 
 function firstHeaderValue(value) {
@@ -77,6 +80,13 @@ function hostOrigin(hostHeader, protocol) {
 }
 
 function getOrigin(configuredHost, originHeader, requestUrl, options = {}) {
+  if (process.env.NODE_ENV === "production") {
+    const canonical = urlOrigin(configuredHost)
+    if (!canonical || !canonical.startsWith("https://")) {
+      throw new Error("A canonical HTTPS NEXT_PUBLIC_APP_HOST is required")
+    }
+    return canonical
+  }
   const requestProtocol = protocolFromUrl(requestUrl)
   const publicProtocol =
     protocolFrom(options.forwardedProto) ||
@@ -112,11 +122,11 @@ function buildInviteUrl({
   requestUrl,
   token,
   configuredHost,
-  cfVisitor,
-  forwardedHost,
-  forwardedProto,
-  hostHeader,
-  originHeader,
+  cfVisitor = null,
+  forwardedHost = null,
+  forwardedProto = null,
+  hostHeader = null,
+  originHeader = null,
 }) {
   const origin = getOrigin(configuredHost, originHeader, requestUrl, {
     cfVisitor,
@@ -134,11 +144,11 @@ function buildInviteAuthRedirectUrl({
   requestUrl,
   token,
   configuredHost,
-  cfVisitor,
-  forwardedHost,
-  forwardedProto,
-  hostHeader,
-  originHeader,
+  cfVisitor = null,
+  forwardedHost = null,
+  forwardedProto = null,
+  hostHeader = null,
+  originHeader = null,
 }) {
   const origin = getOrigin(configuredHost, originHeader, requestUrl, {
     cfVisitor,

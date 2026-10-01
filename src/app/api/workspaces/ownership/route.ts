@@ -5,7 +5,9 @@ import {
   readJsonBody,
   resolveTenantContext,
 } from "@/lib/api/tenant"
-import { createClient } from "@/lib/supabase/server"
+import { createClient } from "@supabase/supabase-js"
+import { requireSupabaseConfig } from "@/lib/supabase/env"
+import { limitAuthAttempt } from "@/lib/auth-security"
 
 export async function POST(request: Request) {
   const tenant = await resolveTenantContext(request, { requireWorkspace: true })
@@ -59,7 +61,10 @@ export async function POST(request: Request) {
     )
   }
 
-  const authClient = await createClient()
+  const limited = await limitAuthAttempt("login", context.user.email.toLowerCase())
+  if (limited) return errorJson(limited.message, limited.errorCode === "rate_limited" ? 429 : 503)
+  const config = requireSupabaseConfig()
+  const authClient = createClient(config.url, config.anonKey, { auth: { persistSession: false, autoRefreshToken: false } })
   const { data: passwordCheck, error: passwordError } =
     await authClient.auth.signInWithPassword({
       email: context.user.email,
@@ -74,6 +79,8 @@ export async function POST(request: Request) {
     return errorJson("Password confirmation failed.", 403)
   }
 
+  await authClient.auth.signOut({ scope: "local" })
+
   const { error: transferError } = await supabase.rpc(
     "transfer_workspace_ownership",
     {
@@ -87,7 +94,7 @@ export async function POST(request: Request) {
     return errorJson(
       transferError.code === "42883"
         ? "Run the workspace roles migration before transferring ownership."
-        : transferError.message,
+        : "Unable to transfer ownership",
       500
     )
   }

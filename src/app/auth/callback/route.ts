@@ -12,6 +12,7 @@ import {
   SIGNUP_ONBOARDING_COOKIE,
   SIGNUP_ONBOARDING_COOKIE_MAX_AGE,
 } from "@/lib/onboarding"
+import { issuePasswordGrant } from "@/lib/auth-security"
 import { getSupabaseConfig } from "@/lib/supabase/env"
 import { createClient } from "@/lib/supabase/server"
 import { getOrigin, safeNextPath } from "@/lib/url-safety.cjs"
@@ -19,10 +20,7 @@ import { getOrigin, safeNextPath } from "@/lib/url-safety.cjs"
 const emailOtpTypes = new Set([
   "signup",
   "invite",
-  "magiclink",
   "recovery",
-  "email_change",
-  "email",
 ])
 
 function isEmailOtpType(type: string | null): type is EmailOtpType {
@@ -91,23 +89,6 @@ async function verifiedSignupEmail(
   return data.user?.email || null
 }
 
-function inviteFallbackCallbackPath(nextPath: string) {
-  try {
-    const url = new URL(nextPath, "https://listhygiene.local")
-    const nestedNext = safeNextPath(url.searchParams.get("next"), "")
-
-    if (url.pathname === "/reset-password" && nestedNext.startsWith("/invite")) {
-      return `/auth/invite-callback?${new URLSearchParams({
-        next: nextPath,
-      }).toString()}`
-    }
-  } catch {
-    return null
-  }
-
-  return null
-}
-
 export async function GET(request: NextRequest) {
   const requestUrl = new URL(request.url)
   const code = requestUrl.searchParams.get("code")
@@ -115,53 +96,31 @@ export async function GET(request: NextRequest) {
   const tokenHash = requestUrl.searchParams.get("token_hash")
   const nextPath = safeNextPath(requestUrl.searchParams.get("next"))
   let signupVerifiedEmail: string | null = null
-
-  if (!getSupabaseConfig()) {
-    return redirectTo(request, "/login")
+  const invalid = () => redirectTo(request, `/login?${new URLSearchParams({ error: "invalid_confirmation", next: nextPath })}`)
+  if (!getSupabaseConfig() || Boolean(code) === Boolean(tokenHash) || !isEmailOtpType(type)) return invalid()
+  for (const name of ["code", "token_hash", "type", "next"]) {
+    const values = requestUrl.searchParams.getAll(name)
+    // The existing signup template appends the same type already in RedirectTo.
+    if (values.length > 1 && (name !== "type" || values.some((value) => value !== type))) return invalid()
   }
-
-  const supabase = await createClient()
-
-  if (tokenHash && isEmailOtpType(type)) {
-    const { data, error } = await supabase.auth.verifyOtp({
-      token_hash: tokenHash,
-      type,
-    })
-
-    if (error) {
-      return redirectTo(request, "/login")
+  try {
+    const supabase = await createClient({ writable: true })
+    const { data, error } = tokenHash
+      ? await supabase.auth.verifyOtp({ token_hash: tokenHash, type })
+      : await supabase.auth.exchangeCodeForSession(code!)
+    if (error || !data.user?.email_confirmed_at || !data.session) return invalid()
+    if (type === "signup") signupVerifiedEmail = await verifiedSignupEmail(supabase, data.user.email)
+    if (type === "recovery" || type === "invite") {
+      let destination = nextPath
+      if (type === "invite") {
+        const nested = new URL(nextPath, "https://listhygiene.local")
+        destination = nested.pathname === "/reset-password" ? safeNextPath(nested.searchParams.get("next")) : nextPath
+      }
+      await issuePasswordGrant(type, destination)
+      return redirectTo(request, `/reset-password?${new URLSearchParams({ next: destination })}`)
     }
-
-    if (type === "signup") {
-      signupVerifiedEmail = await verifiedSignupEmail(
-        supabase,
-        data.user?.email || data.session?.user.email
-      )
-    }
-  } else if (code) {
-    const { data, error } = await supabase.auth.exchangeCodeForSession(code)
-
-    if (error) {
-      return redirectTo(request, "/login")
-    }
-
-    if (type === "signup") {
-      signupVerifiedEmail = await verifiedSignupEmail(
-        supabase,
-        data.user?.email || data.session?.user.email
-      )
-    }
-  }
-
-  if (!tokenHash && !code) {
-    const fallbackPath = inviteFallbackCallbackPath(nextPath)
-    if (fallbackPath) {
-      return redirectTo(request, fallbackPath)
-    }
-  }
-
-  if (type === "recovery") {
-    return redirectTo(request, "/reset-password")
+  } catch {
+    return invalid()
   }
 
   return redirectAfterAuth(request, nextPath, type, { signupVerifiedEmail })

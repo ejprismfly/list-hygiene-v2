@@ -53,49 +53,31 @@ export function InviteAuthCallback() {
       const hashError = hash.get("error_description") || hash.get("error")
 
       if (hashError) {
-        throw new Error(hashError)
+        throw new Error("This invite link is invalid or expired.")
       }
 
       setMessage("Verifying your invite.")
-      const supabase = createClient()
-
-      if (accessToken && refreshToken) {
-        const { error } = await supabase.auth.setSession({
-          access_token: accessToken,
-          refresh_token: refreshToken,
-        })
-
-        if (error) {
-          throw error
-        }
-      } else if (tokenHash && isInviteOtpType(type)) {
-        const { error } = await supabase.auth.verifyOtp({
-          token_hash: tokenHash,
-          type,
-        })
-
-        if (error) {
-          throw error
-        }
-      } else if (code) {
-        const { error } = await supabase.auth.exchangeCodeForSession(code)
-
-        if (error) {
-          throw error
-        }
-      } else {
-        const {
-          data: { user },
-        } = await supabase.auth.getUser()
-
-        if (!user) {
-          throw new Error("Invite session is missing or expired.")
-        }
+      if (tokenHash && isInviteOtpType(type) && !code && !accessToken && !refreshToken) {
+        const params = new URLSearchParams({ token_hash: tokenHash, type: "invite", next: nextPath })
+        window.location.replace(`/auth/callback?${params}`)
+        return
       }
+      if (code && !tokenHash && !accessToken && !refreshToken) {
+        window.location.replace(`/auth/callback?${new URLSearchParams({ code, type: "invite", next: nextPath })}`)
+        return
+      }
+      if (!accessToken || !refreshToken || type !== "invite") throw new Error("This invite link is invalid or expired. Request a new invitation.")
+      const supabase = createClient()
+      const { error } = await supabase.auth.setSession({ access_token: accessToken, refresh_token: refreshToken })
+      if (error) throw new Error("This invite link is invalid or expired.")
+      window.history.replaceState(null, "", window.location.pathname + window.location.search)
+      const response = await fetch("/api/auth/invite-session", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ next: nextPath }) })
+      const result = await response.json()
+      if (!response.ok) throw new Error("This invite link is invalid or expired. Request a new invitation.")
 
       if (!cancelled) {
         setMessage("Opening workspace setup.")
-        window.location.replace(nextPath)
+        window.location.replace(`/reset-password?${new URLSearchParams({ next: safeNextPath(result.next) })}`)
       }
     }
 

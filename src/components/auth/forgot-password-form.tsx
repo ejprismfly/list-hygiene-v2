@@ -12,7 +12,7 @@ import { Label } from "@/components/ui/label"
 import { AUTH_FORM_INITIAL_STATE } from "@/lib/auth-form"
 import { trackAuthEvent, TRACKING_EVENTS } from "@/lib/tracking-events"
 
-export function ForgotPasswordForm() {
+export function ForgotPasswordForm({ nextPath = "/dashboard" }: { nextPath?: string }) {
   const [state, formAction, pending] = useActionState(
     forgotPasswordAction,
     AUTH_FORM_INITIAL_STATE
@@ -30,8 +30,7 @@ export function ForgotPasswordForm() {
         title="Reset Password"
         description={
           <p>
-            A password reset link has been sent to your email. Please check your
-            inbox and spam folder to reset your password.
+            {state.message}
           </p>
         }
         footer={
@@ -76,6 +75,7 @@ export function ForgotPasswordForm() {
           trackAuthEvent(TRACKING_EVENTS.auth.passwordResetRequested)
         }
       >
+        <input type="hidden" name="next" value={nextPath} />
         <div className="grid gap-2">
           <Label htmlFor="email">Email</Label>
           <Input

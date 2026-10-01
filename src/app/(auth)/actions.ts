@@ -3,14 +3,15 @@
 import { headers } from "next/headers"
 import { cookies } from "next/headers"
 import { redirect } from "next/navigation"
-import type { Provider } from "@supabase/supabase-js"
 
 import type { AuthFormState } from "@/lib/auth-form"
 import {
   getOrCreateDefaultOrganization,
 } from "@/lib/api/tenant"
 import { normalizedEmail } from "@/lib/api/validation"
-import { getFormString } from "@/lib/auth-form"
+import { getFormPassword, getFormString } from "@/lib/auth-form"
+import { claimPasswordGrant, limitAuthAttempt, PASSWORD_GRANT_COOKIE } from "@/lib/auth-security"
+import { AUTH_ANALYTICS_COOKIE } from "@/lib/auth-analytics"
 import { ensureStripeCustomerOnRegistration } from "@/lib/billing/customer"
 import {
   isOnboardingPath,
@@ -29,10 +30,11 @@ import {
 const missingConfigState: AuthFormState = {
   status: "error",
   message:
-    "Supabase is not configured. Add NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY to your local env.",
+    "Authentication is temporarily unavailable. Please try again later.",
+  errorCode: "auth_unavailable",
 }
 
-function requireEmailAndPassword(email: string, password: string) {
+function requireEmailAndPassword(email: string, password: string, creating = true) {
   if (!normalizedEmail(email)) {
     return "Enter a valid email address."
   }
@@ -41,19 +43,15 @@ function requireEmailAndPassword(email: string, password: string) {
     return "Email and password are required."
   }
 
-  if (password.length < 8) {
+  if (creating && password.length < 8) {
     return "Password must be at least 8 characters."
   }
 
-  if (password.length > 128) {
+  if (creating && password.length > 128) {
     return "Password must be 128 characters or less."
   }
 
   return null
-}
-
-function isSupportedOAuthProvider(provider: string): provider is Provider {
-  return provider === "google" || provider === "github"
 }
 
 async function getRequestOrigin() {
@@ -70,21 +68,6 @@ async function getRequestOrigin() {
 
 function getNextPath(formData: FormData) {
   return safeNextPath(getFormString(formData, "next"))
-}
-
-function addInviteLoginAgainFlag(path: string) {
-  if (!path.startsWith("/invite")) {
-    return path
-  }
-
-  try {
-    const url = new URL(path, "https://listhygiene.local")
-    url.searchParams.set("login_again", "1")
-
-    return `${url.pathname}${url.search}`
-  } catch {
-    return path
-  }
 }
 
 function buildAuthCallbackUrl(origin: string, nextPath: string, type?: string) {
@@ -108,6 +91,9 @@ async function clearPreviousAuthCookies() {
 
   cookieStore.delete(WORKSPACE_ORGANIZATION_COOKIE)
   cookieStore.delete(WORKSPACE_ID_COOKIE)
+  cookieStore.delete(PASSWORD_GRANT_COOKIE)
+  cookieStore.delete(SIGNUP_ONBOARDING_COOKIE)
+  cookieStore.delete(AUTH_ANALYTICS_COOKIE)
 
   cookieStore.getAll().forEach((cookie) => {
     if (isSupabaseAuthCookie(cookie.name)) {
@@ -135,11 +121,9 @@ function isAlreadyRegisteredAuthError(message?: string) {
 
 function existingAccountState(email?: string, nextPath?: string): AuthFormState {
   return {
-    status: "error",
-    message:
-      "An account with this email already exists. Please log in, or reset your password if you cannot access it.",
-    email,
-    nextPath,
+    status: "success",
+    message: "If this address can receive a confirmation email, check your inbox and spam folder to continue.",
+    email, nextPath,
   }
 }
 
@@ -147,10 +131,10 @@ export async function loginAction(
   _previousState: AuthFormState,
   formData: FormData
 ): Promise<AuthFormState> {
-  const email = getFormString(formData, "email")
-  const password = getFormString(formData, "password")
+  const email = normalizedEmail(getFormString(formData, "email")) || ""
+  const password = getFormPassword(formData, "password")
   const nextPath = getNextPath(formData)
-  const validationError = requireEmailAndPassword(email, password)
+  const validationError = requireEmailAndPassword(email, password, false)
 
   if (validationError) {
     return { status: "error", message: validationError }
@@ -160,9 +144,12 @@ export async function loginAction(
     return missingConfigState
   }
 
+  const limited = await limitAuthAttempt("login", email)
+  if (limited) return limited
+
   await clearPreviousAuthCookies()
 
-  const supabase = await createClient()
+  const supabase = await createClient({ writable: true })
 
   try {
     const { error } = await supabase.auth.signInWithPassword({
@@ -171,7 +158,7 @@ export async function loginAction(
     })
 
     if (error) {
-      return { status: "error", message: error.message }
+      return { status: "error", errorCode: "invalid_credentials", message: "Unable to sign in. Check your email and password, and confirm your email if needed." }
     }
   } catch {
     return {
@@ -183,83 +170,12 @@ export async function loginAction(
   redirect(nextPath)
 }
 
-export async function magicLinkAction(
-  _previousState: AuthFormState,
-  formData: FormData
-): Promise<AuthFormState> {
-  const email = getFormString(formData, "email")
-  const nextPath = getNextPath(formData)
-
-  if (!normalizedEmail(email)) {
-    return { status: "error", message: "Enter a valid email address." }
-  }
-
-  if (!getSupabaseConfig()) {
-    return missingConfigState
-  }
-
-  const origin = await getRequestOrigin()
-  const supabase = await createClient()
-
-  try {
-    const { error } = await supabase.auth.signInWithOtp({
-      email,
-      options: {
-        emailRedirectTo: buildAuthCallbackUrl(origin, nextPath),
-        shouldCreateUser: true,
-      },
-    })
-
-    if (error) {
-      return { status: "error", message: error.message }
-    }
-  } catch {
-    return {
-      status: "error",
-      message: "Unable to send a sign-in link right now. Please try again.",
-    }
-  }
-
-  return {
-    status: "success",
-    message: "Check your email for a sign-in link.",
-  }
-}
-
-export async function oauthSignInAction(formData: FormData) {
-  const provider = getFormString(formData, "provider")
-  const nextPath = getNextPath(formData)
-
-  if (!isSupportedOAuthProvider(provider)) {
-    redirect("/login")
-  }
-
-  if (!getSupabaseConfig()) {
-    redirect("/login")
-  }
-
-  const origin = await getRequestOrigin()
-  const supabase = await createClient()
-  const { data, error } = await supabase.auth.signInWithOAuth({
-    provider,
-    options: {
-      redirectTo: buildAuthCallbackUrl(origin, nextPath),
-    },
-  })
-
-  if (error || !data.url) {
-    redirect("/login")
-  }
-
-  redirect(data.url)
-}
-
 export async function signupAction(
   _previousState: AuthFormState,
   formData: FormData
 ): Promise<AuthFormState> {
-  const email = getFormString(formData, "email")
-  const password = getFormString(formData, "password")
+  const email = normalizedEmail(getFormString(formData, "email")) || ""
+  const password = getFormPassword(formData, "password")
   const nextPath = getNextPath(formData)
   const termsAccepted = formData.get("terms") === "on"
   const validationError = requireEmailAndPassword(email, password)
@@ -279,8 +195,11 @@ export async function signupAction(
     return missingConfigState
   }
 
+  const limited = await limitAuthAttempt("email", email)
+  if (limited) return limited
+
   const origin = await getRequestOrigin()
-  const supabase = await createClient()
+  const supabase = await createClient({ writable: true })
   let shouldRedirect = false
 
   try {
@@ -297,7 +216,7 @@ export async function signupAction(
         return existingAccountState(email, nextPath)
       }
 
-      return { status: "error", message: error.message }
+      return { status: "error", errorCode: "auth_unavailable", message: "Unable to complete this request. Please try again later." }
     }
 
     if (data.user && !data.session && data.user.identities?.length === 0) {
@@ -321,8 +240,8 @@ export async function signupAction(
           supabase: adminSupabase,
           user: data.user,
         })
-      } catch (error) {
-        console.error("Registration Stripe bootstrap failed:", error)
+      } catch {
+        console.error("Registration bootstrap needs retry", { code: "registration_bootstrap_failed", userId: data.user.id })
       }
     }
   } catch {
@@ -339,7 +258,7 @@ export async function signupAction(
 
   return {
     status: "success",
-    message: "Account created. Check your email to finish signing in.",
+    message: "If this address can receive a confirmation email, check your inbox and spam folder to continue.",
     email,
     nextPath,
   }
@@ -349,7 +268,7 @@ export async function resendSignupConfirmationAction(
   _previousState: AuthFormState,
   formData: FormData
 ): Promise<AuthFormState> {
-  const email = getFormString(formData, "email")
+  const email = normalizedEmail(getFormString(formData, "email")) || ""
   const nextPath = getNextPath(formData)
 
   if (!normalizedEmail(email)) {
@@ -360,8 +279,11 @@ export async function resendSignupConfirmationAction(
     return missingConfigState
   }
 
+  const limited = await limitAuthAttempt("email", email)
+  if (limited) return limited
+
   const origin = await getRequestOrigin()
-  const supabase = await createClient()
+  const supabase = await createClient({ writable: true })
 
   try {
     const { error } = await supabase.auth.resend({
@@ -377,7 +299,7 @@ export async function resendSignupConfirmationAction(
         return existingAccountState(email, nextPath)
       }
 
-      return { status: "error", message: error.message, email, nextPath }
+      return existingAccountState(email, nextPath)
     }
   } catch {
     return {
@@ -390,7 +312,7 @@ export async function resendSignupConfirmationAction(
 
   return {
     status: "success",
-    message: "Confirmation email resent. Check your inbox and spam folder.",
+    message: "If this address can receive a confirmation email, check your inbox and spam folder to continue.",
     email,
     nextPath,
   }
@@ -400,7 +322,7 @@ export async function forgotPasswordAction(
   _previousState: AuthFormState,
   formData: FormData
 ): Promise<AuthFormState> {
-  const email = getFormString(formData, "email")
+  const email = normalizedEmail(getFormString(formData, "email")) || ""
 
   if (!normalizedEmail(email)) {
     return { status: "error", message: "Enter a valid email address." }
@@ -410,9 +332,12 @@ export async function forgotPasswordAction(
     return missingConfigState
   }
 
+  const limited = await limitAuthAttempt("email", email)
+  if (limited) return limited
+
   const origin = await getRequestOrigin()
-  const callbackUrl = buildAuthCallbackUrl(origin, "/dashboard", "recovery")
-  const supabase = await createClient()
+  const callbackUrl = buildAuthCallbackUrl(origin, getNextPath(formData), "recovery")
+  const supabase = await createClient({ writable: true })
 
   try {
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
@@ -420,7 +345,8 @@ export async function forgotPasswordAction(
     })
 
     if (error) {
-      return { status: "error", message: error.message }
+      if (error.status && error.status >= 500) return missingConfigState
+      return { status: "success", message: "If this address can receive a reset email, check your inbox and spam folder." }
     }
   } catch {
     return {
@@ -431,7 +357,7 @@ export async function forgotPasswordAction(
 
   return {
     status: "success",
-    message: "If the email exists, a reset link has been sent.",
+    message: "If this address can receive a reset email, check your inbox and spam folder.",
   }
 }
 
@@ -439,9 +365,8 @@ export async function resetPasswordAction(
   _previousState: AuthFormState,
   formData: FormData
 ): Promise<AuthFormState> {
-  const password = getFormString(formData, "password")
-  const confirmPassword = getFormString(formData, "confirmPassword")
-  const nextPath = getNextPath(formData)
+  const password = getFormPassword(formData, "password")
+  const confirmPassword = getFormPassword(formData, "confirmPassword")
 
   if (!password || !confirmPassword) {
     return { status: "error", message: "Both password fields are required." }
@@ -463,13 +388,16 @@ export async function resetPasswordAction(
     return missingConfigState
   }
 
-  const supabase = await createClient()
+  let grant
+  try { grant = await claimPasswordGrant() } catch { return missingConfigState }
+  if (!grant) return { status: "error", errorCode: "invalid_recovery", message: "This password link is invalid or expired. Request a new link." }
+  const supabase = grant.supabase
 
   try {
     const { error } = await supabase.auth.updateUser({ password })
 
     if (error) {
-      return { status: "error", message: error.message }
+      return { status: "error", errorCode: "auth_unavailable", message: "Unable to complete this request. Please try again later." }
     }
   } catch {
     return {
@@ -478,16 +406,24 @@ export async function resetPasswordAction(
     }
   }
 
-  redirect(addInviteLoginAgainFlag(nextPath))
+  let revoked = false
+  try { const { error } = await supabase.auth.signOut({ scope: "global" }); revoked = !error } catch {}
+  await clearPreviousAuthCookies()
+  if (!revoked) return { status: "error", errorCode: "session_revocation_failed", message: "Your password changed, but session cleanup failed. Request a new reset link before continuing." }
+  redirect(`/login?${new URLSearchParams({ next: grant.nextPath, password_reset: "1" })}`)
 }
 
 export async function signOutAction() {
-  if (getSupabaseConfig()) {
-    const supabase = await createClient()
-    await supabase.auth.signOut()
+  try {
+    if (getSupabaseConfig()) {
+      const supabase = await createClient({ writable: true })
+      const { error } = await supabase.auth.signOut({ scope: "global" })
+      if (error) throw new Error("Session revocation failed")
+    }
+  } catch {
+    await clearPreviousAuthCookies()
+    redirect("/login?error=session_revocation_failed")
   }
-
   await clearPreviousAuthCookies()
-
   redirect("/login")
 }

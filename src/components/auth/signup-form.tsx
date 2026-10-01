@@ -58,8 +58,7 @@ export function SignupForm({ nextPath = "/onboarding" }: { nextPath?: string }) 
         description={
           <>
             <p>
-              A confirmation email has been sent to the address you provided.
-              Please click the link in the email to complete your signup process.
+              {state.message}
             </p>
             <p>If you don&apos;t see it, be sure to check your spam or junk folder.</p>
             <AuthMessage state={resendState} />
@@ -89,7 +88,7 @@ export function SignupForm({ nextPath = "/onboarding" }: { nextPath?: string }) 
               Back to Login
             </Link>
             <Link
-              href="/forgot-password"
+              href={`/forgot-password?${new URLSearchParams({ next: confirmationNextPath })}`}
               className={buttonVariants({
                 variant: "link",
                 size: "sm",

@@ -30,18 +30,8 @@ type StripeCustomerScopeParams = {
 const STRIPE_ACCOUNT_SELECT =
   "id, user_id, customer_id, subscription_id, organization_id, workspace_id, billing_scope, active"
 
-function isMissingColumnError(error: PostgrestError | null) {
-  return (
-    error?.code === "42703" || /column .* does not exist/i.test(error?.message || "")
-  )
-}
-
 function isUniqueConstraintError(error: PostgrestError | null) {
   return error?.code === "23505"
-}
-
-function isMissingIndexError(error: PostgrestError | null) {
-  return error?.code === "42P10"
 }
 
 function billingScope(workspaceId: string | null) {
@@ -56,12 +46,10 @@ function tenantFields(organizationId: string | null, workspaceId: string | null)
   }
 }
 
-function onConflictClause(workspaceId: string | null) {
-  return workspaceId ? "user_id,workspace_id" : "user_id,billing_scope"
-}
-
 function pickPreferredAccount(accounts: StripeAccountResult[]) {
-  return accounts.find((account) => Boolean(account.customer_id)) || accounts[0] || null
+  const activeAccounts = accounts.filter((account) => account.active !== false)
+  const candidates = activeAccounts.length ? activeAccounts : accounts
+  return candidates.find((account) => Boolean(account.customer_id)) || candidates[0] || null
 }
 
 async function queryAccountsForScope(
@@ -73,12 +61,11 @@ async function queryAccountsForScope(
   let query = supabase
     .from("stripe_accounts")
     .select(STRIPE_ACCOUNT_SELECT)
-    .eq("user_id", userId)
 
   if (workspaceId) {
     query = query.eq("workspace_id", workspaceId)
   } else {
-    query = query.is("workspace_id", null)
+    query = query.eq("user_id", userId).is("workspace_id", null)
   }
 
   if (!includeInactive) {
@@ -90,7 +77,7 @@ async function queryAccountsForScope(
     .order("updated_at", { ascending: false })
     .order("created_at", { ascending: false })
 
-  if (error && !isMissingColumnError(error)) {
+  if (error) {
     throw new Error(error.message)
   }
 
@@ -170,19 +157,19 @@ async function upsertScopedAccount(
   let result: { data: StripeAccountResult[] | null; error: PostgrestError | null }
 
   try {
+    // Partial production indexes cannot be inferred by PostgREST upsert.
+    // Insert without overwriting another request's customer or billing owner.
     result = await supabase
       .from("stripe_accounts")
-      .upsert(payload, {
-        onConflict: onConflictClause(workspaceId),
-      })
+      .insert(payload)
       .select(STRIPE_ACCOUNT_SELECT)
 
-    if (result.error && !isMissingIndexError(result.error)) {
+    if (result.error) {
       throw result.error
     }
   } catch (error) {
     const candidate = error as PostgrestError
-    if (isUniqueConstraintError(candidate) || isMissingIndexError(candidate)) {
+    if (isUniqueConstraintError(candidate)) {
       return lookupLatestScoped()
     }
 
@@ -317,6 +304,8 @@ export async function ensureStripeCustomerForUser(
 
   const legacyAccount = pickPreferredAccount(legacyAccounts)
   const reusableCustomerId =
+    scopedAccount?.customer_id ||
+    scopedAccounts.find((account) => Boolean(account.customer_id))?.customer_id ||
     fallbackCustomerId || legacyAccount?.customer_id || null
 
   if (reusableCustomerId) {
@@ -345,7 +334,7 @@ export async function ensureStripeCustomerForUser(
     )
     return {
       ok: true,
-      customerId: reusableCustomerId,
+      customerId: upserted.customer_id || reusableCustomerId,
       created: false,
       stripeAccount: upserted,
     }
@@ -379,11 +368,11 @@ export async function ensureStripeCustomerForUser(
 
   return {
     ok: true,
-    customerId: customer.id,
-    created: !scopedAccount,
+    customerId: upserted.customer_id || customer.id,
+    created: !scopedAccount && upserted.customer_id === customer.id,
     stripeAccount: {
       ...upserted,
-      customer_id: customer.id,
+      customer_id: upserted.customer_id || customer.id,
       active: upserted.active ?? true,
     },
   }
@@ -417,7 +406,7 @@ export async function ensureScopedStripeCustomer(context: BillingContext) {
     stripeAccount: {
       ...result.stripeAccount,
       id: result.stripeAccount.id,
-      user_id: user.id,
+      user_id: result.stripeAccount.user_id,
       organization_id: organizationId || result.stripeAccount.organization_id || null,
       workspace_id: workspaceId || result.stripeAccount.workspace_id || null,
       billing_scope: billingScope(workspaceId),

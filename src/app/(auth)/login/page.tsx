@@ -15,5 +15,10 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
   const params = await searchParams
   const next = Array.isArray(params?.next) ? params?.next[0] : params?.next
 
-  return <LoginForm nextPath={safeNextPath(next)} />
+  const notice = params?.error === "invalid_confirmation"
+    ? "This email link is invalid, expired, or already used. Request a new confirmation or reset link."
+    : params?.error === "session_revocation_failed"
+      ? "You are signed out here, but session cleanup failed. Try logging in and signing out again to revoke your other sessions."
+      : undefined
+  return <LoginForm nextPath={safeNextPath(next)} notice={notice} />
 }

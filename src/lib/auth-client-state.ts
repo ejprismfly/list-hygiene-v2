@@ -40,8 +40,10 @@ export function clearPreviousUserClientData() {
     return
   }
 
-  clearWorkspaceClientState(window.localStorage)
   invalidateWorkspaceClientData()
-  clearSupabaseAuthStorage(window.localStorage)
-  clearSupabaseAuthStorage(window.sessionStorage)
+  try {
+    clearWorkspaceClientState(window.localStorage)
+    clearSupabaseAuthStorage(window.localStorage)
+  } catch { /* Storage can be blocked; server-side logout must still proceed. */ }
+  try { clearSupabaseAuthStorage(window.sessionStorage) } catch {}
 }

@@ -53,3 +53,17 @@ export async function queryOne<T extends QueryResultRow>(
   const [row] = await queryRows<T>(text, values)
   return row || null
 }
+
+export async function withTransaction<T>(operation: (client: import("pg").PoolClient) => Promise<T>) {
+  const client = await getPool().connect()
+  try {
+    await client.query("begin")
+    await client.query("set local lock_timeout = '5s'")
+    const result = await operation(client)
+    await client.query("commit")
+    return result
+  } catch (error) {
+    await client.query("rollback")
+    throw error
+  } finally { client.release() }
+}
