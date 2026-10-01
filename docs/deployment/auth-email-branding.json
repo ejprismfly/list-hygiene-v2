@@ -1,0 +1,41 @@
+{
+  "projectRef": "lhhgzyvqhhffqeaglrdp",
+  "senderName": "List Hygiene",
+  "templates": [
+    {
+      "key": "confirmation",
+      "subject": "Confirm your email for List Hygiene",
+      "file": "supabase-signup-confirmation-template.html"
+    },
+    {
+      "key": "invite",
+      "subject": "You’re invited to a List Hygiene workspace",
+      "file": "supabase-invite-template.html"
+    },
+    {
+      "key": "recovery",
+      "subject": "Reset your List Hygiene password",
+      "file": "supabase-password-reset-template.html"
+    },
+    {
+      "key": "email_change",
+      "subject": "Confirm your email change for List Hygiene",
+      "file": "supabase-email-change-template.html"
+    },
+    {
+      "key": "reauthentication",
+      "subject": "Your List Hygiene verification code",
+      "file": "supabase-verification-code-template.html"
+    },
+    {
+      "key": "password_changed_notification",
+      "subject": "Your List Hygiene password was changed",
+      "file": "supabase-password-changed-template.html"
+    },
+    {
+      "key": "email_changed_notification",
+      "subject": "Your List Hygiene email address was changed",
+      "file": "supabase-email-changed-template.html"
+    }
+  ]
+}
