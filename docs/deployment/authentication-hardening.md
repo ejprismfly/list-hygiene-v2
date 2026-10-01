@@ -56,6 +56,8 @@ Browser tests can use `AUTH_TEST_CHROMIUM` for an installed Chromium executable.
 
 ## Live preparation
 
+The first release build exhausted the 2 GB deployment host's RAM and exited with code 137; kernel logs confirmed the build process was killed. The prior production app recovered and its real-account login/API check passed. Production builds now use Webpack with a 768 MB JavaScript heap, one worker, and Webpack memory optimizations. The host has a persistent 2 GB swap fallback. This build completed locally, and TypeScript, lint and the unit suite passed again. Verify the new deployment and runtime before enabling the security migration.
+
 Additive migrations `20261001001000`, `20261001002000`, and `20261001002500` were applied to `lhhgzyvqhhffqeaglrdp` with atomic migration history and checksum verification. The stricter RLS/grant migration has not been applied, and the candidate web code is not yet deployed.
 
 A real signup was submitted through the currently deployed public form to `efren+qatest1790850778245@prismfly.com`. It created an unconfirmed account and displayed the confirmation prompt without errors. The inbox owner confirmed receipt and supplied the delivered link. The account was already confirmed when the test began, consistent with the link having been opened while copying. Reusing the delivered link did not establish a session. A subsequent live password login reached onboarding and authenticated `/api/user/info` returned the expected user. First-use delivery-link acceptance was not directly observed by the tester. This account is intentionally retained for invitation tests; its password and cookie state are held privately outside the repository.
