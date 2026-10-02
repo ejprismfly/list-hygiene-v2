@@ -22,6 +22,9 @@ try {
  await assert.rejects(call('save_report_snapshot',['historical',JSON.stringify(broken),JSON.stringify(current(w1)),g]))
  await c.query('rollback to savepoint failed_report')
  assert.equal((await c.query('select count(*)::int n from emails_historical_performance where workspace_id=$1',[w1])).rows[0].n,12)
+ await c.query('insert into email_usage_monthly(user_id,organization_id,workspace_id,month_start) values($1,$2,$3,$4)',[u,org,w1,'2020-01-01'])
+ await call('save_report_snapshot',['monthly',JSON.stringify([{user_id:u,organization_id:org,workspace_id:w1,month_start:'2026-10-01',valid_count:2507}]),null,null])
+ assert.equal((await c.query('select count(*)::int n from email_usage_monthly where workspace_id=$1',[w1])).rows[0].n,2,'Older cached periods must survive refresh')
  // A source update while a snapshot runs must remain pending after its commit.
  await call('request_report_refresh',[u,org,w1,true])
  await call('save_report_snapshot',['historical',JSON.stringify(historical(w1)),JSON.stringify(current(w1)),g])

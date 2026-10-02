@@ -12,7 +12,7 @@ const url = new URL(connectionString)
 if (!(url.hostname + decodeURIComponent(url.username)).includes(expectedRef)) {
   throw new Error('Database connection does not match the expected Supabase project')
 }
-const files = phase === 'processing' ? ['20261002003000_processing_checkpoints.sql'] : phase === 'billing' ? ['20261002002000_atomic_billing_events.sql'] : phase === 'reports' ? ['20261002001000_durable_report_snapshots.sql'] : phase === 'additive' ? [
+const files = phase === 'processing' ? ['20261002003000_processing_checkpoints.sql'] : phase === 'billing' ? ['20261002002000_atomic_billing_events.sql'] : phase === 'reports' ? ['20261002001000_durable_report_snapshots.sql', '20261002001100_preserve_report_periods.sql'] : phase === 'additive' ? [
   '20261001001000_authentication_primitives.sql',
   '20261001002000_atomic_invitation_acceptance.sql',
   '20261001002500_atomic_member_permissions.sql',
