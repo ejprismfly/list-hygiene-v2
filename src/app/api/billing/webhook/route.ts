@@ -1,8 +1,8 @@
+import { randomUUID } from "node:crypto"
 import { NextResponse } from "next/server"
 import type Stripe from "stripe"
 
 import {
-  buildInvoicePaidUpdate,
   cachePaymentMethods,
   getInvoiceSubscriptionId,
   type StripeAccountWebhookRecord,
@@ -22,78 +22,18 @@ type StripeAccountQuery = {
   }
 }
 
-function isMissingWebhookLedger(error: { code?: string; message?: string } | null) {
-  return (
-    error?.code === "42P01" ||
-    error?.code === "PGRST205" ||
-    /stripe_webhook_events.*(does not exist|schema cache)/i.test(error?.message || "")
-  )
+type EventLease = { event: string; lease: string }
+async function claimWebhookEvent(supabase: ReturnType<typeof createAdminClient>, event: Stripe.Event, lease: string) {
+  const { data, error } = await supabase.rpc("claim_billing_event", { p_event: event.id, p_type: event.type, p_lease: lease })
+  if (error) throw new Error("Unable to claim billing event")
+  if (!["claimed", "processed", "busy"].includes(data)) throw new Error("Invalid billing claim")
+  return data as string
 }
-
-async function claimWebhookEvent(
-  supabase: ReturnType<typeof createAdminClient>,
-  event: Stripe.Event
-) {
-  const { error } = await supabase.from("stripe_webhook_events").insert({
-    event_id: event.id,
-    event_type: event.type,
-    status: "processing",
+async function finishWebhookEvent(supabase: ReturnType<typeof createAdminClient>, context: EventLease, failure?: unknown) {
+  const { data, error } = await supabase.rpc("finish_billing_event", {
+    p_event: context.event, p_lease: context.lease, p_error: failure ? "Webhook processing failed" : null,
   })
-
-  if (!error) return true
-  if (isMissingWebhookLedger(error)) {
-    console.warn("Stripe webhook ledger is unavailable; processing without replay protection.")
-    return true
-  }
-  if (error.code !== "23505") {
-    throw new Error(error.message || "Unable to claim Stripe webhook event")
-  }
-
-  const { data: existing, error: lookupError } = await supabase
-    .from("stripe_webhook_events")
-    .select("status, attempts, updated_at")
-    .eq("event_id", event.id)
-    .maybeSingle()
-  if (lookupError) throw new Error(lookupError.message)
-  if (!existing || existing.status === "processed") return false
-
-  const staleProcessing =
-    existing.status === "processing" &&
-    Date.now() - new Date(existing.updated_at).getTime() > 5 * 60 * 1000
-  if (existing.status !== "failed" && !staleProcessing) return false
-
-  const { error: retryError } = await supabase
-    .from("stripe_webhook_events")
-    .update({
-      attempts: Number(existing.attempts || 1) + 1,
-      error_message: null,
-      status: "processing",
-      updated_at: new Date().toISOString(),
-    })
-    .eq("event_id", event.id)
-  if (retryError) throw new Error(retryError.message)
-  return true
-}
-
-async function finishWebhookEvent(
-  supabase: ReturnType<typeof createAdminClient>,
-  eventId: string,
-  error?: unknown
-) {
-  const errorMessage = error instanceof Error ? error.message : error ? String(error) : null
-  const { error: updateError } = await supabase
-    .from("stripe_webhook_events")
-    .update({
-      status: errorMessage ? "failed" : "processed",
-      error_message: errorMessage?.slice(0, 1000) || null,
-      processed_at: errorMessage ? null : new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    })
-    .eq("event_id", eventId)
-
-  if (updateError && !isMissingWebhookLedger(updateError)) {
-    console.error("Stripe webhook ledger update failed:", updateError)
-  }
+  if (error || !data) throw new Error("Unable to finish billing event")
 }
 
 async function setDefaultPaymentMethodFromCheckout(
@@ -187,7 +127,7 @@ async function setDefaultPaymentMethodFromCheckout(
     .filter((id) => id !== paymentMethodId)
 
   await Promise.all(
-    duplicates.map((id) => stripe.paymentMethods.detach(id).catch(() => null))
+    duplicates.map((id) => stripe.paymentMethods.detach(id))
   )
   await stripe.customers.update(customerId, {
     invoice_settings: { default_payment_method: paymentMethodId },
@@ -211,11 +151,8 @@ async function findStripeAccount({
     .from("stripe_accounts")
     .select(stripeAccountSelect) as unknown as StripeAccountQuery
 
-  if (stripeAccountId) {
-    query.eq("id", stripeAccountId)
-  } else {
-    query.eq("customer_id", customerId)
-  }
+  query.eq("customer_id", customerId)
+  if (stripeAccountId) query.eq("id", stripeAccountId)
 
   const { data, error } = await query.limit(1).maybeSingle()
   if (error) {
@@ -228,10 +165,12 @@ async function findStripeAccount({
 
 async function handleInvoicePaid({
   invoice,
+  context,
   stripe,
   supabase,
 }: {
   invoice: Stripe.Invoice
+  context: EventLease
   stripe: Stripe
   supabase: ReturnType<typeof createAdminClient>
 }) {
@@ -245,6 +184,7 @@ async function handleInvoicePaid({
   }
 
   const subscription = await stripe.subscriptions.retrieve(subscriptionId)
+  if (subscription.status === "canceled") return
   const stripeAccount = await findStripeAccount({
     customerId,
     stripeAccountId: subscription.metadata?.stripe_account_id || null,
@@ -270,60 +210,30 @@ async function handleInvoicePaid({
   const overage = Number(subscriptionItem.plan.metadata?.overage || 0)
   let oldCredits = Number(stripeAccount.credits_plan || 0)
 
-  if (
-    stripeAccount.subscription_id &&
-    stripeAccount.subscription_id !== subscriptionId
-  ) {
-    try {
-      const oldSubscription = await stripe.subscriptions.retrieve(
-        stripeAccount.subscription_id
-      )
-      const oldSubscriptionItem = oldSubscription.items.data[0]
-      oldCredits = Number(
-        oldSubscriptionItem?.plan.metadata?.credits ||
-          stripeAccount.credits_plan ||
-          0
-      )
-      await stripe.subscriptions.cancel(stripeAccount.subscription_id, {
-        prorate: false,
-      })
-    } catch (error) {
-      console.error("Problem canceling old subscription:", error)
-    }
+  if (!["subscription_create", "subscription_cycle", "subscription_update"].includes(billingReason)) return
+  if (stripeAccount.subscription_id && stripeAccount.subscription_id !== subscriptionId) {
+    const oldSubscription = await stripe.subscriptions.retrieve(stripeAccount.subscription_id)
+    oldCredits = Number(oldSubscription.items.data[0]?.plan.metadata?.credits || stripeAccount.credits_plan || 0)
   }
-
-  const planChange = buildInvoicePaidUpdate({
-    billingReason,
-    currentPeriodEnd: subscriptionItem.current_period_end,
-    invoiceId: invoice.id || "",
-    newCredits,
-    oldCredits,
-    overage,
-    productId,
-    stripeAccount,
-    subscriptionId,
+  const { data: effect, error } = await supabase.rpc("apply_billing_invoice", {
+    p_event: context.event, p_lease: context.lease, p_invoice: invoice.id, p_invoice_created: invoice.created,
+    p_account: stripeAccount.id, p_customer: customerId, p_subscription: subscriptionId,
+    p_reason: billingReason, p_period_end: new Date(subscriptionItem.current_period_end * 1000).toISOString(),
+    p_product: productId, p_credits: newCredits, p_old_credits: oldCredits, p_overage: overage,
   })
-  if (!planChange) {
-    return
-  }
-
-  const { error: updateError } = await supabase
-    .from("stripe_accounts")
-    .update(planChange.update)
-    .eq("id", stripeAccount.id)
-
-  if (updateError) {
-    throw new Error(updateError.message)
-  }
-
-  if (planChange.history.length) {
-    const { error: historyError } = await supabase
-      .from("credit_history")
-      .insert(planChange.history)
-
-    if (historyError) {
-      throw new Error(historyError.message)
+  if (error || !effect) throw new Error("Unable to commit invoice credits")
+  if (effect.ignored) return
+  if (effect.old_subscription_id && !effect.cancellation_done) {
+    const old = await stripe.subscriptions.retrieve(effect.old_subscription_id)
+    const oldCustomer = typeof old.customer === "string" ? old.customer : old.customer.id
+    if (oldCustomer !== customerId || (old.metadata?.stripe_account_id && old.metadata.stripe_account_id !== String(stripeAccount.id))) {
+      throw new Error("Previous subscription ownership mismatch")
     }
+    if (old.status !== "canceled") await stripe.subscriptions.cancel(old.id, { prorate: false })
+    const { error: cancelError } = await supabase.rpc("finish_invoice_cancellation", {
+      p_event: context.event, p_lease: context.lease, p_invoice: invoice.id, p_invoice_created: invoice.created,
+    })
+    if (cancelError) throw new Error("Unable to record subscription cancellation")
   }
 
   await cachePaymentMethods({ stripe, stripeAccount, supabase })
@@ -383,40 +293,15 @@ async function handleInvoicePaymentFailed({
   })
 }
 
-async function handleSubscriptionDeleted({
-  subscription,
-  supabase,
-}: {
-  subscription: Stripe.Subscription
-  supabase: ReturnType<typeof createAdminClient>
+async function handleSubscriptionDeleted({ subscription, supabase, context }: {
+  subscription: Stripe.Subscription; supabase: ReturnType<typeof createAdminClient>; context: EventLease
 }) {
-  const stripeAccountId = subscription.metadata?.stripe_account_id
-  const customerId =
-    typeof subscription.customer === "string"
-      ? subscription.customer
-      : subscription.customer.id
-
-  let query = supabase
-    .from("stripe_accounts")
-    .update({
-      active: false,
-      subscription_id: null,
-      credits_plan: 0,
-      credits_remaining: 0,
-      credits_turnover: 0,
-      overage_plan: 0,
-      overage_remaining: 0,
-      overage_used: 0,
-    })
-
-  query = stripeAccountId
-    ? query.eq("id", stripeAccountId)
-    : query.eq("customer_id", customerId)
-
-  const { error } = await query
-  if (error) {
-    throw new Error(error.message)
-  }
+  const customerId = typeof subscription.customer === "string" ? subscription.customer : subscription.customer.id
+  const { error } = await supabase.rpc("apply_subscription_deletion", {
+    p_event: context.event, p_lease: context.lease, p_customer: customerId,
+    p_subscription: subscription.id, p_account: subscription.metadata?.stripe_account_id || null,
+  })
+  if (error) throw new Error("Unable to commit subscription cancellation")
 }
 
 export async function POST(request: Request) {
@@ -445,14 +330,16 @@ export async function POST(request: Request) {
 
   const supabase = createAdminClient()
 
-  let shouldProcess: boolean
+  const context = { event: event.id, lease: randomUUID() }
+  let claim: string
   try {
-    shouldProcess = await claimWebhookEvent(supabase, event)
+    claim = await claimWebhookEvent(supabase, event, context.lease)
   } catch (error) {
     console.error("Stripe webhook claim failed:", error)
     return NextResponse.json({ error: "Unable to claim webhook event" }, { status: 500 })
   }
-  if (!shouldProcess) {
+  if (claim === "busy") return NextResponse.json({ error: "Webhook already processing" }, { status: 503 })
+  if (claim === "processed") {
     return NextResponse.json({ received: true, duplicate: true })
   }
 
@@ -477,6 +364,7 @@ export async function POST(request: Request) {
       break
     case "invoice.paid":
       await handleInvoicePaid({
+        context,
         invoice: event.data.object as Stripe.Invoice,
         stripe,
         supabase,
@@ -521,6 +409,7 @@ export async function POST(request: Request) {
       break
     case "customer.subscription.deleted":
       await handleSubscriptionDeleted({
+        context,
         subscription: event.data.object as Stripe.Subscription,
         supabase,
       })
@@ -530,11 +419,13 @@ export async function POST(request: Request) {
     }
   } catch (error) {
     console.error(`Stripe webhook ${event.id} failed:`, error)
-    await finishWebhookEvent(supabase, event.id, error)
+    try { await finishWebhookEvent(supabase, context, error) } catch { console.error("Billing failure recording failed") }
     return NextResponse.json({ error: "Webhook processing failed" }, { status: 500 })
   }
 
-  await finishWebhookEvent(supabase, event.id)
+  try { await finishWebhookEvent(supabase, context) } catch {
+    return NextResponse.json({ error: "Webhook finalization failed" }, { status: 500 })
+  }
 
   return NextResponse.json({ received: true })
 }

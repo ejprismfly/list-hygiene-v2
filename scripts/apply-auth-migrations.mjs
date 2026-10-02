@@ -5,14 +5,14 @@ import pg from 'pg'
 const phase = process.argv[2]
 const expectedRef = process.env.EXPECTED_SUPABASE_REF
 const connectionString = process.env.DATABASE_URL
-if (!['additive', 'security'].includes(phase) || !expectedRef || !connectionString) {
-  throw new Error('Usage: EXPECTED_SUPABASE_REF=<project> DATABASE_URL=<private-env> node scripts/apply-auth-migrations.mjs additive|security')
+if (!['additive', 'security', 'reports', 'billing', 'processing'].includes(phase) || !expectedRef || !connectionString) {
+  throw new Error('Usage: EXPECTED_SUPABASE_REF=<project> DATABASE_URL=<private-env> node scripts/apply-auth-migrations.mjs additive|security|reports|billing|processing')
 }
 const url = new URL(connectionString)
 if (!(url.hostname + decodeURIComponent(url.username)).includes(expectedRef)) {
   throw new Error('Database connection does not match the expected Supabase project')
 }
-const files = phase === 'additive' ? [
+const files = phase === 'processing' ? ['20261002003000_processing_checkpoints.sql'] : phase === 'billing' ? ['20261002002000_atomic_billing_events.sql'] : phase === 'reports' ? ['20261002001000_durable_report_snapshots.sql'] : phase === 'additive' ? [
   '20261001001000_authentication_primitives.sql',
   '20261001002000_atomic_invitation_acceptance.sql',
   '20261001002500_atomic_member_permissions.sql',
@@ -34,6 +34,12 @@ try {
         await client.query('commit')
         console.log(`Already applied ${version}`)
         continue
+      }
+      if (phase === 'processing') {
+        const cutoff = process.env.PROCESSING_RELEASE_CUTOFF
+        const age = Date.now() - new Date(cutoff || '').getTime()
+        if (!cutoff || !Number.isFinite(age) || age < 0 || age > 3600000) throw new Error('A recent processing queue-pause cutoff is required')
+        await client.query("select set_config('list_hygiene.processing_release_cutoff',$1,true)", [cutoff])
       }
       await client.query(sql)
       const name = filename.slice(version.length + 1, -4)

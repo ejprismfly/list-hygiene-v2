@@ -1,7 +1,6 @@
 import type Stripe from "stripe"
 import type { SupabaseClient } from "@supabase/supabase-js"
 
-import { isMissingColumnError } from "@/lib/billing/scope"
 
 export type StripeAccountPaymentContext = {
   customer_id: string
@@ -145,7 +144,7 @@ export function getInvoiceSubscriptionId(invoice: Stripe.Invoice) {
   const parentSubscription =
     invoice.parent?.subscription_details?.subscription
   if (parentSubscription) {
-    return String(parentSubscription)
+    return typeof parentSubscription === "string" ? parentSubscription : parentSubscription.id
   }
 
   const legacyInvoice = invoice as Stripe.Invoice & {
@@ -304,37 +303,8 @@ export async function cachePaymentMethods({
     }
   }
 
-  const { error: deleteError } = await supabase
-    .from("stripe_payment_methods")
-    .delete()
-    .eq("customer_id", stripeAccount.customer_id)
-
-  if (deleteError) {
-    console.error("Payment method cache delete error:", deleteError)
-  }
-
-  if (!payments.length) {
-    return
-  }
-
-  const { error: insertError } = await supabase
-    .from("stripe_payment_methods")
-    .insert(payments)
-
-  if (!insertError) {
-    return
-  }
-
-  if (!isMissingColumnError(insertError)) {
-    console.error("Payment method cache insert error:", insertError)
-    return
-  }
-
-  const { error: legacyInsertError } = await supabase
-    .from("stripe_payment_methods")
-    .insert(toLegacyPaymentMethodCacheRows(payments))
-
-  if (legacyInsertError) {
-    console.error("Payment method legacy cache insert error:", legacyInsertError)
-  }
+  const { error } = await supabase.rpc("replace_payment_method_cache", {
+    p_customer: stripeAccount.customer_id, p_rows: payments,
+  })
+  if (error) throw new Error("Unable to commit payment method cache")
 }
